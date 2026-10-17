@@ -114,6 +114,41 @@ test.beforeEach(async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'light' });
 });
 
+test('conversation list and chat messages use workspace calendar labels', async ({
+    page,
+}) => {
+    await page.clock.setFixedTime(new Date('2026-10-17T15:00:00Z'));
+    await login(page);
+
+    await expect(page.locator('.thread-time small')).toHaveText('terça');
+    await expect(page.locator('.message-row .bubble small').first()).toHaveText(
+        'terça',
+    );
+
+    await page.route('**/workspaces/*/conversations/*/messages', (route) =>
+        route.fulfill({
+            json: {
+                data: [
+                    {
+                        id: 'sending-message',
+                        from_me: true,
+                        type: 'text',
+                        text: 'Nova mensagem',
+                        timestamp: '2026-10-17T12:34:00Z',
+                        sending_status: 'sending',
+                    },
+                ],
+                history_limited: false,
+                read_version: 0,
+            },
+        }),
+    );
+    await page.reload();
+    await expect(page.locator('.message-row .bubble small').first()).toHaveText(
+        '09:34 · Enviando',
+    );
+});
+
 test('unassigned chat offers immediate reply while occupied chat requires explicit assignment', async ({
     page,
 }) => {

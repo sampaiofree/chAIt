@@ -5,6 +5,7 @@ import {
     sameChatMessage,
 } from '@/lib/chatState';
 import { openChatRealtime, type ChatUpdate } from '@/lib/chatRealtime';
+import { formatMessageDate } from '@/lib/messageDate';
 import { Textarea } from '@/components/ui/textarea';
 import { Head, usePage } from '@inertiajs/vue3';
 import { useVoiceRecorder } from '@/composables/useVoiceRecorder';
@@ -117,6 +118,11 @@ type Message = {
 const page = usePage<any>();
 const { dialog, alert, confirm, finish } = useAppDialog();
 const workspace = computed(() => page.props.workspace);
+const displayNow = ref(new Date());
+let dateLabelTimer: number | undefined;
+function refreshDateLabels() {
+    displayNow.value = new Date();
+}
 
 const me = computed(() => page.props.currentUser);
 const isAdmin = computed(() => page.props.isAdmin);
@@ -1358,6 +1364,13 @@ function time(value?: string | null) {
           }).format(new Date(value))
         : '';
 }
+function messageDate(value?: string | null) {
+    return formatMessageDate(
+        value,
+        displayNow.value,
+        workspace.value.timezone || 'UTC',
+    );
+}
 function statusBadge(thread: Thread) {
     const automation = thread.automation;
     if (
@@ -1500,6 +1513,8 @@ watch(mobilePane, (pane) => {
     if (pane === 'chat') void nextTick().then(updateLatestPosition);
 });
 onMounted(async () => {
+    dateLabelTimer = window.setInterval(refreshDateLabels, 60000);
+    document.addEventListener('visibilitychange', refreshDateLabels);
     if (realtimeEnabled) {
         realtime = openChatRealtime(
             page.props.chatRealtime,
@@ -1522,6 +1537,8 @@ onMounted(async () => {
     }, 30000);
 });
 onUnmounted(() => {
+    window.clearInterval(dateLabelTimer);
+    document.removeEventListener('visibilitychange', refreshDateLabels);
     window.clearInterval(statusTimer);
     window.clearInterval(listTimer);
     pendingMedia.value.forEach(revokeObjectUrl);
@@ -1645,7 +1662,7 @@ onUnmounted(() => {
                             }}</b
                             ><span class="thread-time"
                                 ><small>{{
-                                    time(thread.last_message_at)
+                                    messageDate(thread.last_message_at)
                                 }}</small
                                 ><span
                                     v-if="thread.unread_count > 0"
@@ -1832,7 +1849,7 @@ onUnmounted(() => {
                                 {{ message.caption || message.text }}
                             </p>
                             <small
-                                >{{ time(message.timestamp)
+                                >{{ messageDate(message.timestamp)
                                 }}<span
                                     v-if="message.sending_status === 'sending'"
                                 >
