@@ -199,3 +199,7 @@ Esta revisão sincroniza os documentos com o código e não executa nova homolog
 - Playwright usa schema descartável PostgreSQL em `chait_test`. O Assistente IA de Fluxos usa `ai` com tempo real habilitado e `default` no caminho anterior; progresso do assistente continua por consultas periódicas.
 
 O roteiro original e as versões em `historico/` preservam seu contexto. O índice e os contratos vigentes devem ser consultados para o comportamento atual.
+
+## Liberação dos recursos de fluxos — 17/10/2026
+
+Por solicitação explícita do responsável, botões URL/Resposta/Copiar, menus Botões/Lista e campos dinâmicos estão liberados em todas as conexões, inclusive produção, sem perfis de homologação. Esta decisão substitui as exigências de liberação por conexão registradas anteriormente. A validação real em produção será feita pelo responsável. Permanecem as validações da aplicação e a incompatibilidade conhecida de substituições nativas da UAZAPI em texto/legenda; os registros dos ensaios anteriores são preservados.

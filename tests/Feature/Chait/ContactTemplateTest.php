@@ -34,7 +34,6 @@ function contactText(string $text): array
 function templateContent(array $items): array
 {
     $f = contentButtonFixture('url', false);
-    config(['flow-contact-template.connections.'.$f['connection']->id.'.verified' => true]);
     $f['graph']['nodes'][1]['data']['items'] = $items;
     $f['flow']->update(['graph' => $f['graph']]);
     $f['version']->update(['graph' => $f['graph']]);
@@ -189,21 +188,22 @@ test('operational events are paginated scoped and do not expose stored payload k
     $this->actingAs(User::factory()->create())->getJson($url)->assertForbidden();
 });
 
-test('provider certification remains pending by default and never rewrites native patterns', function () {
-    $f = templateContent([['id' => 'a', 'kind' => 'text', 'text' => contactDoc([contactChip()])]]);
-    config(['flow-contact-template.connections' => []]);
-    Http::fake();
+test('contact fields publish and send by default without rewriting native patterns', function () {
+    $f = templateContent([['id' => 'a', 'kind' => 'text', 'text' => contactDoc([contactText('{{name}} '), contactChip()])]]);
+    $f['contact']->update(['display_name' => 'Ana']);
+    Http::fake(['*/send/text' => Http::response(['id' => 'sent', 'status' => 'Sent'])]);
+    expect(app(FlowGraphValidator::class)->validateForPublish($f['graph'], $f['workspace'], $f['flow'])['schema_version'])->toBe(2);
+    expect(app(AssistantTools::class)->validate($f['graph'], $f['workspace'])['pending'])->toBe([]);
+    expect(app(ContactTemplate::class)->catalog($f['workspace']))->not->toHaveKey('provider_compatibility');
     contentButtonRun($f);
-    Http::assertNothingSent();
-    expect(DB::table('flow_events')->where('event_type', 'send_failed')->value('metadata'))->toContain('compatibility_pending');
-    expect(fn () => app(FlowGraphValidator::class)->validateForPublish($f['graph'], $f['workspace'], $f['flow']))->toThrow(ValidationException::class);
+    Http::assertSent(fn ($request) => str_ends_with($request->url(), '/send/text') && $request['text'] === '{{name}} Ana');
+    Http::assertSentCount(1);
     expect(app(ContactTemplate::class)->render('{{name}}', []))->toBe('{{name}}');
 });
 
 test('AI prompts isolate contact data and invalid personalized prompts continue with cleanup', function () {
     Queue::fake();
     $f = aiFixture(['ai_prompt' => contactDoc([contactChip()])]);
-    config(['flow-contact-template.connections.'.$f['connection']->id.'.verified' => true]);
     $f['contact']->update(['display_name' => null]);
     Http::fake(['api.openai.com/v1/conversations' => Http::response(['id' => 'conv-template'])]);
     $execution = app(FlowRuntime::class)->start($f['version'], $f['contact']->id, $f['thread']->id, $f['connection'], 'test');
@@ -271,7 +271,6 @@ test('dynamic button prepares message label and URL from one snapshot and valida
 test('AI resolves current contact data before every model call while retaining privacy instructions', function () {
     Queue::fake();
     $f = aiFixture(['ai_prompt' => contactDoc([contactText('Contexto: '), contactChip()])]);
-    config(['flow-contact-template.connections.'.$f['connection']->id.'.verified' => true]);
     $f['contact']->update(['display_name' => 'Inicial']);
     $prompts = [];
     Http::fake(function ($r) use ($f, &$prompts) {
@@ -300,12 +299,12 @@ test('AI resolves current contact data before every model call while retaining p
     expect($prompts[1]['input'])->toContain('Atualizado')->not->toContain('Inicial');
 });
 
-test('AI publication with chips is pending certification before any provider calls', function () {
+test('AI publication with chips works without connection certification', function () {
     Queue::fake();
     $f = aiFixture(['ai_prompt' => contactDoc([contactChip()])]);
-    Http::fake();
-    expect(fn () => app(FlowGraphValidator::class)->validateForPublish($f['version']->graph, $f['workspace'], $f['flow']))->toThrow(ValidationException::class);
-    Http::assertNothingSent();
+    Http::fake(['api.openai.com/*' => Http::response(['id' => 'model'])]);
+    expect(app(FlowGraphValidator::class)->validateForPublish($f['version']->graph, $f['workspace'], $f['flow'])['schema_version'])->toBe(2);
+    expect(app(AssistantTools::class)->validate($f['version']->graph, $f['workspace'])['pending'])->toBe([]);
 });
 
 test('failed content jobs recover a reserved intent and late confirmations do not resend', function () {

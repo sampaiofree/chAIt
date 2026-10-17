@@ -28,9 +28,6 @@ function menuFixture(string $format = 'numeric'): array
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $contact->id, 'status' => 'bot', 'human_opened_at' => null]);
-    if ($format !== 'numeric') {
-        config(["flow-menu.connections.{$connection->id}.{$format}" => ['verified' => true, 'max_options' => 4, 'max_label_length' => 30]]);
-    }
     $data = array_replace(FlowMenu::defaults(), ['menu_format' => $format, 'question' => 'Como ajudar?', 'options' => [['id' => 'sales', 'label' => 'Vendas'], ['id' => 'support', 'label' => 'Suporte']]]);
     $graph = ['schema_version' => 2, 'nodes' => [
         ['id' => 'start', 'type' => 'start', 'position' => ['x' => 0, 'y' => 0], 'data' => ['label' => 'Início']],
@@ -93,11 +90,10 @@ test('menu configuration validates timeout and invalid response bounds', functio
     expect(fn () => app(FlowGraphValidator::class)->validate($graph))->toThrow(ValidationException::class);
 })->with([['timeout_seconds', 59], ['timeout_seconds', 604801], ['max_invalid_replies', 0], ['max_invalid_replies', 11]]);
 
-test('interactive menu publication requires a verified connection and measured limits', function (string $format) {
+test('interactive menu publication and assistant validation work without connection profiles', function (string $format) {
     $f = menuFixture($format);
     expect(app(FlowGraphValidator::class)->validateForPublish($f['graph'], $f['workspace'], $f['flow'])['schema_version'])->toBe(2);
-    config(["flow-menu.connections.{$f['connection']->id}.{$format}" => []]);
-    expect(fn () => app(FlowGraphValidator::class)->validateForPublish($f['graph'], $f['workspace'], $f['flow']))->toThrow(ValidationException::class);
+    expect(app(AssistantTools::class)->validate($f['graph'], $f['workspace'])['pending'])->toBe([]);
 })->with(['button', 'list']);
 
 test('numeric menu sends enumerated choices and retains the active reservation', function () {
@@ -278,3 +274,15 @@ test('numeric menus ignore interactive selections instead of consuming a numeric
     menuReply($f, '1', ['messageType' => 'ButtonsResponseMessage', 'buttonOrListid' => app(FlowMenuRuntime::class)->selectionId($f['wait'], 'sales')]);
     expect($f['wait']->fresh()->status)->toBe('waiting')->and($f['wait']->fresh()->invalid_count)->toBe(0);
 });
+
+test('interactive menus use application limits in production without measured profiles', function (string $format) {
+    config(['app.env' => 'production']);
+    $f = menuFixture($format);
+    $graph = $f['graph'];
+    $graph['nodes'][1]['data']['options'] = array_map(fn ($i) => ['id' => 'option_'.$i, 'label' => str_repeat('a', 120)], range(1, 12));
+    $graph['edges'] = [$graph['edges'][0]];
+    expect(app(FlowGraphValidator::class)->validateForPublish($graph, $f['workspace'], $f['flow'])['schema_version'])->toBe(2);
+    expect(app(AssistantTools::class)->validate($graph, $f['workspace'])['pending'])->toBe([]);
+    $graph['nodes'][1]['data']['options'][0]['label'] .= 'a';
+    expect(fn () => app(FlowGraphValidator::class)->validateForPublish($graph, $f['workspace'], $f['flow']))->toThrow(ValidationException::class);
+})->with(['button', 'list']);

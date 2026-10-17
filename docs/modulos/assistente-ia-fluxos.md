@@ -139,11 +139,11 @@ Não incluir no MVP: desfazer, custos mensais, simulador, publicação automáti
 
 ## Menu — 14/10/2026
 
-O catálogo e schemas estritos incluem `menu`, campos configuráveis e saídas dinâmicas `option:{id}` e `continue`. Renomear, reordenar e trocar formato preservam IDs e conexões. Remover opção ligada exige `disconnect` no mesmo lote; erro reverte o lote inteiro. `validate_flow` identifica pendências por campo, inclusive homologação de Botões/Lista. Mantêm-se aprovação, prévia compartilhada, revisões, idempotência, Salvar e Publicar manuais. Contrato em [Bloco Menu](bloco-menu.md).
+O catálogo e schemas estritos incluem `menu`, campos configuráveis e saídas dinâmicas `option:{id}` e `continue`. Renomear, reordenar e trocar formato preservam IDs e conexões. Remover opção ligada exige `disconnect` no mesmo lote; erro reverte o lote inteiro. `validate_flow` identifica pendências por campo, com formatos Botões/Lista disponíveis em todas as conexões. Mantêm-se aprovação, prévia compartilhada, revisões, idempotência, Salvar e Publicar manuais. Contrato em [Bloco Menu](bloco-menu.md).
 
 ## Conteúdo com Botão — 15/10/2026
 
-O catálogo, schemas estritos, leitura do grafo e patches incluem `items[].kind=button`, sua mensagem e `button.kind/label/url/copy_text`. A IA pode criar, editar, trocar tipo, reordenar e remover o elemento preservando IDs e os demais itens. Identidade de Resposta é gerada pelo servidor. `validate_flow` aponta campos pendentes e homologação por tipo/conexão; rascunhos incompletos continuam permitidos. Conteúdo mantém somente `next` e não espera cliques. Use Aguardar Resposta para coletar ou Menu para escolhas com caminhos. [Contrato completo](bloco-conteudo-elemento-botao.md).
+O catálogo, schemas estritos, leitura do grafo e patches incluem `items[].kind=button`, sua mensagem e `button.kind/label/url/copy_text`. A IA pode criar, editar, trocar tipo, reordenar e remover o elemento preservando IDs e os demais itens. Identidade de Resposta é gerada pelo servidor. `validate_flow` aponta campos pendentes de configuração; rascunhos incompletos continuam permitidos. Conteúdo mantém somente `next` e não espera cliques. Use Aguardar Resposta para coletar ou Menu para escolhas com caminhos. [Contrato completo](bloco-conteudo-elemento-botao.md).
 
 ## Importação JSON — 15/10/2026
 
@@ -151,4 +151,4 @@ A importação é uma ação determinística do editor, disponível a quem pode 
 
 ## Campos do contato — 15/10/2026
 
-`get_editor_capabilities.contact_fields` apresenta os campos padrão e IDs/nomes atuais dos personalizados do workspace, sem valores dos contatos. Schemas estritos aceitam string ou ContactTemplate v1 nos campos habilitados. Patches podem inserir, editar, remover e reordenar partes preservando IDs dos itens; referências inventadas/externas revertem o lote. A exclusão de campo verifica também prévias compartilhadas e rascunhos sob bloqueio workspace → fluxo. `validate_flow` mostra pendências de homologação por campo; não autoriza publicação automática. Ver [contrato completo](campos-do-contato-fluxos.md) e `resources/prompts/flow-assistant.md`.
+`get_editor_capabilities.contact_fields` apresenta os campos padrão e IDs/nomes atuais dos personalizados do workspace, sem valores dos contatos. Schemas estritos aceitam string ou ContactTemplate v1 nos campos habilitados. Patches podem inserir, editar, remover e reordenar partes preservando IDs dos itens; referências inventadas/externas revertem o lote. A exclusão de campo verifica também prévias compartilhadas e rascunhos sob bloqueio workspace → fluxo. `validate_flow` mostra pendências de configuração por campo; não autoriza publicação automática. Ver [contrato completo](campos-do-contato-fluxos.md) e `resources/prompts/flow-assistant.md`.

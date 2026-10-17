@@ -86,7 +86,6 @@ try {
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
     $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
-    config(["flow-content-button.connections.{$connection->id}.reply" => ['verified' => true, 'max_text_length' => 4000, 'max_label_length' => 30, 'max_reply_id_length' => 128]]);
     $field = $workspace->contactCustomFields()->create(['name' => 'Resposta', 'type' => 'text']);
     foreach ([['receive', 'activate'], ['activate', 'receive'], ['select', 'expire'], ['expire', 'select']] as [$first, $second]) {
         $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);

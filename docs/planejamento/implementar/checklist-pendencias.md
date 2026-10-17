@@ -1,7 +1,7 @@
 # Checklist de implementação e homologação
 
 > **Atualizado em:** 2026-10-17  
-> **Base:** análise da documentação e do código, consolidada em 16/10/2026.  
+> **Base:** comparação estática da documentação com rotas, páginas Vue, controllers, serviços, models, migrations e testes do repositório, revisada em 17/10/2026. Não foram executados testes nesta revisão.
 > **Status:** acompanhamento de pendências; não define prioridade nem aprova novos recursos.
 
 ## Checklist de recursos
@@ -27,13 +27,13 @@ Alguns itens são propostas ou exclusões deliberadas do escopo inicial. Sua pre
 Estes itens já têm código; os checks abaixo acompanham a validação operacional, não uma implementação do zero.
 
 - [ ] **Chat em tempo real:** validar infraestrutura, ativação e operação real do caminho controlado por configuração. Ver [guia operacional](../../operacao/chat-realtime.md).
-- [ ] **Menu com Botões/Lista:** validar seleções pelo webhook público e registrar os perfis da conexão antes da liberação. Há registros de envio e apresentação no iPhone. Ver [Bloco Menu](../../modulos/bloco-menu.md).
-- [ ] **Elemento Botão do Conteúdo:** homologar renderização e ação por tipo/conexão; para Resposta, validar o evento real no webhook. Ver [contrato do elemento](../../modulos/bloco-conteudo-elemento-botao.md).
-- [ ] **Chips de campos do contato:** comprovar que a UAZAPI preserva o conteúdo preparado nos caminhos relevantes e registrar a homologação por conexão. Ver [contrato dos campos](../../modulos/campos-do-contato-fluxos.md).
+- [ ] **Menu com Botões/Lista:** liberado em todas as conexões em 17/10/2026; responsável validará seleções pelo webhook público em produção. Há registros locais de cliques e roteamento no iPhone. Ver [Bloco Menu](../../modulos/bloco-menu.md).
+- [ ] **Elemento Botão do Conteúdo:** liberado em todas as conexões em 17/10/2026; responsável validará renderização e ação em produção, incluindo o webhook de Resposta. Ver [contrato do elemento](../../modulos/bloco-conteudo-elemento-botao.md).
+- [ ] **Chips de campos do contato:** liberados em todas as conexões em 17/10/2026; responsável validará o conteúdo recebido em produção, considerando a alteração conhecida de padrões nativos em texto/legenda. Ver [contrato dos campos](../../modulos/campos-do-contato-fluxos.md).
 
 ## Como manter o checklist
 
 - Marcar um recurso como concluído somente com implementação e verificação correspondentes; registrar data e referência ao código, teste ou evidência.
 - Para homologação, registrar o recurso, conexão/ambiente e cenários efetivamente validados, sem incluir credenciais ou dados pessoais.
 - Atualizar também o documento responsável quando o comportamento mudar.
-- Este documento consolida os itens da análise citada; não representa uma auditoria exaustiva ou contínua de todas as funcionalidades futuras.
+- Os itens de produto ainda não aprovados permanecem propostas, mesmo quando listados aqui. O inventário descreve os módulos documentados e as áreas encontradas no código nesta data; alterações posteriores no projeto exigem nova comparação.

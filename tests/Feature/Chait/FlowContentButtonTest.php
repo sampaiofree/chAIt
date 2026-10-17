@@ -31,10 +31,6 @@ function contentButtonFixture(string $kind = 'reply', bool $withWait = true, arr
     $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id, 'webhook_secret_hash' => hash('sha256', 'button-test-secret'), 'activated_at' => now()->subMinute()]);
     $thread = Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $contact->id, 'external_chat_id' => $contact->phone.'@s.whatsapp.net', 'status' => 'bot', 'human_opened_at' => null]);
     $field = $workspace->contactCustomFields()->create(['name' => 'Resposta', 'type' => 'text']);
-    $profile = ['verified' => true, 'max_text_length' => 4000, 'max_label_length' => 30, 'max_value_length' => 2000, 'max_reply_id_length' => 128];
-    foreach (['url', 'reply', 'copy'] as $type) {
-        config(["flow-content-button.connections.{$connection->id}.{$type}" => $profile]);
-    }
     $button = ['kind' => $kind, 'label' => 'Tenho interesse', ...match ($kind) {
         'url' => ['url' => 'https://example.com/cursos'], 'copy' => ['copy_text' => 'CUPOM10'], default => [],
     }];
@@ -88,7 +84,7 @@ test('content button sends one interactive message in sequence and never creates
     Http::assertSent(fn ($request) => str_ends_with($request->url(), '/send/menu') && $request['type'] === 'button' && $request['text'] === $f['item']['text'] && $request['choices'] === [$choice] && filled($request['track_id']) && ! isset($request['listButton']));
 })->with(['url', 'reply', 'copy']);
 
-test('content button allows incomplete drafts but reports fields and homologation for publication and assistant', function () {
+test('content button allows incomplete drafts and publishes complete buttons without connection profiles', function () {
     $f = contentButtonFixture('url');
     $graph = $f['graph'];
     $graph['nodes'][1]['data']['items'][0] = ['id' => 'button', 'kind' => 'button'];
@@ -97,13 +93,11 @@ test('content button allows incomplete drafts but reports fields and homologatio
     $pending = app(AssistantTools::class)->validate($graph, $f['workspace'])['pending'];
     expect(array_column($pending, 'path'))->toContain('items.0.text', 'items.0.button.label', 'items.0.button.kind');
     expect(app(FlowGraphValidator::class)->validateForPublish($f['graph'], $f['workspace'], $f['flow'])['schema_version'])->toBe(2);
-    config(["flow-content-button.connections.{$f['connection']->id}.url" => []]);
-    expect(fn () => app(FlowGraphValidator::class)->validateForPublish($f['graph'], $f['workspace'], $f['flow']))->toThrow(ValidationException::class);
-    expect(app(FlowCapabilities::class)->catalog($f['workspace'])['content_button']['profiles']['url'])->toBeNull();
-    Http::fake();
+    expect(app(FlowCapabilities::class)->catalog($f['workspace'])['content_button'])->not->toHaveKey('profiles');
+    expect(app(AssistantTools::class)->validate($f['graph'], $f['workspace'])['pending'])->toBe([]);
+    Http::fake(['*/send/menu' => Http::response(['id' => 'sent', 'status' => 'Sent'])]);
     contentButtonRun($f);
-    expect($f['execution']->fresh()->status)->toBe('running');
-    Http::assertNothingSent();
+    Http::assertSentCount(1);
 });
 
 test('content button rejects duplicate buttons unsafe values unknown kinds and forged reply ids', function (string $case) {
@@ -123,10 +117,10 @@ test('content button rejects duplicate buttons unsafe values unknown kinds and f
     expect(fn () => app(FlowGraphValidator::class)->validate($graph))->toThrow(ValidationException::class);
 })->with(['duplicate', 'pipe', 'newline', 'control', 'scheme', 'url_pipe', 'kind', 'identity']);
 
-test('content button honors measured provider limits', function (string $kind, string $field) {
+test('content button honors application size limits', function (string $kind, string $field) {
     $f = contentButtonFixture($kind);
     $graph = $f['graph'];
-    data_set($graph, 'nodes.1.data.items.0.'.$field, str_repeat('a', $field === 'button.label' ? 31 : 2001));
+    data_set($graph, 'nodes.1.data.items.0.'.$field, str_repeat('a', $field === 'button.label' ? 121 : 4001));
     expect(fn () => app(FlowGraphValidator::class)->validateForPublish($graph, $f['workspace'], $f['flow']))->toThrow(ValidationException::class);
 })->with([['reply', 'button.label'], ['copy', 'button.copy_text']]);
 
@@ -358,7 +352,6 @@ test('legacy text content normalizes and runs with no content button profile', f
     unset($graph['nodes'][1]['data']['items']);
     $graph['schema_version'] = 1;
     $graph['nodes'][1]['data']['messages'] = [['id' => 'legacy', 'text' => 'Mensagem antiga']];
-    config(['flow-content-button.connections' => []]);
     $f['version']->update(['graph' => $graph]);
     expect(app(FlowGraphValidator::class)->validateForPublish($graph, $f['workspace'], $f['flow'])['schema_version'])->toBe(2);
     Http::fake(['*/send/text' => Http::response(['id' => 'legacy-sent', 'status' => 'Sent'])]);
@@ -369,9 +362,25 @@ test('legacy text content normalizes and runs with no content button profile', f
     Http::assertSent(fn ($request) => str_ends_with($request->url(), '/send/text') && $request['text'] === 'Mensagem antiga');
 });
 
-test('publication rejects a measured reply id limit incompatible with the system transport identity', function () {
+test('reply identity remains server generated without a connection profile', function () {
     $f = contentButtonFixture();
-    config(["flow-content-button.connections.{$f['connection']->id}.reply.max_reply_id_length" => 20]);
-    expect(fn () => app(FlowGraphValidator::class)->validateForPublish($f['graph'], $f['workspace'], $f['flow']))->toThrow(ValidationException::class);
-    expect(app(AssistantTools::class)->validate($f['graph'], $f['workspace'])['pending'])->toContain(['node_id' => 'content', 'path' => 'items.0.button.kind', 'message' => 'O limite homologado não comporta o identificador de resposta do sistema.']);
+    expect(app(FlowGraphValidator::class)->validateForPublish($f['graph'], $f['workspace'], $f['flow'])['schema_version'])->toBe(2);
+    expect(app(AssistantTools::class)->validate($f['graph'], $f['workspace'])['pending'])->toBe([]);
+    expect($f['selection'])->toMatch('/^content:[0-9]+:[a-f0-9]{32}$/D');
 });
+
+test('all content button kinds publish at application limits in production without profiles', function (string $kind) {
+    config(['app.env' => 'production']);
+    $f = contentButtonFixture($kind);
+    $graph = $f['graph'];
+    $item = &$graph['nodes'][1]['data']['items'][0];
+    $item['text'] = str_repeat('a', 4000);
+    $item['button']['label'] = str_repeat('b', 120);
+    if ($kind === 'url') {
+        $item['button']['url'] = 'https://example.com/'.str_repeat('c', 3980);
+    } elseif ($kind === 'copy') {
+        $item['button']['copy_text'] = str_repeat('c', 4000);
+    }
+    expect(app(FlowGraphValidator::class)->validateForPublish($graph, $f['workspace'], $f['flow'])['schema_version'])->toBe(2);
+    expect(app(AssistantTools::class)->validate($graph, $f['workspace'])['pending'])->toBe([]);
+})->with(['url', 'reply', 'copy']);

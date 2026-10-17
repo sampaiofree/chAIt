@@ -21,7 +21,7 @@ export type FlowGraph = {
     viewport: { x: number; y: number; zoom: number };
 };
 export type FlowCatalog = {
-    contact_fields?: ContactFields & { provider_compatibility?: string };
+    contact_fields?: ContactFields;
     defaults?: { ai: Record<string, unknown> };
     content_button?: ContentButtonCatalog;
     menu?: { defaults: FlowMenuData };

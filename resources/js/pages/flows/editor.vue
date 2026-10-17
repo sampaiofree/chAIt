@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import FlowExecutionEvents from '@/components/FlowExecutionEvents.vue';
 import ContactTemplateInput from '@/components/ContactTemplateInput.vue';
-import { hasContactFields, type ContactTemplate } from '@/lib/contactTemplate';
+import { type ContactTemplate } from '@/lib/contactTemplate';
 import {
     conditionCheckErrors,
     standardConditionFields,
@@ -246,23 +246,6 @@ const messageInputs = new Map<
 const selected = computed(
     () => nodes.value.find((node) => node.id === selectedId.value) || null,
 );
-const selectedHasContactFields = computed(() => {
-    const data = selected.value?.data;
-    if (!data) return false;
-    if (data.nodeType === 'ai') return hasContactFields(data.ai_prompt);
-    return (
-        data.nodeType === 'content' &&
-        (data.items || []).some((item) =>
-            [
-                item.text,
-                item.caption,
-                item.button?.label,
-                item.button?.url,
-                item.button?.copy_text,
-            ].some((value) => hasContactFields(value)),
-        )
-    );
-});
 const hasUnsavedChanges = computed(() =>
     ['dirty', 'error', 'conflict'].includes(status.value),
 );
@@ -1616,7 +1599,6 @@ onBeforeUnmount(() =>
                             <FlowContentButtonEditor
                                 v-else-if="item.kind === 'button'"
                                 :item="item"
-                                :catalog="catalog.content_button"
                                 :workspace-id="workspace.id"
                                 :fields="catalog.contact_fields"
                                 :errors="buttonFieldErrors(index)"
@@ -2626,18 +2608,6 @@ onBeforeUnmount(() =>
                     <MousePointer2 :size="26" />
                     <p>Selecione um bloco para editar suas configurações.</p>
                 </div>
-                <p
-                    v-if="
-                        selectedHasContactFields &&
-                        catalog.contact_fields?.provider_compatibility ===
-                            'pending'
-                    "
-                    class="field-help"
-                >
-                    Campos dinâmicos em mensagens e prompts aguardam homologação
-                    da conexão WhatsApp para publicar. Você pode configurar e
-                    salvar o rascunho.
-                </p>
                 <FlowExecutionEvents
                     :workspace-id="workspace.id"
                     :flow-id="flow.id"

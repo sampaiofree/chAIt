@@ -638,7 +638,7 @@ test('approved assistant creates a menu and connects its dynamic options idempot
     $session->refresh();
     expect(collect($session->graph['nodes'])->firstWhere('id', $menuId)['data']['options'][1])->toBe(['id' => 'sales', 'label' => 'Comercial']);
     expect($session->graph['edges'][1]['sourceHandle'])->toBe('option:sales');
-    expect(collect($tools->validate($session->graph, $f['workspace'])['pending'])->contains('path', 'menu_format'))->toBeTrue();
+    expect($tools->validate($session->graph, $f['workspace'])['pending'])->toBe([]);
 });
 
 test('assistant menu option removal rolls back unless its edge is disconnected in the same batch', function () {
@@ -679,7 +679,7 @@ test('approved assistant can read create edit reorder change kinds and remove a 
     expect(collect($current['graph']['nodes'])->firstWhere('id', $nodeId)['data']['items'])->toBe($items);
     $capabilities = $tools->execute($f['flow'], $run, 'button-capabilities', 'get_editor_capabilities', []);
     expect($capabilities['content_button']['kinds'])->toBe(['url', 'reply', 'copy']);
-    expect($result['validation']['pending'])->toContain(['node_id' => $nodeId, 'path' => 'items.1.button.kind', 'message' => 'Este tipo de botão aguarda homologação da conexão WhatsApp. Você pode salvar o rascunho.']);
+    expect($result['validation']['pending'])->toBe([]);
     $revision = 2;
     foreach (['reply', 'copy'] as $kind) {
         $items = array_reverse($items);

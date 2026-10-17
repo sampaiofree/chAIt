@@ -1,8 +1,10 @@
 # Bloco Conteúdo — Elemento Botão
 
+> **Liberação em 17/10/2026:** por decisão do responsável, publicação e execução estão liberadas em todas as conexões, inclusive produção, sem perfis ou variáveis de homologação. A validação real em produção será feita pelo responsável; esta liberação não acrescenta evidências de homologação. Os ensaios anteriores permanecem como histórico.
+
 > O registro de 15/10/2026 abaixo é histórico; a homologação local posterior está no fim desta página.
 
-> **Estado:** implementado; URL, Resposta e Copiar homologados somente na conexão local 1 em 16/10/2026. A produção permanece pendente.
+> **Estado:** URL, Resposta e Copiar liberados em todas as conexões; validação de produção a cargo do responsável.
 > **Referências:** [briefing aprovado](../planejamento/implementar/bloco-conteudo-elemento-botao.md), [Editor](editor-de-fluxos.md), [UAZAPI](../integracoes/uazapi.md), [Assistente construtor](assistente-ia-fluxos.md).
 
 ## Comportamento e editor
@@ -32,9 +34,9 @@ O projeto mantém `schema_version: 2` e `nodes[].data.items[]`. O discriminador 
 
 `button.kind` aceita `url`, `reply`, `copy`. URL usa `url`; Copiar usa `copy_text`; Resposta não exige destino fornecido pelo editor/IA. Identidade é derivada no servidor do item, nó, versão e execução; não há `reply_id` configurável no grafo. IDs existentes devem ser preservados ao editar e reordenar.
 
-Rascunhos incompletos são aceitos. Mais de um Botão, propriedades desconhecidas de `button`, tipos não suportados e valores inseguros são rejeitados estruturalmente. Publicação exige mensagem, rótulo, destino do tipo e perfil homologado. URL aceita HTTP/HTTPS sem espaços, controles ou `|`. Rótulo e cópia não aceitam controles nem `|`, para não introduzir outra ação no protocolo `choices`. A mensagem pode ter quebras de linha.
+Rascunhos incompletos são aceitos. Mais de um Botão, propriedades desconhecidas de `button`, tipos não suportados e valores inseguros são rejeitados estruturalmente. Publicação exige mensagem, rótulo, destino do tipo. URL aceita HTTP/HTTPS sem espaços, controles ou `|`. Rótulo e cópia não aceitam controles nem `|`, para não introduzir outra ação no protocolo `choices`. A mensagem pode ter quebras de linha.
 
-Os tetos técnicos da aplicação são 4.000 caracteres para mensagem/destino e 120 para rótulo. Não representam limites comprovados do WhatsApp: o perfil homologado pode ser menor e será aplicado adicionalmente.
+Os tetos técnicos da aplicação são 4.000 caracteres para mensagem/destino e 120 para rótulo. São limites da aplicação; os limites adicionais por conexão foram retirados.
 
 ## Transporte, entrada e concorrência
 
@@ -54,9 +56,9 @@ Catálogo, schemas estritos, `get_current_flow`, `apply_flow_patch` e `validate_
 
 ## Homologação e verificação
 
-`config/flow-content-button.php` começa com `connections` vazio, independente dos perfis do Menu. Configurar separadamente por ID da conexão e tipo (`url`, `reply`, `copy`): `verified: true`, `max_text_length`, `max_label_length` e `max_value_length` para URL/Copiar ou `max_reply_id_length` para Resposta, todos inteiros positivos medidos. O perfil de Resposta deve comportar identificadores operacionais de até 60 caracteres; esse tamanho vem do formato interno, não de um limite presumido do provedor. A publicação verifica essa compatibilidade e o envio confere o identificador efetivo. A remoção do perfil bloqueia novos envios; a conciliação de intenções existentes continua sem reenviar.
+Os perfis por conexão e `config/flow-content-button.php` foram removidos. URL, Resposta e Copiar podem ser publicados e enviados sem habilitação adicional. Identificadores de Resposta continuam gerados pelo servidor e vinculados à execução, versão e item.
 
-Um HTTP 200 isolado não habilita o perfil. Conferir renderização e ação nos clientes WhatsApp relevantes; para Resposta, confirmar evento real, tipo e identificador no webhook público. Não presumir confirmação de clique URL/Copiar. A entrega de 15/10 ainda não havia feito essa homologação.
+Para a validação operacional, um HTTP 200 isolado não comprova a ação. Conferir renderização e ação nos clientes WhatsApp relevantes; para Resposta, confirmar evento real, tipo e identificador no webhook público. Não presumir confirmação de clique URL/Copiar. A entrega de 15/10 ainda não havia feito essa homologação.
 
 Comandos de verificação local:
 

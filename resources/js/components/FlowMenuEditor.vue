@@ -78,10 +78,7 @@ function move(index: number, direction: number) {
         <small v-if="data.menu_format === 'numeric'"
             >O contato responde somente com o número da opção.</small
         >
-        <small v-else
-            >O contato precisa selecionar uma opção pelo toque. Publicação
-            depende da homologação da conexão WhatsApp.</small
-        >
+        <small v-else>O contato precisa selecionar uma opção pelo toque.</small>
         <p
             v-if="errors.menu_format"
             id="menu-format-error"

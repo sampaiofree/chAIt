@@ -2,7 +2,6 @@
 
 namespace App\Services\Flows;
 
-use App\Models\UazapiConnection;
 use App\Models\Workspace;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -79,23 +78,7 @@ class ContactTemplate
         return ['template_version' => 1, 'standard' => collect(self::STANDARD)->map(fn ($label, $key) => ['key' => $key, 'label' => $label])->values()->all(),
             'custom' => $workspace->contactCustomFields()->orderBy('name')->orderBy('id')->get(['id', 'name', 'type'])->toArray(),
             'allowed' => ['content.text', 'content.caption', 'content.button.url', 'content.button.copy', 'ai.ai_prompt'],
-            'provider_compatibility' => $this->verified(UazapiConnection::where('workspace_id', $workspace->id)->value('id')) ? 'verified' : 'pending', 'missing' => 'empty', 'literal_text' => 'Chaves digitadas ou coladas como texto não são interpretadas.'];
-    }
-
-    public function verified(?int $connectionId): bool
-    {
-        return config('flow-contact-template.connections.'.($connectionId ?? 0).'.verified') === true;
-    }
-
-    public static function itemHasFields(array $item): bool
-    {
-        foreach ([$item['text'] ?? '', $item['caption'] ?? '', ...array_values($item['button'] ?? [])] as $value) {
-            if (self::hasFields($value)) {
-                return true;
-            }
-        }
-
-        return false;
+            'missing' => 'empty', 'literal_text' => 'Chaves digitadas ou coladas como texto não são interpretadas.'];
     }
 
     public static function entries(array $graph): array

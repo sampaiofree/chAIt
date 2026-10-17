@@ -3,8 +3,8 @@
 > **Projeto:** chAIt — SaaS de atendimento e automação via WhatsApp  
 > **Documento sugerido no repositório:** `docs/modulos/leads.md`  
 > **Versão:** 0.1  
-> **Data:** 2026-10-14  
-> **Estado:** briefing funcional aprovado; este arquivo não comprova implementação  
+> **Data do briefing:** 2026-10-14
+> **Estado em 17/10/2026:** não implementado. A comparação com `routes/`, `resources/js/pages/` e `AppNavigation.vue` não encontrou módulo, rotas ou entrada de navegação para Leads; este documento continua sendo briefing funcional, não evidência de implementação.
 > **Stack do produto:** Laravel no backend; Vue 3 + Inertia.js na aplicação web  
 > **Relacionado:** `docs/modulos/chat-multiatendimento.md`, `docs/interfaces/chat.md`, `docs/modulos/editor-de-fluxos.md` e `docs/planejamento/decisoes.md`.
 

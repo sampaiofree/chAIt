@@ -2,24 +2,11 @@
 
 namespace App\Services\Flows;
 
-use App\Models\UazapiConnection;
-use App\Models\Workspace;
-
 class FlowMenu
 {
     public static function defaults(): array
     {
         return ['menu_format' => 'numeric', 'question' => '', 'options' => [], 'invalid_reply_text' => 'Opção inválida. Escolha uma das opções abaixo.', 'max_invalid_replies' => 3, 'timeout_seconds' => 300, 'list_button_text' => 'Ver opções'];
-    }
-
-    public function profile(?UazapiConnection $connection, string $format): ?array
-    {
-        $profile = config('flow-menu.connections.'.($connection?->id ?? 0).'.'.$format);
-
-        return is_array($profile) && ($profile['verified'] ?? false) === true
-            && is_int($profile['max_options'] ?? null) && $profile['max_options'] > 0
-            && is_int($profile['max_label_length'] ?? null) && $profile['max_label_length'] > 0
-            ? $profile : null;
     }
 
     public function numericText(array $data): string
@@ -34,7 +21,7 @@ class FlowMenu
         return implode("\n", $lines);
     }
 
-    public function issues(array $data, Workspace $workspace): array
+    public function issues(array $data): array
     {
         $issues = [];
         $format = $data['menu_format'] ?? null;
@@ -66,22 +53,6 @@ class FlowMenu
         }
         if ($format === 'list' && trim((string) ($data['list_button_text'] ?? '')) === '') {
             $issues['list_button_text'] = 'Preencha o texto do botão de abertura.';
-        }
-        if (in_array($format, ['button', 'list'], true)) {
-            $connection = UazapiConnection::where('workspace_id', $workspace->id)->first();
-            $profile = $this->profile($connection, $format);
-            if (! $profile) {
-                $issues['menu_format'] = 'Este formato aguarda homologação da conexão WhatsApp. Use Numérico para publicar.';
-            } else {
-                if (count($data['options'] ?? []) > $profile['max_options']) {
-                    $issues['options'] = 'Quantidade de opções acima do limite homologado para este formato.';
-                }
-                foreach ($data['options'] ?? [] as $index => $option) {
-                    if (mb_strlen($option['label'] ?? '') > $profile['max_label_length']) {
-                        $issues["options.{$index}.label"] = 'Rótulo acima do limite homologado para este formato.';
-                    }
-                }
-            }
         }
 
         return $issues;

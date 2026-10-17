@@ -122,9 +122,6 @@ class AiSessionService
                 $input = [['type' => 'input_text', 'text' => 'Inicie a conversa com o lead seguindo as instruções. Não presuma o conteúdo de uma mensagem anterior.']];
             }
             try {
-                if (ContactTemplate::hasFields($data['ai_prompt']) && ! app(ContactTemplate::class)->verified($session->uazapi_connection_id)) {
-                    throw new TemplateContentException('compatibility_pending', 'ai_prompt');
-                }
                 if (! $session->remote_conversation_id) {
                     $remoteId = $this->openai->createConversation($key, $budget);
                     $session->refresh();

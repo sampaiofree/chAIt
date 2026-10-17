@@ -1,8 +1,10 @@
 # Campos do contato nos fluxos
 
+> **Liberação em 17/10/2026:** por decisão do responsável, publicação e execução estão liberadas em todas as conexões, inclusive produção, sem perfis ou variáveis de homologação. A validação real em produção será feita pelo responsável; esta liberação não acrescenta evidências de homologação. Os ensaios anteriores permanecem como histórico.
+
 > O registro de implementação anterior ao ensaio com túnel é histórico; o resultado operacional está no fim desta página.
 
-Implementação local em 15/10/2026. Naquela entrega não houve envios reais, chamadas OpenAI pagas nem homologação de substituições da UAZAPI. O ensaio de 16/10 encontrou uma incompatibilidade; a liberação por conexão permanece pendente.
+Implementação local em 15/10/2026. Naquela entrega não houve envios reais, chamadas OpenAI pagas nem homologação de substituições da UAZAPI. O ensaio de 16/10 encontrou uma incompatibilidade; a liberação foi posteriormente autorizada em 17/10, mantendo a incompatibilidade conhecida.
 
 ## Contrato
 
@@ -69,9 +71,9 @@ O assistente consulta `contact_fields` em `get_editor_capabilities`, usa o mesmo
 
 O [OpenAPI oficial](https://docs.uazapi.com/openapi-bundled.json) documenta substituições nativas como `{{name}}`, `{{first_name}}` e `{{lead_field01}}`–`{{lead_field20}}`. O contrato consultado não oferece controle comprovado de desativação/escape. Resolver os chips no Laravel não demonstra que o provedor preserve o conteúdo final, inclusive texto literal, valores substituídos e respostas geradas pela IA.
 
-`config/flow-contact-template.php` inicia sem conexões homologadas. Rascunhos são permitidos; publicação e preparação de novos envios/prompts com chips exigem `connections[ID].verified === true`. O catálogo/editor/assistente mostram a pendência. Testes habilitam apenas perfis sintéticos isolados. O perfil de botões é independente. Intenções já persistidas são conciliadas mesmo após remoção do perfil.
+Os perfis por conexão e `config/flow-contact-template.php` foram removidos. Publicação e preparação de envios/prompts com chips estão liberadas por padrão. O catálogo não apresenta `provider_compatibility`; editor e assistente não exigem homologação. Permanecem as validações de referências, permissões, URLs e limites após expansão.
 
-Antes de habilitar uma conexão em produção, comparar conteúdo preparado e efetivamente recebido, incluindo padrões nativos literais e em valores, Unicode, URLs, legendas, rótulos/cópia e respostas IA. Validar os caminhos relevantes nos clientes reais. Não substituir por caracteres invisíveis, modificar valores silenciosamente ou bloquear padrões arbitrariamente. Sem mecanismo comprovado ou representação compatível, a liberação permanece pendente. Os fluxos legados continuam com seu contrato anterior; não se afirma que suas substituições nativas foram certificadas nesta entrega.
+O responsável fará os testes em produção. A UAZAPI pode substituir padrões nativos como `{{name}}` em texto e legenda, inclusive dentro dos valores dos chips, conforme o ensaio abaixo. Esta liberação não corrige essa alteração e não modifica silenciosamente o conteúdo preparado pelo Laravel.
 
 ## Evidências locais
 

@@ -41,12 +41,12 @@ A tela de Conversas consulta a lista no banco antes de receber o status da conex
 - Conteúdo com Botão: valide URL, Resposta e Copiar separadamente. URL/Copiar exigem conferência visual da ação; Resposta também exige o evento explícito no webhook.
 - Chips: use valores sintéticos e compare a string final preparada pelo Laravel com o conteúdo visto pelo destinatário, inclusive padrões nativos literais da UAZAPI, Unicode, legenda, URL, rótulo e cópia. Registre apenas igualdade, tipo e hashes das amostras.
 
-Os perfis de liberação local são lidos de `CHAIT_LOCAL_FLOW_MENU_CONNECTIONS`, `CHAIT_LOCAL_FLOW_CONTENT_BUTTON_CONNECTIONS` e `CHAIT_LOCAL_FLOW_CONTACT_TEMPLATE_CONNECTIONS` no `.env`. Cada variável é um objeto JSON indexado pelo ID da conexão, no formato das respectivas configurações em `config/`. Esses valores são ignorados quando `APP_ENV` não é `local`; os padrões continuam vazios. Preencha somente formatos comprovados na conexão real.
+Desde 17/10/2026, por decisão do responsável, Menu, Botão e campos dinâmicos estão liberados em todas as conexões. Os perfis e as variáveis locais de liberação foram removidos. Os testes operacionais continuam úteis para registrar o comportamento real.
 
 Os scripts em `tests/Manual/start-live-*.php` e `send-live-*.php` documentam os ensaios. Eles usam IDs de conexão/contato desta sessão e enviam mensagens reais; confira o JID normalizado antes de reutilizá-los. Os scripts sem tipo obrigatório exigem `--send` explícito. Os fluxos de ensaio devem ficar inativos após a sessão.
 
 ## Encerramento
 
-Antes de parar os túneis, retire os perfis locais, limpe a configuração e reinicie Horizon/Reverb. Reponha na UAZAPI o webhook anterior de `chait.test`, ou registre uma URL pública permanente antes de continuar a operação. Não deixe fluxos interativos dependentes de uma URL Quick Tunnel encerrada. Preserve as evidências sem credenciais e descarte dados temporários pelos comandos de manutenção existentes.
+Antes de parar os túneis, atualize a configuração e reinicie Horizon/Reverb conforme a infraestrutura permanente. Reponha na UAZAPI o webhook anterior de `chait.test`, ou registre uma URL pública permanente antes de continuar a operação. Não deixe fluxos interativos dependentes de uma URL Quick Tunnel encerrada. Preserve as evidências sem credenciais e descarte dados temporários pelos comandos de manutenção existentes.
 
 O ensaio de 16/10/2026 foi encerrado em 17/10/2026 com o `.env` anterior restaurado e os perfis locais vazios. O [resultado](../../artifacts/tunnel-homologacao/resultado.md) registra o que passou e a falha dos chips. A URL `chait.test` repõe o estado local anterior; ela não fornece recebimento público fora deste Mac.

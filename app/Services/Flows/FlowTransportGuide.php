@@ -49,7 +49,7 @@ A confirmação substitui e salva todos os blocos do rascunho e da prévia compa
 - Arquivos são pendências: informe `media_type`, descrição em `original_name` e legenda opcional. O usuário anexa o arquivo depois; nenhum arquivo é transportado.
 - Atendentes, outros fluxos e sequências precisam ser selecionados manualmente no editor. Preserve a operação, omitindo o destino.
 - Abrir atendimento humano ou pausar automações encerra a execução e deve ser a última ação do bloco.
-- Botão no Conteúdo não cria ramificações nem espera clique. Use Menu para escolhas com caminhos diferentes. Formatos interativos dependem da homologação da conexão antes de publicar.
+- Botão no Conteúdo não cria ramificações nem espera clique. Use Menu para escolhas com caminhos diferentes.
 - Limite: 5 MiB, 200 blocos e 500 conexões. Campos e listas têm os limites descritos no contrato abaixo.
 - Configurações podem ficar pendentes, mas não invente propriedades, blocos ou ligações. Se a importação falhar, cole os erros copiados na IA e peça uma correção.
 - Ao aperfeiçoar um arquivo exportado com um bloco IA já existente, preserve esse bloco, suas instruções, identificador e ligações. O importador o reconhece; este guia documenta somente a criação dos demais blocos e não ensina a criar ou configurar blocos IA.

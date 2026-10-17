@@ -1,7 +1,9 @@
 # Bloco Menu
 
+> **Liberação em 17/10/2026:** por decisão do responsável, publicação e execução estão liberadas em todas as conexões, inclusive produção, sem perfis ou variáveis de homologação. A validação real em produção será feita pelo responsável; esta liberação não acrescenta evidências de homologação. Os ensaios anteriores permanecem como histórico.
+
 > **Data:** 2026-10-14  
-> **Estado:** editor, contrato, Assistente IA e executor implementados. Botões e Lista foram homologados somente na conexão local 1 em 16/10/2026; a produção permanece pendente.
+> **Estado:** editor, contrato, Assistente IA e executor implementados; formatos Numérico, Botões e Lista liberados em todas as conexões.
 
 ## Comportamento aprovado
 
@@ -29,7 +31,7 @@ O grafo mantém `schema_version: 2`, com tipo `menu`. Campos em `data`:
 | `max_invalid_replies` | Inteiro de 1 a 10; padrão 3. |
 | `list_button_text` | Texto de abertura da Lista, até 120 caracteres; padrão Ver opções. |
 
-Rótulos têm até 120 caracteres, uma linha e não aceitam `|`, usado como separador do provedor. A mensagem numérica completa, incluindo instrução e enumeração, deve caber em 4.000 caracteres. São limites da aplicação; limites específicos interativos são medidos na homologação. Publicação exige pergunta, pelo menos uma opção preenchida, mensagem de erro, prazo e limite válidos. Lista também exige texto de abertura. Rascunhos incompletos podem ser salvos.
+Rótulos têm até 120 caracteres, uma linha e não aceitam `|`, usado como separador do provedor. A mensagem numérica completa, incluindo instrução e enumeração, deve caber em 4.000 caracteres. São limites da aplicação; os limites adicionais dos antigos perfis por conexão foram retirados. Publicação exige pergunta, pelo menos uma opção preenchida, mensagem de erro, prazo e limite válidos. Lista também exige texto de abertura. Rascunhos incompletos podem ser salvos.
 
 `FlowCapabilities::outputsFor()` resolve saídas reais por nó. O catálogo declara `dynamic_outputs` (`field: options`, `prefix: option:`), compartilhado pelo editor e pela IA. Não ligar pelo índice visual.
 
@@ -53,20 +55,7 @@ Timeout, 409, 5xx, resposta sem identificação ou Queued/Pending levam à conci
 
 ## Liberação dos formatos interativos
 
-Por padrão, `config/flow-menu.php` mantém `connections` vazio. Publicação de Botões/Lista é recusada, mas a configuração pode ser preservada no rascunho. A remoção da homologação também impede novos envios interativos.
-
-Após testar uma conexão real, registrar seu ID, formato e limites comprovados:
-
-```php
-'connections' => [
-    // ID real => [
-    //     'button' => ['verified' => true, 'max_options' => LIMITE_MEDIDO, 'max_label_length' => LIMITE_MEDIDO],
-    //     'list' => ['verified' => true, 'max_options' => LIMITE_MEDIDO, 'max_label_length' => LIMITE_MEDIDO],
-    // ],
-],
-```
-
-Não habilitar apenas porque `/send/menu` respondeu 200. Confirmar cliques inequívocos, distinção de texto igual ao rótulo, menus antigos, limites e renderização nos clientes relevantes. O webhook informa que campos condicionais variam; homologação real é obrigatória. [Eventos messages](https://docs.uazapi.com/webhook/messages).
+Botões e Lista estão disponíveis para publicação e envio sem cadastro por conexão. `config/flow-menu.php` mantém apenas o orçamento e o intervalo de conciliação. Permanecem as validações de pergunta, opções, rótulos, prazo e tentativas. O responsável validará renderização e seleções no WhatsApp de produção, incluindo texto digitado igual ao rótulo e escolhas de menus antigos.
 
 ## Verificação
 

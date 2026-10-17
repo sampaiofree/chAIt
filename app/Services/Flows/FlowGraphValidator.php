@@ -5,7 +5,6 @@ namespace App\Services\Flows;
 use App\Models\Flow;
 use App\Models\FlowAsset;
 use App\Models\Sequence;
-use App\Models\UazapiConnection;
 use App\Models\Workspace;
 use App\Models\WorkspaceOpenAiIntegration;
 use Illuminate\Support\Facades\Http;
@@ -261,13 +260,10 @@ class FlowGraphValidator
                 if ($items === []) {
                     $this->invalid("graph.nodes.{$id}", 'Adicione ao menos um texto ou arquivo ao bloco Conteúdo.');
                 }
-                foreach (app(FlowContentButton::class)->issues($items, $workspace) as $path => $message) {
+                foreach (app(FlowContentButton::class)->issues($items) as $path => $message) {
                     $this->invalid("graph.nodes.{$id}.{$path}", $message);
                 }
                 foreach ($items as $item) {
-                    if (ContactTemplate::itemHasFields($item) && ! app(ContactTemplate::class)->verified(UazapiConnection::where('workspace_id', $workspace->id)->value('id'))) {
-                        $this->invalid('graph.nodes.'.$node['id'].'.items.'.$item['id'].'.contact_fields', 'Os campos dinâmicos aguardam homologação de conteúdo recebido na conexão WhatsApp. O rascunho pode ser salvo.');
-                    }
                     if ($item['kind'] === 'text' && trim(ContactTemplate::display($item['text'] ?? '')) === '') {
                         $this->invalid("graph.nodes.{$id}", 'Preencha os textos do bloco Conteúdo.');
                     }
@@ -277,7 +273,7 @@ class FlowGraphValidator
                 }
             }
             if ($node['type'] === 'menu') {
-                foreach (app(FlowMenu::class)->issues($data, $workspace) as $path => $message) {
+                foreach (app(FlowMenu::class)->issues($data) as $path => $message) {
                     $this->invalid("graph.nodes.{$id}.{$path}", $message);
                 }
             }
@@ -304,9 +300,6 @@ class FlowGraphValidator
                             }
                         }
                     }
-                }
-                if (ContactTemplate::hasFields($data['ai_prompt'] ?? '') && ! app(ContactTemplate::class)->verified(UazapiConnection::where('workspace_id', $workspace->id)->value('id'))) {
-                    $this->invalid('graph.nodes.'.$id.'.ai_prompt', 'O prompt com campos do contato aguarda homologação da conexão WhatsApp.');
                 }
                 if (trim(ContactTemplate::display($data['ai_prompt'] ?? '')) === '' || ! in_array($data['ai_model'] ?? '', ['gpt-6-luna', 'gpt-6.1-sol', 'gpt-6-astra'], true)
                     || ! isset($data['ai_inactivity_seconds']) || ! in_array($data['ai_expiry_action'] ?? '', ['end', 'human'], true)

@@ -23,9 +23,6 @@ if (! in_array($format, ['button', 'list'], true)) {
 $connection = UazapiConnection::findOrFail(1);
 $contact = Contact::findOrFail(3);
 $thread = Thread::findOrFail(3);
-if (! app(FlowMenu::class)->profile($connection, $format)) {
-    throw new RuntimeException('Formato sem perfil local.');
-}
 
 $data = array_replace(FlowMenu::defaults(), [
     'menu_format' => $format,

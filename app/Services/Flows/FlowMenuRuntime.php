@@ -26,8 +26,8 @@ class FlowMenuRuntime
             if ($execution->status !== 'running' || $execution->current_node_id !== $node['id']) {
                 return;
             }
-            if ($this->menus->issues($node['data'], $execution->workspace) !== []) {
-                app(FlowRuntime::class)->finish($execution, 'failed', 'Configuração ou homologação inválida no Menu.');
+            if ($this->menus->issues($node['data']) !== []) {
+                app(FlowRuntime::class)->finish($execution, 'failed', 'Configuração inválida no Menu.');
 
                 return;
             }
@@ -251,11 +251,6 @@ class FlowMenuRuntime
                 if ($transport['kind'] === 'error' || $transport['mode'] === 'numeric') {
                     $message = $this->client->sendText($execution->connection, $to, $transport['kind'] === 'error' ? $data['invalid_reply_text'] : $this->menus->numericText($data), $transport['track_id']);
                 } else {
-                    if (! $this->menus->profile($execution->connection, $transport['mode'])) {
-                        $this->fail($waitId, 'O formato interativo perdeu sua homologação.');
-
-                        return;
-                    }
                     $message = $this->client->sendMenu($execution->connection, $to, $transport['mode'], $data['question'], array_map(fn ($option) => $option['label'].'|'.$this->selectionId($wait, $option['id']), $data['options']), $data['list_button_text'] ?? null, $transport['track_id']);
                 }
             } catch (UazapiRejectedException $exception) {

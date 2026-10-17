@@ -7,7 +7,6 @@ use App\Models\FlowAiConversation;
 use App\Models\FlowAiMessage;
 use App\Models\FlowAiOperation;
 use App\Models\FlowAiRun;
-use App\Models\UazapiConnection;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceOpenAiIntegration;
@@ -159,7 +158,7 @@ class AssistantTools
         foreach ($graph['nodes'] as $node) {
             $d = $node['data'];
             if ($node['type'] === 'menu') {
-                foreach (app(FlowMenu::class)->issues($d, $workspace) as $path => $message) {
+                foreach (app(FlowMenu::class)->issues($d) as $path => $message) {
                     $pending[] = ['node_id' => $node['id'], 'path' => $path, 'message' => $message];
                 }
 
@@ -174,17 +173,9 @@ class AssistantTools
                 continue;
             }
             if ($node['type'] === 'content') {
-                foreach ($d['items'] ?? [] as $index => $item) {
-                    if (ContactTemplate::itemHasFields($item) && ! app(ContactTemplate::class)->verified(UazapiConnection::where('workspace_id', $workspace->id)->value('id'))) {
-                        $pending[] = ['node_id' => $node['id'], 'path' => 'items.'.$index.'.contact_fields', 'message' => 'Campos dinâmicos aguardam homologação da conexão WhatsApp.'];
-                    }
-                }
-                foreach (app(FlowContentButton::class)->issues($d['items'] ?? [], $workspace) as $path => $message) {
+                foreach (app(FlowContentButton::class)->issues($d['items'] ?? []) as $path => $message) {
                     $pending[] = ['node_id' => $node['id'], 'path' => $path, 'message' => $message];
                 }
-            }
-            if ($node['type'] === 'ai' && ContactTemplate::hasFields($d['ai_prompt'] ?? '') && ! app(ContactTemplate::class)->verified(UazapiConnection::where('workspace_id', $workspace->id)->value('id'))) {
-                $pending[] = ['node_id' => $node['id'], 'path' => 'ai_prompt', 'message' => 'Prompt com campos do contato aguarda homologação da conexão.'];
             }
             $missing = match ($node['type']) {
                 'content' => empty($d['items']) || collect($d['items'])->contains(fn ($i) => ($i['kind'] === 'text' && trim(ContactTemplate::display($i['text'] ?? '')) === '') || ($i['kind'] === 'media' && empty($i['asset_id']))),

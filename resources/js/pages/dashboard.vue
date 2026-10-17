@@ -1066,7 +1066,7 @@ function receiveChat(event: ChatUpdate) {
         if ((current?.revision || 0) > (incoming.revision || 0)) return;
         const matches =
             (assignment.value !== 'mine' ||
-                incoming.assigned_to?.id === me.value.id) &&
+                incoming.assigned_to?.id === me.value?.id) &&
             (assignment.value !== 'unassigned' || !incoming.assigned_to) &&
             (statusFilter.value !== 'open' ||
                 ['open', 'in_progress'].includes(incoming.status)) &&
@@ -1346,7 +1346,7 @@ const canCompose = computed(
     () =>
         !!selected.value &&
         (!selected.value.assigned_to ||
-            selected.value.assigned_to.id === me.value.id),
+            selected.value.assigned_to.id === me.value?.id),
 );
 const canRecord = computed(
     () =>

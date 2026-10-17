@@ -15,25 +15,14 @@ export type ContentButtonItem = {
     text?: ContactTemplate;
     button?: ContentButton;
 };
-export type ContentButtonProfile = {
-    verified: boolean;
-    max_text_length: number;
-    max_label_length: number;
-    max_value_length?: number;
-    max_reply_id_length?: number;
-};
 export type ContentButtonCatalog = {
     max_per_content: number;
     kinds: string[];
     reply_help: string;
-    profiles: Partial<
-        Record<'url' | 'reply' | 'copy', ContentButtonProfile | null>
-    >;
 };
 
 export function contentButtonErrors(
     item: ContentButtonItem,
-    profile?: ContentButtonProfile | null,
 ): Record<string, string> {
     const errors: Record<string, string> = {};
     const literal = (value?: ContactTemplate) =>
@@ -89,27 +78,17 @@ export function contentButtonErrors(
         errors.copy_text = 'Use uma linha, sem o caractere |.';
     }
 
-    if (
-        literal(item.text).length >
-        Math.min(4000, profile?.max_text_length ?? 4000)
-    ) {
+    if (literal(item.text).length > 4000) {
         errors.text = 'Texto acima do limite permitido.';
     }
 
-    if (
-        literal(original.label).length >
-        Math.min(120, profile?.max_label_length ?? 120)
-    ) {
+    if (literal(original.label).length > 120) {
         errors.label = 'Texto do botão acima do limite permitido.';
     }
 
     const field = button.kind === 'url' ? 'url' : 'copy_text';
 
-    if (
-        button.kind !== 'reply' &&
-        literal(original[field]).length >
-            Math.min(4000, profile?.max_value_length ?? 4000)
-    ) {
+    if (button.kind !== 'reply' && literal(original[field]).length > 4000) {
         errors[field] = 'Destino acima do limite permitido.';
     }
 

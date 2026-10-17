@@ -216,21 +216,18 @@ test('content button validates near fields and can be added by keyboard', async 
     ).toHaveCount(0);
 });
 
-test('content button publication explains pending homologation at its type field', async ({
+test('content button publishes without connection homologation', async ({
     page,
 }) => {
     await fixture(page, true);
     await page.getByRole('button', { name: 'Publicar', exact: true }).click();
-    await expect(page.getByRole('dialog')).toContainText('aguarda homologação');
-    await page.getByRole('button', { name: 'Entendi', exact: true }).click();
+    await expect(page.getByRole('dialog')).toContainText('Fluxo publicado');
     await expect(
         page.locator('.content-button-editor [role="alert"]'),
-    ).toContainText(['aguarda homologação']);
-    await expect(
-        page
-            .locator('.vue-flow__node')
-            .filter({ hasText: 'Apresentar cursos' }),
-    ).toContainText('Inclui Botão · Tenho interesse');
+    ).toHaveCount(0);
+    await expect(page.locator('.content-button-editor')).not.toContainText(
+        'aguarda homologação',
+    );
 });
 
 test('content button remains readable in responsive light and dark themes with long text', async ({

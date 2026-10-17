@@ -161,15 +161,9 @@ class FlowRuntime
                     $item = $this->prepareContentItem($execution, $item);
                     if ($item['kind'] === 'button') {
                         app(FlowGraphValidator::class)->validate($graph);
-                        $issues = app(FlowContentButton::class)->issues([$item], $execution->connection->workspace, $execution->connection);
+                        $issues = app(FlowContentButton::class)->issues([$item]);
                         if ($issues !== []) {
                             throw ValidationException::withMessages($issues);
-                        }
-                        if (($item['button']['kind'] ?? '') === 'reply') {
-                            $profile = app(FlowContentButton::class)->profile($execution->connection, 'reply');
-                            if (strlen(app(FlowContentButton::class)->replyId($execution, $node['id'], $item['id'])) > $profile['max_reply_id_length']) {
-                                throw new \RuntimeException('Identificador acima do limite homologado.');
-                            }
                         }
                     }
                     // Persist intent before transport. A recovered job consults this identifier instead of sending again.
@@ -488,9 +482,6 @@ class FlowRuntime
     private function prepareContentItem(FlowExecution $execution, array $item): array
     {
         $templates = app(ContactTemplate::class);
-        if (ContactTemplate::itemHasFields($item) && ! $templates->verified($execution->uazapi_connection_id)) {
-            throw new TemplateContentException('compatibility_pending', 'contact_fields');
-        }
         $snapshot = $templates->snapshot($execution->workspace_id, $execution->contact_id);
         if (in_array($item['kind'], ['text', 'button'], true)) {
             $item['text'] = $templates->rendered($item['text'] ?? '', $snapshot, 4000, 'text', true);

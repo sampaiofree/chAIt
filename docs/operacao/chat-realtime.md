@@ -55,6 +55,7 @@ LOG_DAILY_DAYS=7
 
 4. Supervisionar `php artisan reverb:start --host=127.0.0.1 --port=8080` e `php artisan horizon`, com reinício automático. Reverb é um serviço adicional, não ocupa workers PHP-FPM por conexão.
 5. No domínio WebSocket, configurar proxy HTTPS para `127.0.0.1:8080`, preservando `/app/` e `/apps/`, HTTP/1.1, headers `Upgrade`, `Connection: upgrade`, host e tempo de leitura suficiente. Publicar somente a porta HTTPS; manter 8080 privada. Não habilitar logs de corpos, query strings sensíveis ou debug do Reverb.
+   Em uma zona Cloudflare com configuração DNS completa, o certificado Universal SSL cobre apenas o domínio raiz e subdomínios de primeiro nível. Para um host mais profundo, confirme um certificado de borda específico ou use um host já coberto; uma falha de TLS na borda impede o navegador de chegar ao Reverb. Consulte as [limitações do Universal SSL](https://developers.cloudflare.com/ssl/edge-certificates/universal-ssl/limitations/).
 6. Manter cron `schedule:run` a cada minuto. Executar `php artisan optimize`, `php artisan horizon:terminate` e `php artisan reverb:restart` após alterações, sob os gerenciadores de processos.
 7. Validar sessão, assinatura de canal privado e tráfego ponta a ponta em homologação antes da liberação.
 

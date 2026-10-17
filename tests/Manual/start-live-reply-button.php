@@ -3,7 +3,6 @@
 use App\Models\Contact;
 use App\Models\Thread;
 use App\Models\UazapiConnection;
-use App\Services\Flows\FlowContentButton;
 use App\Services\Flows\FlowRuntime;
 use Illuminate\Contracts\Console\Kernel;
 
@@ -20,9 +19,6 @@ if (($argv[1] ?? '') !== '--send') {
 $connection = UazapiConnection::findOrFail(1);
 $contact = Contact::findOrFail(3);
 $thread = Thread::findOrFail(3);
-if (! app(FlowContentButton::class)->profile($connection, 'reply')) {
-    throw new RuntimeException('Ative o perfil provisório local para testar a resposta.');
-}
 $field = $connection->workspace->contactCustomFields()->firstOrCreate(['name' => 'Homologação Resposta'], ['type' => 'text']);
 $item = ['id' => 'reply-test', 'kind' => 'button', 'text' => 'Homologação do botão Resposta.',
     'button' => ['kind' => 'reply', 'label' => 'Responder teste']];

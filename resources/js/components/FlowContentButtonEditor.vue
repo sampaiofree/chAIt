@@ -11,14 +11,12 @@ import {
 import {
     contentButtonErrors,
     type ContentButtonItem,
-    type ContentButtonCatalog,
 } from '@/lib/flowContentButton';
 
 const props = defineProps<{
     item: ContentButtonItem;
     fields?: ContactFields;
     workspaceId: number;
-    catalog?: ContentButtonCatalog;
     errors: Record<string, string>;
 }>();
 const emit = defineEmits<{ change: [] }>();
@@ -41,11 +39,8 @@ function changeKind(kind: string) {
 const button = computed(
     () => props.item.button || { kind: 'url' as const, label: '' },
 );
-const profile = computed(
-    () => props.catalog?.profiles[button.value.kind || 'url'],
-);
 const errors = computed<Record<string, string>>(() => ({
-    ...(touched.value ? contentButtonErrors(props.item, profile.value) : {}),
+    ...(touched.value ? contentButtonErrors(props.item) : {}),
     ...props.errors,
     ...(kindError.value ? { kind: kindError.value } : {}),
 }));
@@ -76,7 +71,7 @@ function changed() {
                 aria-label="Texto da mensagem"
                 v-model="item.text"
                 rows="3"
-                :maxlength="Math.min(4000, profile?.max_text_length ?? 4000)"
+                maxlength="4000"
                 :aria-invalid="!!errors.text"
                 :aria-describedby="
                     errors.text ? `${item.id}-text-error` : undefined
@@ -118,7 +113,6 @@ function changed() {
         </p>
         <p :id="`${item.id}-kind-help`" class="button-help">
             <template v-if="button.kind === 'reply'">{{
-                catalog?.reply_help ||
                 'O clique envia uma resposta do contato. Para aguardar essa resposta, utilize o bloco Aguardar Resposta. Para criar caminhos diferentes, utilize o bloco Menu.'
             }}</template>
             <template v-else-if="button.kind === 'copy'"
@@ -140,7 +134,7 @@ function changed() {
                 :id="`${item.id}-label`"
                 aria-label="Texto do botão"
                 v-model="button.label"
-                :maxlength="Math.min(120, profile?.max_label_length ?? 120)"
+                maxlength="120"
                 :aria-invalid="!!errors.label"
                 :aria-describedby="
                     errors.label ? `${item.id}-label-error` : undefined
@@ -169,9 +163,7 @@ function changed() {
                     aria-label="Endereço URL"
                     v-model="button.url"
                     placeholder="https://exemplo.com/cursos"
-                    :maxlength="
-                        Math.min(4000, profile?.max_value_length ?? 4000)
-                    "
+                    maxlength="4000"
                     :aria-invalid="!!errors.url"
                     :aria-describedby="
                         errors.url ? `${item.id}-url-error` : undefined
@@ -199,9 +191,7 @@ function changed() {
                     aria-label="Texto para copiar"
                     v-model="button.copy_text"
                     placeholder="Ex.: CUPOM10"
-                    :maxlength="
-                        Math.min(4000, profile?.max_value_length ?? 4000)
-                    "
+                    maxlength="4000"
                     :aria-invalid="!!errors.copy_text"
                     :aria-describedby="
                         errors.copy_text ? `${item.id}-copy-error` : undefined
@@ -218,10 +208,6 @@ function changed() {
                 {{ errors.copy_text }}
             </p>
         </template>
-        <p v-if="!profile" class="button-help" role="status">
-            Este tipo aguarda homologação da conexão WhatsApp para publicar.
-            Você pode configurar e salvar o rascunho.
-        </p>
         <div class="button-preview" aria-label="Prévia do elemento Botão">
             <small>Prévia da mensagem</small>
             <p>

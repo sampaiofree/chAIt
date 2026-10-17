@@ -4,40 +4,20 @@ namespace App\Services\Flows;
 
 use App\Models\FlowExecution;
 use App\Models\UazapiConnection;
-use App\Models\Workspace;
 
 class FlowContentButton
 {
     public const HELP = 'O clique envia uma resposta do contato. Para aguardar essa resposta, utilize o bloco Aguardar Resposta. Para criar caminhos diferentes, utilize o bloco Menu.';
 
-    public function profile(?UazapiConnection $connection, string $kind): ?array
+    public function catalog(): array
     {
-        $profile = config('flow-content-button.connections.'.($connection?->id ?? 0).'.'.$kind);
-        if (! is_array($profile) || ($profile['verified'] ?? false) !== true) {
-            return null;
-        }
-        foreach (['max_text_length', 'max_label_length', $kind === 'reply' ? 'max_reply_id_length' : 'max_value_length'] as $key) {
-            if (! is_int($profile[$key] ?? null) || $profile[$key] < 1) {
-                return null;
-            }
-        }
-
-        return $profile;
-    }
-
-    public function catalog(?Workspace $workspace): array
-    {
-        $connection = $workspace ? UazapiConnection::where('workspace_id', $workspace->id)->first() : null;
-
         return ['max_per_content' => 1, 'kinds' => ['url', 'reply', 'copy'], 'reply_help' => self::HELP,
-            'profiles' => collect(['url', 'reply', 'copy'])->mapWithKeys(fn ($kind) => [$kind => $this->profile($connection, $kind)])->all(),
-            'matching' => 'IDs de resposta são derivados pelo servidor; não os configure. O rótulo da versão enviada é o texto recebido. Publicação e envio exigem homologação do tipo na conexão.'];
+            'matching' => 'IDs de resposta são derivados pelo servidor; não os configure. O rótulo da versão enviada é o texto recebido.'];
     }
 
-    public function issues(array $items, Workspace $workspace, ?UazapiConnection $connection = null): array
+    public function issues(array $items): array
     {
         $issues = [];
-        $connection ??= UazapiConnection::where('workspace_id', $workspace->id)->first();
         foreach ($items as $index => $item) {
             if (($item['kind'] ?? '') !== 'button') {
                 continue;
@@ -59,23 +39,7 @@ class FlowContentButton
             if ($kind !== 'reply' && trim(ContactTemplate::display($button[$field] ?? '')) === '') {
                 $issues[$prefix.'button.'.$field] = $kind === 'url' ? 'Preencha o endereço URL.' : 'Preencha o texto para copiar.';
             }
-            $profile = $this->profile($connection, $kind);
-            if (! $profile) {
-                $issues[$prefix.'button.kind'] = 'Este tipo de botão aguarda homologação da conexão WhatsApp. Você pode salvar o rascunho.';
 
-                continue;
-            }
-            if ($kind === 'reply' && $profile['max_reply_id_length'] < strlen('content:'.PHP_INT_MAX.':'.str_repeat('0', 32))) {
-                $issues[$prefix.'button.kind'] = 'O limite homologado não comporta o identificador de resposta do sistema.';
-            }
-            foreach (['text' => [$item['text'] ?? '', 'max_text_length'], 'button.label' => [$button['label'] ?? '', 'max_label_length']] as $key => [$value, $limit]) {
-                if (mb_strlen(is_array($value) ? '' : $value) > $profile[$limit]) {
-                    $issues[$prefix.$key] = 'Texto acima do limite homologado para este tipo de botão.';
-                }
-            }
-            if ($kind !== 'reply' && mb_strlen(is_array($button[$field] ?? null) ? '' : ($button[$field] ?? '')) > $profile['max_value_length']) {
-                $issues[$prefix.'button.'.$field] = 'Destino acima do limite homologado para este tipo de botão.';
-            }
         }
 
         return $issues;

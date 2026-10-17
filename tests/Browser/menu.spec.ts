@@ -249,28 +249,35 @@ test('menu inline validation and configured wait remain usable with keyboard and
     }
 });
 
-test('interactive publication explains connection homologation next to the menu format', async ({
-    page,
-}) => {
-    const { endpoint } = await fixture(page);
-    await page.getByLabel('Formato', { exact: true }).selectOption('button');
-    await page.getByRole('button', { name: 'Salvar', exact: true }).click();
-    await expect
-        .poll(async () => {
-            const state = (
-                await (await page.request.get(`${endpoint}/assistant`)).json()
-            ).data;
-
-            return state.session === null;
-        })
-        .toBeTruthy();
-    await page.getByRole('button', { name: 'Publicar', exact: true }).click();
-    await expect(page.getByRole('dialog')).toContainText('aguarda homologação');
-    await page.getByRole('button', { name: 'Entendi', exact: true }).click();
-    await expect(page.locator('.menu-config [role="alert"]')).toContainText(
-        'Use Numérico para publicar',
-    );
-});
+for (const format of ['button', 'list']) {
+    test(`interactive ${format} publishes without connection homologation`, async ({
+        page,
+    }) => {
+        const { endpoint } = await fixture(page);
+        await page.getByLabel('Formato', { exact: true }).selectOption(format);
+        await page.getByRole('button', { name: 'Salvar', exact: true }).click();
+        await expect
+            .poll(async () => {
+                const state = (
+                    await (
+                        await page.request.get(`${endpoint}/assistant`)
+                    ).json()
+                ).data;
+                return state.session === null;
+            })
+            .toBeTruthy();
+        await page
+            .getByRole('button', { name: 'Publicar', exact: true })
+            .click();
+        await expect(page.getByRole('dialog')).toContainText('Fluxo publicado');
+        await expect(page.locator('.menu-config [role="alert"]')).toHaveCount(
+            0,
+        );
+        await expect(page.locator('.menu-config')).not.toContainText(
+            'homologação',
+        );
+    });
+}
 
 test('menu option add connector creates a visible separate block with its stable handle', async ({
     page,
