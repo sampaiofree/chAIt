@@ -12,6 +12,7 @@ use App\Models\WorkspaceMembership;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -23,6 +24,27 @@ function uazapiWebhookUrl(UazapiConnection $connection): string
 
     return route('webhooks.uazapi', ['connection' => $connection->id, 'secret' => $secret]);
 }
+
+test('webhook inspection prints settings without exposing its URL or token', function () {
+    config(['services.uazapi.base_url' => 'https://api.uazapi.test']);
+    $connection = UazapiConnection::factory()->create();
+    $expected = uazapiWebhookUrl($connection);
+    Http::fake(['*/webhook' => Http::response([[
+        'enabled' => true,
+        'url' => $expected,
+        'events' => ['messages', 'connection'],
+        'excludeMessages' => [],
+        'addUrlEvents' => false,
+        'addUrlTypesMessages' => false,
+    ]])]);
+
+    expect(Artisan::call('chat:inspect-webhook', ['connectionId' => $connection->id]))->toBe(0);
+    $output = Artisan::output();
+    expect($output)->toContain('"url_matches_expected":true')
+        ->toContain('"messages"')
+        ->not->toContain($expected)
+        ->not->toContain((string) $connection->instance_token);
+});
 
 test('workspace admin creates a protected UAZAPI instance and receives its QR code', function () {
     config([

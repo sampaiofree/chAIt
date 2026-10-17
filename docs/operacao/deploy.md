@@ -203,6 +203,8 @@ Com o novo caminho habilitado, confirme em homologação:
 
 Use UAZAPI e IA simuladas nos testes automatizados. Não execute testes PHP/navegador contra o banco da aplicação; eles precisam de PostgreSQL isolado. Uma validação com WhatsApp real só deve ocorrer com destinatário de teste expressamente autorizado. Veja os resultados e pendências de dependências da implementação no [relatório de verificação](../../artifacts/chat-realtime/verificacao.md); os testes locais não substituem a homologação do servidor.
 
+Para identificar um webhook aceito mas sem conversa projetada no primeiro deploy, use o [diagnóstico de recebimento UAZAPI](diagnostico-uazapi-primeiro-deploy.md). A migração `2026_10_17_000003_track_uazapi_inbox_decisions` adiciona apenas códigos de decisão e contagem de entregas, sem guardar telefone ou conteúdo.
+
 ## Scheduler e Sequências
 
 A migration `2026_10_14_000001_create_sequences` é aplicada pelo comando normal de deploy. Ela acrescenta versões, etapas, participações e contexto exclusivo; preserva contatos, conversas e execuções existentes. O gerenciador adota uma execução legada ativa por contexto; se houver duplicidades, o início é recusado e deve ser revisado antes de liberar automações. Não apagar execuções para contornar esse diagnóstico.

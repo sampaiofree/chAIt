@@ -51,6 +51,10 @@ class InboundEvents
         };
         $hash = hash('sha256', $connection->id.'|'.$type.'|'.$identity);
         $inbox = UazapiInbox::firstOrCreate(['dedupe_hash' => $hash], ['status' => 'pending', 'workspace_id' => $connection->workspace_id, 'uazapi_connection_id' => $connection->id, 'event_type' => $type, 'chat_id' => $chat, 'payload' => $payload, 'expires_at' => now()->addHours(config('chat.temporary_hours'))]);
+        if (! $inbox->wasRecentlyCreated) {
+            UazapiInbox::whereKey($inbox->id)->increment('delivery_count');
+            $inbox->refresh();
+        }
         if ($inbox->status === 'failed' && $inbox->expires_at->isFuture()) {
             $inbox->update(['status' => 'pending']);
         }

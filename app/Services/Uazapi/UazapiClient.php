@@ -85,6 +85,11 @@ class UazapiClient
         ]));
     }
 
+    public function webhookConfiguration(UazapiConnection $connection): array
+    {
+        return $this->send($this->execute($connection, 'get', '/webhook', read: true));
+    }
+
     public function status(UazapiConnection $connection): array
     {
         return $this->send($this->execute($connection, 'get', '/instance/status', interactive: true, read: true));

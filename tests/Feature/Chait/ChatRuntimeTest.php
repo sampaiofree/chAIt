@@ -149,20 +149,28 @@ test('only new inbound messages discover a conversation in either chat mode', fu
     $this->postJson($url, $message('old', ['messageTimestamp' => now()->subDay()->timestamp * 1000]))->assertOk();
     $this->postJson($url, $message('seconds', ['messageTimestamp' => now()->timestamp]))->assertOk();
     $this->postJson($url, $message('group', ['isGroup' => true]))->assertOk();
+    $this->postJson($url, $message('lid', ['chatid' => '12345@lid']))->assertOk();
+    $this->postJson($url, $message('invalid-phone', ['chatid' => '123@s.whatsapp.net']))->assertOk();
     $this->postJson($url, [...$message('wrong-chat'), 'chat' => ['chatid' => '5527888888888@s.whatsapp.net']])->assertUnprocessable();
     foreach (UazapiInbox::orderBy('id')->get() as $inbox) {
         app()->call([new ProcessInboundEvent($inbox->id), 'handle']);
     }
     expect(Thread::count())->toBe(0)->and(Contact::count())->toBe(0);
+    expect(UazapiInbox::orderBy('id')->pluck('decision')->all())->toBe(['chat_unknown', 'outbound_unknown', 'before_activation', 'invalid_timestamp', 'group_message', 'unsupported_jid', 'invalid_phone']);
 
     $this->postJson($url, $message('new'))->assertOk();
     $this->postJson($url, $message('provider-variant', ['messageid' => 'new']))->assertOk();
-    expect(UazapiInbox::where('event_type', 'messages')->count())->toBe(5);
+    expect(UazapiInbox::where('event_type', 'messages')->count())->toBe(7);
+    expect(UazapiInbox::latest('id')->first()->delivery_count)->toBe(2);
     app()->call([new ProcessInboundEvent(UazapiInbox::latest('id')->first()->id), 'handle']);
     expect(UazapiInbox::latest('id')->first()->status)->toBe('processed');
+    expect(UazapiInbox::latest('id')->first()->decision)->toBe('inbound_projected');
     expect(Contact::count())->toBe(1)->and(Thread::count())->toBe(1)
         ->and(Thread::sole()->status)->toBe('bot')
         ->and(Thread::sole()->last_message_preview)->toBe('Olá')
+        ->and(Thread::sole()->unread_count)->toBe(1);
+    $this->postJson($url, $message('new'))->assertOk();
+    expect(UazapiInbox::latest('id')->first()->delivery_count)->toBe(3)
         ->and(Thread::sole()->unread_count)->toBe(1);
 
     $this->postJson($url, $message('second', ['text' => 'Outra']))->assertOk();
@@ -170,6 +178,24 @@ test('only new inbound messages discover a conversation in either chat mode', fu
     expect(Contact::count())->toBe(1)->and(Thread::count())->toBe(1)->and(Thread::sole()->unread_count)->toBe(2);
     $this->actingAs($user)->getJson(route('workspaces.conversations.index', $workspace))->assertOk()->assertJsonCount(1, 'data');
     Http::assertNothingSent();
+})->with([true, false]);
+
+test('message JID takes precedence over a provider-local chat record ID', function (bool $realtime) {
+    config(['chat.enabled' => $realtime]);
+    $f = runtimeChat();
+    $f['thread']->delete();
+    $f['thread']->contact->delete();
+    $chatId = '5527999999998@s.whatsapp.net';
+    receiveRuntimeWebhook($f, runtimeWebhook($f, 'local-chat-id', [
+        'message' => ['chatid' => $chatId],
+        'chat' => ['id' => 'provider-local-chat-record'],
+    ]))->assertOk();
+    $inbox = UazapiInbox::sole();
+    app()->call([new ProcessInboundEvent($inbox->id), 'handle']);
+
+    expect($inbox->fresh()->decision)->toBe('inbound_projected')
+        ->and(Thread::sole()->external_chat_id)->toBe($chatId)
+        ->and(Thread::sole()->last_inbound_at)->not->toBeNull();
 })->with([true, false]);
 
 test('reconnection preserves the original activation cutoff', function () {

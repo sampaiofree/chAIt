@@ -49,7 +49,7 @@ class ProcessInboundEvent implements ShouldQueue
             return;
         }
         if ($inbox->expires_at->isPast()) {
-            $inbox->update(['status' => 'expired', 'payload' => null]);
+            $inbox->update(['status' => 'expired', 'decision' => 'expired', 'payload' => null]);
 
             return;
         }
@@ -79,6 +79,7 @@ class ProcessInboundEvent implements ShouldQueue
                 }
                 $connection = UazapiConnection::findOrFail($inbox->uazapi_connection_id);
                 $payload = $inbox->payload ?? [];
+                $decision = 'ignored';
                 if ($inbox->event_type === 'connection') {
                     $raw = strtolower((string) (data_get($payload, 'instance.status') ?? (is_string($payload['status'] ?? null) ? $payload['status'] : '')));
                     if (in_array($raw, ['connected', 'open', 'online', 'disconnected', 'close', 'offline', 'connecting'], true)) {
@@ -86,6 +87,7 @@ class ProcessInboundEvent implements ShouldQueue
                         $phone = app(InternationalPhone::class)->normalize($payload['owner'] ?? data_get($payload, 'instance.phone'));
                         $connection->update(['status' => $connected ? 'connected' : ($raw === 'connecting' ? 'connecting' : 'disconnected'), 'phone' => $phone ?? $connection->phone, 'connected_at' => $connected ? ($connection->connected_at ?? now()) : null, 'activated_at' => $connected ? ($connection->activated_at ?? now()) : $connection->activated_at, 'provider_checked_at' => now()]);
                         $publisher->send($connection->workspace_id, 'connection.changed', ['status' => $connection->status, 'phone' => $connection->phone, 'connected_at' => $connection->connected_at, 'last_checked_at' => $connection->provider_checked_at]);
+                        $decision = 'connection_updated';
                     }
                 } elseif ($inbox->event_type === 'messages' || $inbox->event_type === 'chats') {
                     $message = $inbox->event_type === 'messages' ? ($payload['message'] ?? []) : null;
@@ -95,10 +97,28 @@ class ProcessInboundEvent implements ShouldQueue
                     $fromMe = $message['fromMe'] ?? data_get($message, 'key.fromMe');
                     $messageChat = $message['chatid'] ?? data_get($message, 'key.remoteJid');
                     $eligible = $message && $connection->activated_at && $milliseconds && $timestamp && $timestamp->gte($connection->activated_at)
-                        && is_bool($fromMe) && is_string($messageChat) && $messageChat === $inbox->chat_id && ! ($message['isGroup'] ?? false);
+                        && is_bool($fromMe) && is_string($messageChat) && $messageChat === $inbox->chat_id && ! ($message['isGroup'] ?? false) && ! ($payload['chat']['wa_isGroup'] ?? false);
+                    $decision = match (true) {
+                        ! $message && $inbox->event_type === 'chats' => 'chat_unknown',
+                        ! $message => 'message_missing',
+                        ! $connection->activated_at => 'not_activated',
+                        ! $milliseconds || ! $timestamp => 'invalid_timestamp',
+                        $timestamp->lt($connection->activated_at) => 'before_activation',
+                        ! is_bool($fromMe) => 'invalid_direction',
+                        ! is_string($messageChat) || $messageChat !== $inbox->chat_id => 'invalid_chat',
+                        ($message['isGroup'] ?? false) || ($payload['chat']['wa_isGroup'] ?? false) => 'group_message',
+                        ! $fromMe && ! preg_match('/^[0-9]+@s\.whatsapp\.net$/D', $messageChat) => 'unsupported_jid',
+                        ! $fromMe && app(InternationalPhone::class)->normalize(strstr($messageChat, '@', true)) === null => 'invalid_phone',
+                        default => 'unprojectable',
+                    };
                     $thread = null;
                     if (! $message || $eligible) {
                         $thread = $projection->sync($connection, $payload['chat'] ?? [], $message, (bool) ($eligible && ! $fromMe));
+                    }
+                    if ($thread) {
+                        $decision = ! $message ? 'chat_updated' : ($fromMe ? 'outbound_known' : 'inbound_projected');
+                    } elseif ($eligible && $fromMe) {
+                        $decision = 'outbound_unknown';
                     }
                     if ($thread && $message) {
                         $serialized = app(UazapiChatController::class)->transientMessage($message, $connection->workspace, $thread);
@@ -111,20 +131,21 @@ class ProcessInboundEvent implements ShouldQueue
                     $ids = data_get($payload, 'event.MessageIDs', []);
                     $state = strtolower((string) ($payload['state'] ?? data_get($payload, 'event.Type') ?? ''));
                     $thread = Thread::where('uazapi_connection_id', $connection->id)->where('external_chat_id', $inbox->chat_id)->first();
+                    $decision = $thread ? 'receipt_known' : 'receipt_unknown';
                     if ($thread && is_array($ids) && in_array($state, ['sent', 'delivered', 'read', 'played', 'failed'], true)) {
                         $publisher->send($connection->workspace_id, 'message.status', ['ids' => array_values(array_filter($ids, 'is_string')), 'status' => $state], $thread->id);
                     }
                 }
                 $connection->update(['chat_last_webhook_at' => now()]);
                 $inbox->refresh();
-                $inbox->update(['status' => 'processed', 'payload' => $inbox->consumers > 0 ? $inbox->payload : null]);
+                $inbox->update(['status' => 'processed', 'decision' => $decision, 'payload' => $inbox->consumers > 0 ? $inbox->payload : null]);
             }, 3);
             // Publish only after durable domain work and downstream job dispatches have committed.
             $lock->release();
             $publisher->flush();
         } catch (\Throwable $error) {
             // Do not let queue exceptions capture decrypted arguments or provider content.
-            $inbox->update(['status' => 'failed']);
+            $inbox->update(['status' => 'failed', 'decision' => 'processing_failed']);
             Log::error('Inbound processing failed.', ['inbox_id' => $inbox->id, 'exception_type' => $error::class]);
         } finally {
             $publisher->discard();

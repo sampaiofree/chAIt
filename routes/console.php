@@ -60,6 +60,27 @@ Artisan::command('chat:prune', function () {
 Artisan::command('chat:metrics', function () {
     $this->line(json_encode(app(ChatMaintenance::class)->metrics(), JSON_THROW_ON_ERROR));
 })->purpose('Expõe diagnóstico técnico do chat, sem conteúdo');
+Artisan::command('chat:inspect-webhook {connectionId}', function (UazapiClient $uazapi) {
+    $connection = UazapiConnection::findOrFail((int) $this->argument('connectionId'));
+    try {
+        $webhooks = $uazapi->webhookConfiguration($connection);
+    } catch (Throwable) {
+        $this->error('Não foi possível consultar a configuração do webhook da instância.');
+
+        return 1;
+    }
+    $secret = hash_hmac('sha256', 'uazapi-webhook:'.$connection->id, (string) config('app.key'));
+    $expected = route('webhooks.uazapi', ['connection' => $connection->id, 'secret' => $secret]);
+    $summary = collect($webhooks)->filter(fn ($webhook) => is_array($webhook))->map(fn (array $webhook) => [
+        'enabled' => $webhook['enabled'] ?? null,
+        'url_matches_expected' => hash_equals($expected, (string) ($webhook['url'] ?? '')),
+        'events' => $webhook['events'] ?? [],
+        'excludeMessages' => $webhook['excludeMessages'] ?? [],
+        'addUrlEvents' => $webhook['addUrlEvents'] ?? null,
+        'addUrlTypesMessages' => $webhook['addUrlTypesMessages'] ?? null,
+    ])->values()->all();
+    $this->line(json_encode(['connection_id' => $connection->id, 'webhooks' => $summary], JSON_THROW_ON_ERROR));
+})->purpose('Confere a configuração UAZAPI sem imprimir URL, token ou conteúdo');
 Artisan::command('chat:register-local-webhook {origin}', function (UazapiClient $uazapi) {
     if (! app()->environment('local')) {
         $this->error('Este comando é exclusivo do ambiente local.');

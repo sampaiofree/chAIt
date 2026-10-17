@@ -28,7 +28,8 @@ class ChatProjection
 
     public function sync(UazapiConnection $connection, array $chat, ?array $message = null, bool $allowCreate = false): ?Thread
     {
-        $external = (string) ($chat['wa_chatid'] ?? $chat['chatid'] ?? $chat['jid'] ?? $chat['id'] ?? $message['chatid'] ?? data_get($message, 'key.remoteJid') ?? '');
+        // chat.id is the provider's local chat record ID, not the WhatsApp JID.
+        $external = (string) ($message['chatid'] ?? data_get($message, 'key.remoteJid') ?? $chat['wa_chatid'] ?? $chat['chatid'] ?? $chat['jid'] ?? '');
         if ($external === '' || strlen($external) > 191 || str_contains($external, '@g.us') || ($chat['wa_isGroup'] ?? false) || ($message['isGroup'] ?? false)) {
             return null;
         }
