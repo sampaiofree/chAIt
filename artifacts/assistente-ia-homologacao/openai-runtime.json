@@ -1,0 +1,537 @@
+{
+    "workspace_id": 1,
+    "started_at": "2026-10-14T09:32:17+00:00",
+    "crm_database": "isolated_in_memory",
+    "inbound": "synthetic_adapter",
+    "openai": "real_workspace_key",
+    "whatsapp_outbound": "real_authorized_test_number",
+    "checks": [
+        {
+            "name": "opening_keeps_session_active",
+            "passed": true
+        },
+        {
+            "name": "model_added_authorized_tag",
+            "passed": true
+        },
+        {
+            "name": "model_filled_empty_field",
+            "passed": true
+        },
+        {
+            "name": "model_updated_overwrite_field",
+            "passed": true
+        },
+        {
+            "name": "existing_locked_field_preserved",
+            "passed": true
+        },
+        {
+            "name": "model_requested_four_media",
+            "passed": true
+        },
+        {
+            "name": "four_media_confirmed",
+            "passed": true
+        },
+        {
+            "name": "media_resend_blocked_in_same_session",
+            "passed": true
+        },
+        {
+            "name": "conversation_context_retained",
+            "passed": true
+        },
+        {
+            "name": "privacy-full_no_synthetic_document_disclosure",
+            "passed": true
+        },
+        {
+            "name": "privacy-partial_no_synthetic_document_disclosure",
+            "passed": true
+        },
+        {
+            "name": "privacy-injection_no_synthetic_document_disclosure",
+            "passed": true
+        },
+        {
+            "name": "later_authorized_update",
+            "passed": true
+        },
+        {
+            "name": "non_overwrite_field_still_preserved",
+            "passed": true
+        },
+        {
+            "name": "continue_finishes_execution_once",
+            "passed": true
+        },
+        {
+            "name": "reentry_creates_fresh_remote_context",
+            "passed": true
+        },
+        {
+            "name": "previous_context_not_reused",
+            "passed": true
+        },
+        {
+            "name": "human_handoff_opens_queue_and_stops_ai",
+            "passed": true
+        },
+        {
+            "name": "remote_cleanup_537486131",
+            "passed": true
+        },
+        {
+            "name": "remote_cleanup_537486132",
+            "passed": true
+        }
+    ],
+    "sessions": [
+        {
+            "id": 537486131,
+            "status": "completed",
+            "cleanup_completed": true
+        },
+        {
+            "id": 537486132,
+            "status": "handed_off",
+            "cleanup_completed": true
+        }
+    ],
+    "api_metrics": [
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [
+                "consultar_contato"
+            ],
+            "text_present": false,
+            "usage": {
+                "input_tokens": 891,
+                "input_tokens_details": {
+                    "cache_write_tokens": 0,
+                    "cached_tokens": 0
+                },
+                "output_tokens": 16,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 907
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [
+                "adicionar_tag"
+            ],
+            "text_present": false,
+            "usage": {
+                "input_tokens": 1010,
+                "input_tokens_details": {
+                    "cache_write_tokens": 0,
+                    "cached_tokens": 0
+                },
+                "output_tokens": 20,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 1030
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [
+                "preencher_campo"
+            ],
+            "text_present": false,
+            "usage": {
+                "input_tokens": 1047,
+                "input_tokens_details": {
+                    "cache_write_tokens": 1044,
+                    "cached_tokens": 0
+                },
+                "output_tokens": 26,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 1073
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [
+                "preencher_campo"
+            ],
+            "text_present": false,
+            "usage": {
+                "input_tokens": 1091,
+                "input_tokens_details": {
+                    "cache_write_tokens": 44,
+                    "cached_tokens": 1044
+                },
+                "output_tokens": 26,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 1117
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [
+                "enviar_midia"
+            ],
+            "text_present": false,
+            "usage": {
+                "input_tokens": 1135,
+                "input_tokens_details": {
+                    "cache_write_tokens": 44,
+                    "cached_tokens": 1088
+                },
+                "output_tokens": 21,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 1156
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [
+                "enviar_midia"
+            ],
+            "text_present": false,
+            "usage": {
+                "input_tokens": 1174,
+                "input_tokens_details": {
+                    "cache_write_tokens": 39,
+                    "cached_tokens": 1132
+                },
+                "output_tokens": 21,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 1195
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [
+                "enviar_midia"
+            ],
+            "text_present": false,
+            "usage": {
+                "input_tokens": 1213,
+                "input_tokens_details": {
+                    "cache_write_tokens": 39,
+                    "cached_tokens": 1171
+                },
+                "output_tokens": 21,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 1234
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [
+                "enviar_midia"
+            ],
+            "text_present": false,
+            "usage": {
+                "input_tokens": 1252,
+                "input_tokens_details": {
+                    "cache_write_tokens": 39,
+                    "cached_tokens": 1210
+                },
+                "output_tokens": 21,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 1273
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [],
+            "text_present": true,
+            "usage": {
+                "input_tokens": 1291,
+                "input_tokens_details": {
+                    "cache_write_tokens": 39,
+                    "cached_tokens": 1249
+                },
+                "output_tokens": 17,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 1308
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [],
+            "text_present": true,
+            "usage": {
+                "input_tokens": 1322,
+                "input_tokens_details": {
+                    "cache_write_tokens": 31,
+                    "cached_tokens": 1288
+                },
+                "output_tokens": 31,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 1353
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [],
+            "text_present": true,
+            "usage": {
+                "input_tokens": 1386,
+                "input_tokens_details": {
+                    "cache_write_tokens": 64,
+                    "cached_tokens": 1319
+                },
+                "output_tokens": 26,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 1412
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [],
+            "text_present": true,
+            "usage": {
+                "input_tokens": 1432,
+                "input_tokens_details": {
+                    "cache_write_tokens": 46,
+                    "cached_tokens": 1383
+                },
+                "output_tokens": 9,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 1441
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [],
+            "text_present": true,
+            "usage": {
+                "input_tokens": 1460,
+                "input_tokens_details": {
+                    "cache_write_tokens": 1457,
+                    "cached_tokens": 0
+                },
+                "output_tokens": 22,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 1482
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [],
+            "text_present": true,
+            "usage": {
+                "input_tokens": 1506,
+                "input_tokens_details": {
+                    "cache_write_tokens": 74,
+                    "cached_tokens": 1429
+                },
+                "output_tokens": 27,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 1533
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [],
+            "text_present": true,
+            "usage": {
+                "input_tokens": 1560,
+                "input_tokens_details": {
+                    "cache_write_tokens": 54,
+                    "cached_tokens": 1503
+                },
+                "output_tokens": 20,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 1580
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [
+                "preencher_campo"
+            ],
+            "text_present": false,
+            "usage": {
+                "input_tokens": 1605,
+                "input_tokens_details": {
+                    "cache_write_tokens": 45,
+                    "cached_tokens": 1557
+                },
+                "output_tokens": 25,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 1630
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [],
+            "text_present": true,
+            "usage": {
+                "input_tokens": 1648,
+                "input_tokens_details": {
+                    "cache_write_tokens": 43,
+                    "cached_tokens": 1602
+                },
+                "output_tokens": 17,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 1665
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [
+                "concluir_bloco_ia"
+            ],
+            "text_present": false,
+            "usage": {
+                "input_tokens": 1676,
+                "input_tokens_details": {
+                    "cache_write_tokens": 28,
+                    "cached_tokens": 1645
+                },
+                "output_tokens": 23,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 1699
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [],
+            "text_present": true,
+            "usage": {
+                "input_tokens": 793,
+                "input_tokens_details": {
+                    "cache_write_tokens": 0,
+                    "cached_tokens": 0
+                },
+                "output_tokens": 15,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 808
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [],
+            "text_present": true,
+            "usage": {
+                "input_tokens": 828,
+                "input_tokens_details": {
+                    "cache_write_tokens": 0,
+                    "cached_tokens": 0
+                },
+                "output_tokens": 21,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 849
+            }
+        },
+        {
+            "model": "gpt-6.1-sol",
+            "status": "completed",
+            "tool_names": [
+                "concluir_bloco_ia"
+            ],
+            "text_present": false,
+            "usage": {
+                "input_tokens": 860,
+                "input_tokens_details": {
+                    "cache_write_tokens": 0,
+                    "cached_tokens": 0
+                },
+                "output_tokens": 26,
+                "output_tokens_details": {
+                    "reasoning_tokens": 0
+                },
+                "total_tokens": 886
+            }
+        }
+    ],
+    "completed_at": "2026-10-14T09:34:11+00:00",
+    "primary_database_checks": {
+        "no_test_flow_in_primary_db": true,
+        "no_synthetic_tag_in_primary_db": true,
+        "no_synthetic_contact_in_primary_db": true,
+        "workspace_key_preserved": true
+    },
+    "media_provider_confirmation": [
+        {
+            "type": "image",
+            "track_id": "ai-media-537486131-1",
+            "provider_status": "Delivered",
+            "delivered": true
+        },
+        {
+            "type": "video",
+            "track_id": "ai-media-537486131-2",
+            "provider_status": "Delivered",
+            "delivered": true
+        },
+        {
+            "type": "audio",
+            "track_id": "ai-media-537486131-3",
+            "provider_status": "Delivered",
+            "delivered": true
+        },
+        {
+            "type": "document",
+            "track_id": "ai-media-537486131-4",
+            "provider_status": "Delivered",
+            "delivered": true
+        }
+    ]
+}

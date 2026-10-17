@@ -1,0 +1,52 @@
+{
+    "workspace_id": 1,
+    "connection_id": 1,
+    "started_at": "2026-10-14T04:07:12+00:00",
+    "results": [
+        {
+            "type": "image",
+            "file": "teste-imagem.png",
+            "track_id": "assistant-test-0c9d10203620025e-image",
+            "status": "accepted",
+            "provider_message_id": "5527992857634:3EB0AEF65C807588B7B656",
+            "provider_status": "Delivered",
+            "initial_check_at": "2026-10-14T04:07:16+00:00",
+            "initial_status": "uncertain",
+            "confirmed_by": "message/find por track_id, sem reenvio"
+        },
+        {
+            "type": "video",
+            "file": "teste-video.mp4",
+            "track_id": "assistant-test-d1d856747cbb007c-video",
+            "status": "accepted",
+            "provider_message_id": "5527992857634:3EB0C3BD64A81C7C6C52D5",
+            "provider_status": "Delivered",
+            "initial_check_at": "2026-10-14T04:07:19+00:00",
+            "initial_status": "uncertain",
+            "confirmed_by": "message/find por track_id, sem reenvio"
+        },
+        {
+            "type": "audio",
+            "file": "teste-audio.mp3",
+            "track_id": "assistant-test-d2bed3746dee034d-audio",
+            "status": "accepted",
+            "provider_message_id": "5527992857634:3EB05CAF9F6CC8606BAA4B",
+            "provider_status": "Delivered",
+            "initial_check_at": "2026-10-14T04:07:21+00:00",
+            "initial_status": "uncertain",
+            "confirmed_by": "message/find por track_id, sem reenvio"
+        },
+        {
+            "type": "document",
+            "file": "teste-documento.txt",
+            "track_id": "assistant-test-e159be55952349b5-document",
+            "status": "accepted",
+            "provider_message_id": "5527992857634:3EB0FC7B2A63CB862A26C8",
+            "provider_status": "Delivered",
+            "initial_check_at": "2026-10-14T04:07:23+00:00",
+            "initial_status": "uncertain",
+            "confirmed_by": "message/find por track_id, sem reenvio"
+        }
+    ],
+    "evidence_recorded_at": "2026-10-14T06:14:04.609594-03:00"
+}

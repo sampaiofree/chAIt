@@ -1,0 +1,94 @@
+
+> build
+> vite build
+
+vite v8.0.3 building client environment for production...
+[2Ktransforming...✓ 3305 modules transformed.
+rendering chunks...
+computing gzip size...
+public/build/manifest.json                                  20.21 kB │ gzip:  2.45 kB
+public/build/assets/security-CMzElE6z.css                    0.06 kB │ gzip:  0.08 kB
+public/build/assets/profile-BG3spe5Q.css                     0.10 kB │ gzip:  0.10 kB
+public/build/assets/SequenceStatus-BKJ5_2Kp.css              0.26 kB │ gzip:  0.16 kB
+public/build/assets/AutomationNavigation-C5p2-aS_.css        0.36 kB │ gzip:  0.23 kB
+public/build/assets/confirm-password-B1Zugigl.css            0.43 kB │ gzip:  0.26 kB
+public/build/assets/reset-password-B41nLXB7.css              0.52 kB │ gzip:  0.28 kB
+public/build/assets/two-factor-challenge-C89S8koS.css        0.52 kB │ gzip:  0.28 kB
+public/build/assets/verify-email-CMnitIMz.css                0.63 kB │ gzip:  0.32 kB
+public/build/assets/AppSelect-BWu1D9LZ.css                   0.65 kB │ gzip:  0.33 kB
+public/build/assets/welcome-Dxe-sKPK.css                     0.66 kB │ gzip:  0.35 kB
+public/build/assets/openai-CuWqdVnW.css                      0.66 kB │ gzip:  0.32 kB
+public/build/assets/forgot-password-BsmgsZbM.css             0.71 kB │ gzip:  0.33 kB
+public/build/assets/register-DSUSz1EJ.css                    1.04 kB │ gzip:  0.42 kB
+public/build/assets/webhooks-zIKGIRWw.css                    1.26 kB │ gzip:  0.50 kB
+public/build/assets/SettingsLayout-u-ijeJUU.css              1.42 kB │ gzip:  0.53 kB
+public/build/assets/login-BIlundyO.css                       1.46 kB │ gzip:  0.51 kB
+public/build/assets/sequences-CNyPo9kZ.css                   1.68 kB │ gzip:  0.58 kB
+public/build/assets/appearance-3A6nUNEP.css                  1.81 kB │ gzip:  0.61 kB
+public/build/assets/whatsapp-BDoSrVwX.css                    1.94 kB │ gzip:  0.66 kB
+public/build/assets/triggers-Clg_6v5k.css                    2.02 kB │ gzip:  0.69 kB
+public/build/assets/editor-Ta7aIWxV.css                      2.54 kB │ gzip:  0.76 kB
+public/build/assets/team-PwqEnAQB.css                        2.79 kB │ gzip:  0.77 kB
+public/build/assets/contact-data-BSzw1--p.css                3.45 kB │ gzip:  1.01 kB
+public/build/assets/app-CJxzSyHR.css                         3.85 kB │ gzip:  1.06 kB
+public/build/assets/editor-ywTfIqJl.css                      4.05 kB │ gzip:  1.05 kB
+public/build/assets/flows-Cwd21hsY.css                       6.01 kB │ gzip:  1.52 kB
+public/build/assets/dashboard-CPmiKNoF.css                  19.66 kB │ gzip:  3.79 kB
+public/build/assets/editor-CUXRWpAB.css                     29.96 kB │ gzip:  5.58 kB
+public/build/assets/app-CEssA_RD.css                        47.79 kB │ gzip:  9.44 kB
+public/build/assets/chevron-up-B-FRSWOR.js                   0.14 kB │ gzip:  0.15 kB
+public/build/assets/plus-jBlKxoP9.js                         0.17 kB │ gzip:  0.16 kB
+public/build/assets/arrow-up-vv9pjrAj.js                     0.17 kB │ gzip:  0.17 kB
+public/build/assets/arrow-down-DHEwwJsS.js                   0.18 kB │ gzip:  0.17 kB
+public/build/assets/search-C5T2kZuP.js                       0.19 kB │ gzip:  0.17 kB
+public/build/assets/copy-L8DdFUm2.js                         0.25 kB │ gzip:  0.22 kB
+public/build/assets/ellipsis-BYh43B5p.js                     0.27 kB │ gzip:  0.19 kB
+public/build/assets/pencil-D9LqYm2h.js                       0.29 kB │ gzip:  0.23 kB
+public/build/assets/trash-y9r9CMTk.js                        0.36 kB │ gzip:  0.24 kB
+public/build/assets/PhoneInput-D5vIo_yD.js                   0.53 kB │ gzip:  0.36 kB
+public/build/assets/AppIconButton-DAxrNRGK.js                0.62 kB │ gzip:  0.39 kB
+public/build/assets/send-K1_Ngm13.js                         0.63 kB │ gzip:  0.38 kB
+public/build/assets/AutomationNavigation-9G6M7S5p.js         0.72 kB │ gzip:  0.43 kB
+public/build/assets/AppSelect-C-06MbL9.js                    0.73 kB │ gzip:  0.50 kB
+public/build/assets/AppButton-D5kVQ06O.js                    0.79 kB │ gzip:  0.46 kB
+public/build/assets/welcome-CSSH6Q5g.js                      0.91 kB │ gzip:  0.55 kB
+public/build/assets/VisuallyHidden-DjvItP-L.js               1.00 kB │ gzip:  0.58 kB
+public/build/assets/Textarea-K-mNaA5W.js                     1.04 kB │ gzip:  0.61 kB
+public/build/assets/verify-email-CQw5_scL.js                 1.04 kB │ gzip:  0.58 kB
+public/build/assets/forgot-password-CtXsJFQp.js              1.06 kB │ gzip:  0.64 kB
+public/build/assets/two-factor-challenge-DdEGpDI9.js         1.07 kB │ gzip:  0.61 kB
+public/build/assets/webhooks-V5t_Y8fU.js                     1.13 kB │ gzip:  0.71 kB
+public/build/assets/sequences-BH0paDax.js                    1.14 kB │ gzip:  0.73 kB
+public/build/assets/confirm-password-CDKpbraf.js             1.16 kB │ gzip:  0.66 kB
+public/build/assets/reset-password-muxzLhhp.js               1.30 kB │ gzip:  0.63 kB
+public/build/assets/Input-Ir2RWim6.js                        1.37 kB │ gzip:  0.74 kB
+public/build/assets/SequenceStatus-keVDUj26.js               1.46 kB │ gzip:  0.73 kB
+public/build/assets/SettingsLayout-DfWmYkh_.js               1.58 kB │ gzip:  0.88 kB
+public/build/assets/register-Cp-GlC7U.js                     1.86 kB │ gzip:  0.83 kB
+public/build/assets/login-A-uMQzgC.js                        2.03 kB │ gzip:  1.04 kB
+public/build/assets/security-C7ROleZ7.js                     2.03 kB │ gzip:  1.01 kB
+public/build/assets/appearance-DeDYGV3M.js                   2.14 kB │ gzip:  1.12 kB
+public/build/assets/openai-C_LvDuuO.js                       2.33 kB │ gzip:  1.28 kB
+public/build/assets/loader-circle-C68kABl_.js                2.68 kB │ gzip:  1.36 kB
+public/build/assets/useAppDialog-ms_3UhsO.js                 3.12 kB │ gzip:  1.43 kB
+public/build/assets/profile-Bj2Ifxam.js                      3.29 kB │ gzip:  1.36 kB
+public/build/assets/webhooks-CFgV8BCk.js                     3.55 kB │ gzip:  1.69 kB
+public/build/assets/dialog-Cn8rohE4.js                       3.60 kB │ gzip:  1.33 kB
+public/build/assets/whatsapp-Dz4JfaMC.js                     4.19 kB │ gzip:  1.87 kB
+public/build/assets/sequences-BHFCA_7K.js                    4.49 kB │ gzip:  1.95 kB
+public/build/assets/triggers-B6MAQ22m.js                     5.25 kB │ gzip:  2.20 kB
+public/build/assets/AppFormDialog-BL7Lbr84.js                8.43 kB │ gzip:  2.39 kB
+public/build/assets/contact-data-CH9NySZ2.js                 9.84 kB │ gzip:  3.25 kB
+public/build/assets/editor-C1mjix3i.js                      11.00 kB │ gzip:  4.10 kB
+public/build/assets/flows-D9kUAMqB.js                       11.70 kB │ gzip:  3.98 kB
+public/build/assets/dist-CWgIE0ao.js                        15.85 kB │ gzip:  5.89 kB
+public/build/assets/DialogTitle-CXOSrpRw.js                 16.86 kB │ gzip:  5.48 kB
+public/build/assets/editor-BnNyHrDc.js                      19.64 kB │ gzip:  6.68 kB
+public/build/assets/team-CS9O7muM.js                        22.15 kB │ gzip:  7.75 kB
+public/build/assets/button-MMVldTka.js                      29.91 kB │ gzip:  9.89 kB
+public/build/assets/dashboard-CqFJ6-EP.js                   38.35 kB │ gzip: 12.98 kB
+public/build/assets/app-BRVH_H1H.js                         88.45 kB │ gzip: 25.99 kB
+public/build/assets/_plugin-vue_export-helper-CN6M3yj1.js  225.04 kB │ gzip: 77.57 kB
+public/build/assets/editor-BDzGaf2O.js                     270.18 kB │ gzip: 85.06 kB
+
+✓ built in 741ms

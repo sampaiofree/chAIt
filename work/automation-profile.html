@@ -1,0 +1,72 @@
+<div id="lead-automation-preview" class="viz-carousel viz-dotted-background" aria-label="Layouts para pausar automação" data-previous-label="Anterior" data-next-label="Próximo">
+  <section data-variant="No próprio perfil" aria-label="Pausa no próprio perfil"><div class="stage"><aside class="profile" data-layout="inline"></aside></div></section>
+  <section data-variant="Janela de pausa" aria-label="Pausa em janela" hidden><div class="stage"><aside class="profile" data-layout="dialog"></aside></div></section>
+</div>
+<style>
+#lead-automation-preview { --lead-bg: light-dark(#ffffff,#171a20); --lead-text: light-dark(#202735,#eef0f4); --lead-muted: light-dark(#596273,#a5afbd); --lead-border: light-dark(#e4e7ec,#333b48); --lead-soft: light-dark(#f5f6f8,#232934); --lead-brand: light-dark(#465be8,#a0abff); --lead-on-brand: light-dark(#ffffff,#171b35); --lead-green: light-dark(#196b47,#8bd5b1); --lead-amber: light-dark(#875109,#f0bf74); color:var(--lead-text); }
+#lead-automation-preview .stage { min-height:650px; padding:24px 14px; display:flex; justify-content:center; align-items:flex-start; }
+#lead-automation-preview .profile { position:relative; width:360px; max-width:100%; background:var(--lead-bg); border:1px solid var(--lead-border); border-radius:12px; font:14px/1.5 system-ui,sans-serif; overflow:hidden; }
+#lead-automation-preview .heading { padding:16px 20px; border-bottom:1px solid var(--lead-border); font-weight:600; }
+#lead-automation-preview .identity { padding:20px; display:flex; gap:12px; align-items:center; }
+#lead-automation-preview .avatar { width:42px; height:42px; border-radius:50%; display:grid; place-items:center; background:var(--lead-soft); font-weight:600; flex-shrink:0; }
+#lead-automation-preview .muted { color:var(--lead-muted); font-size:12px; }
+#lead-automation-preview .content { padding:0 20px 20px; }
+#lead-automation-preview .row { display:flex; gap:8px; justify-content:space-between; align-items:center; flex-wrap:wrap; }
+#lead-automation-preview h3 { font:600 14px/1.5 system-ui,sans-serif; margin:0; }
+#lead-automation-preview p { margin:10px 0; }
+#lead-automation-preview .divider { border-top:1px solid var(--lead-border); margin:16px 0; }
+#lead-automation-preview .status { padding:3px 9px; border-radius:20px; background:var(--lead-soft); font-size:12px; color:var(--lead-green); }
+#lead-automation-preview .status.paused { color:var(--lead-amber); }
+#lead-automation-preview button { padding:9px 12px; border:1px solid var(--lead-border); border-radius:7px; background:var(--lead-bg); color:var(--lead-text); font:500 13px/1.4 system-ui,sans-serif; }
+#lead-automation-preview .main { width:100%; margin-top:12px; }
+#lead-automation-preview .primary { background:var(--lead-brand); color:var(--lead-on-brand); border-color:var(--lead-brand); }
+#lead-automation-preview button:disabled { opacity:.5; }
+#lead-automation-preview .form { margin-top:16px; }
+#lead-automation-preview label { display:block; margin:12px 0 5px; font-size:12px; }
+#lead-automation-preview select, #lead-automation-preview input { box-sizing:border-box; width:100%; padding:10px; border:1px solid var(--lead-border); border-radius:7px; background:var(--lead-bg); color:var(--lead-text); font:14px system-ui,sans-serif; }
+#lead-automation-preview .actions { margin-top:16px; display:flex; justify-content:flex-end; gap:8px; }
+#lead-automation-preview .overlay { position:absolute; inset:0; background:light-dark(#19243545,#00000066); padding:18px; display:flex; align-items:center; }
+#lead-automation-preview .dialog { background:var(--lead-bg); border:1px solid var(--lead-border); border-radius:10px; padding:18px; width:100%; }
+#lead-automation-preview [hidden] { display:none; }
+#lead-automation-preview .error { color:var(--lead-amber); }
+@media (max-width:400px) { #lead-automation-preview .stage { padding:12px 4px; min-height:670px; } #lead-automation-preview .overlay { padding:12px; } }
+@media (pointer:coarse) { #lead-automation-preview button { min-height:44px; } #lead-automation-preview input,#lead-automation-preview select { font-size:16px; min-height:44px; } }
+</style>
+<script>
+(() => {
+ const root = document.getElementById('lead-automation-preview');
+ const profiles = [...root.querySelectorAll('.profile')];
+ const defaults = () => ({paused:false, editing:false, human:false, duration:'24', reason:'', until:null});
+ const saved = window.openai?.widgetState?.privateContent?.profiles;
+ const states = profiles.map((_,i) => ({...defaults(),...(saved?.[i] || {})}));
+ const persist = () => window.openai?.setWidgetState({modelContent:{proposal:'Pausa da automação no perfil',layouts:['No próprio perfil','Janela de pausa']},privateContent:{profiles:states}})?.catch(() => {});
+ const formats = { '1':'1 hora', '4':'4 horas', '24':'24 horas', 'indefinite':'Até eu retomar', 'custom':'Data e horário específicos' };
+ function render(i) {
+  const el=profiles[i], s=states[i], mode=el.dataset.layout;
+  const isPaused=s.paused || s.human;
+  const status=s.human?'Atendimento humano':s.paused?'Pausada':'Ativa';
+  const description=s.human?'A automação aguarda a conclusão do atendimento humano.':s.paused?(s.until?'Pausa até '+new Date(s.until).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+'.':'Pausada até retomada manual.'):'Pode iniciar quando um gatilho do fluxo ocorrer.';
+  el.innerHTML=`<header class="heading">Perfil do contato</header><div class="identity"><span class="avatar">MC</span><div><strong>Mariana Costa</strong><div class="muted">+55 11 99999-1234</div></div></div><div class="content"><div class="row"><span class="muted">Etiquetas</span><span>Interessado</span></div><div class="divider"></div><div class="row"><h3>Automação</h3><span class="status ${isPaused?'paused':''}">${status}</span></div><div aria-live="polite"><p>${description}</p><p class="muted">Aplica-se a este contato nesta conexão do WhatsApp.</p><p class="muted" data-meta hidden></p>${s.human && s.paused?'<p class="muted">A pausa manual também continua válida.</p>':''}</div><button type="button" class="main cursor-interaction" data-main ${s.paused && s.human?'disabled':''}>${s.paused?'Retomar automação':'Pausar automação'}</button><div data-inline></div><div class="divider"></div><h3>Notas internas</h3><p class="muted">Cliente pediu retorno após a reunião.</p></div><div class="overlay" data-overlay hidden><section class="dialog" role="dialog" aria-label="Pausar automação"><h3>Pausar automação</h3><div data-dialog></div></section></div>`;
+  if(s.paused) { const meta=el.querySelector('[data-meta]'); meta.hidden=false; meta.textContent='Pausada por você'+(s.reason?' · '+s.reason:''); }
+  el.querySelector('[data-main]').onclick=()=>{ if(s.paused){s.paused=false;s.until=null;s.reason='';} else {s.editing=true;} render(i);persist(); if(s.editing)el.querySelector('select')?.focus(); };
+  if(s.editing) {
+   const slot=el.querySelector(mode==='inline'?'[data-inline]':'[data-dialog]');
+   if(mode==='dialog')el.querySelector('[data-overlay]').hidden=false;
+   slot.innerHTML=`<form class="form"><label>Por quanto tempo?</label><select aria-label="Duração da pausa">${Object.entries(formats).map(([value,label])=>`<option value="${value}" ${s.duration===value?'selected':''}>${label}</option>`).join('')}</select><div data-custom ${s.duration==='custom'?'':'hidden'}><label>Retomar em · horário de Brasília</label><input type="datetime-local" aria-label="Data e horário para liberar automação" /></div><label>Motivo <span class="muted">(opcional)</span></label><input data-reason aria-label="Motivo da pausa" placeholder="Ex.: cliente pediu retorno depois" maxlength="200" /><p class="muted">Ao terminar o prazo, novos gatilhos poderão iniciar a automação.${s.human?' O atendimento humano precisa estar concluído.':''}</p><p data-error role="alert" class="error" hidden></p><div class="actions"><button type="button" class="cursor-interaction" data-cancel>Cancelar</button><button type="submit" class="primary cursor-interaction">Confirmar pausa</button></div></form>`;
+   const select=slot.querySelector('select');
+   const reason=slot.querySelector('[data-reason]');reason.value=s.reason;
+   select.onchange=()=>{s.duration=select.value;slot.querySelector('[data-custom]').hidden=s.duration!=='custom';persist();};
+   slot.querySelector('[data-cancel]').onclick=()=>{s.editing=false;render(i);persist();el.querySelector('[data-main]').focus();};
+   slot.querySelector('form').onsubmit=(event)=>{
+    event.preventDefault();
+    let until=null;
+    if(s.duration==='custom') { const raw=slot.querySelector('[type="datetime-local"]').value; until=raw?new Date(raw+':00-03:00').toISOString():null; if(!until || new Date(until)<=new Date()) { const error=slot.querySelector('[data-error]');error.hidden=false;error.textContent='Escolha uma data e um horário futuros.';return; } }
+    else if(s.duration!=='indefinite')until=new Date(Date.now()+Number(s.duration)*3600000).toISOString();
+    s.until=until;s.reason=reason.value.trim();s.paused=true;s.editing=false;render(i);persist();el.querySelector('[data-main]').focus();
+   };
+  }
+ }
+ profiles.forEach((el,i)=>{render(i); if(globalThis.Tweak) {const tweak=new Tweak({container:el,onChange:()=>render(i)});tweak.addToggle(states[i],'human',{label:'Atendimento humano aberto'});} });
+ window.addEventListener('openai:set_globals',e=>{const next=e.detail?.globals?.widgetState?.privateContent?.profiles;if(next)profiles.forEach((_,i)=>{Object.assign(states[i],defaults(),next[i]||{});render(i);});});
+})();
+</script>

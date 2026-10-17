@@ -1,0 +1,786 @@
+
+> lint:check
+> eslint .
+
+
+> format:check
+> prettier --check resources/
+
+Checking formatting...
+All matched files use Prettier code style!
+
+> types:check
+> vue-tsc --noEmit
+
+
+> test:voice
+> node --experimental-strip-types --test tests/Frontend/*.test.mjs
+
+TAP version 13
+# Subtest: alerts wait for acknowledgment and then close
+ok 1 - alerts wait for acknowledgment and then close
+  ---
+  duration_ms: 0.6625
+  type: 'test'
+  ...
+# Subtest: confirmations distinguish acceptance from cancellation
+ok 2 - confirmations distinguish acceptance from cancellation
+  ---
+  duration_ms: 0.174875
+  type: 'test'
+  ...
+# Subtest: prompts preserve an initial value and resolve to text or cancellation
+ok 3 - prompts preserve an initial value and resolve to text or cancellation
+  ---
+  duration_ms: 0.1345
+  type: 'test'
+  ...
+# Subtest: a second dialog waits until the first is answered
+ok 4 - a second dialog waits until the first is answered
+  ---
+  duration_ms: 0.082542
+  type: 'test'
+  ...
+# Subtest: literal normalization preserves whitespace zero braces and field identity
+ok 5 - literal normalization preserves whitespace zero braces and field identity
+  ---
+  duration_ms: 0.734125
+  type: 'test'
+  ...
+# Subtest: clipboard rejects unknown structures and unavailable custom references
+ok 6 - clipboard rejects unknown structures and unavailable custom references
+  ---
+  duration_ms: 0.102542
+  type: 'test'
+  ...
+# Subtest: shared conflict reapplication keeps the complete local template and remote layout
+ok 7 - shared conflict reapplication keeps the complete local template and remote layout
+  ---
+  duration_ms: 0.234667
+  type: 'test'
+  ...
+# Subtest: reapplication preserves remote positions and blocks added by the team
+ok 8 - reapplication preserves remote positions and blocks added by the team
+  ---
+  duration_ms: 1.592958
+  type: 'test'
+  ...
+# Subtest: explicit reapplication resolves overlapping text edits locally and preserves other remote fields
+ok 9 - explicit reapplication resolves overlapping text edits locally and preserves other remote fields
+  ---
+  duration_ms: 0.125167
+  type: 'test'
+  ...
+# Subtest: local node deletion does not delete unrelated team nodes or restore remote deletions
+ok 10 - local node deletion does not delete unrelated team nodes or restore remote deletions
+  ---
+  duration_ms: 0.076333
+  type: 'test'
+  ...
+# (node:55710) ExperimentalWarning: The MockTimers API is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: records, stops the microphone and creates a preview without sending
+ok 11 - records, stops the microphone and creates a preview without sending
+  ---
+  duration_ms: 2.65275
+  type: 'test'
+  ...
+# Subtest: two-minute deadline stops in preview rather than sending
+ok 12 - two-minute deadline stops in preview rather than sending
+  ---
+  duration_ms: 1.218917
+  type: 'test'
+  ...
+# Subtest: uses the actual supported Safari MP4 MIME
+ok 13 - uses the actual supported Safari MP4 MIME
+  ---
+  duration_ms: 0.548041
+  type: 'test'
+  ...
+# Subtest: reports denied permission and missing microphones
+ok 14 - reports denied permission and missing microphones
+  ---
+  duration_ms: 0.572833
+  type: 'test'
+  ...
+# Subtest: does not request a microphone on insecure or unsupported browsers
+ok 15 - does not request a microphone on insecure or unsupported browsers
+  ---
+  duration_ms: 0.25
+  type: 'test'
+  ...
+# Subtest: changing conversation discards the recording and stops tracks
+ok 16 - changing conversation discards the recording and stops tracks
+  ---
+  duration_ms: 0.465417
+  type: 'test'
+  ...
+# Subtest: losing reply permission discards an existing preview
+ok 17 - losing reply permission discards an existing preview
+  ---
+  duration_ms: 1.03125
+  type: 'test'
+  ...
+# Subtest: late permission after cancel releases tracks without starting a recorder
+ok 18 - late permission after cancel releases tracks without starting a recorder
+  ---
+  duration_ms: 0.440875
+  type: 'test'
+  ...
+# Subtest: unmounting releases tracks and timers
+ok 19 - unmounting releases tracks and timers
+  ---
+  duration_ms: 1.307083
+  type: 'test'
+  ...
+# Subtest: rejects empty, short and oversized recordings
+ok 20 - rejects empty, short and oversized recordings
+  ---
+  duration_ms: 2.353667
+  type: 'test'
+  ...
+1..20
+# tests 20
+# suites 0
+# pass 20
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 132.000333
+
+  [37;44m INFO [39;49m Configuration cache cleared successfully.  
+
+{"result":"pass"}
+   PASS  Tests\Unit\ExampleTest
+  ✓ that true is true                                                    0.01s  
+
+   PASS  Tests\Feature\Auth\AuthenticationTest
+  ✓ login screen can be rendered                                         0.58s  
+  ✓ users can authenticate using the login screen                        0.05s  
+  ✓ users with two factor enabled are redirected to two factor challeng… 0.02s  
+  ✓ users can not authenticate with invalid password                     0.02s  
+  ✓ users can logout                                                     0.02s  
+  ✓ users are rate limited                                               0.02s  
+
+   PASS  Tests\Feature\Auth\EmailVerificationTest
+  ✓ email verification screen can be rendered                            0.03s  
+  ✓ email can be verified                                                0.03s  
+  ✓ email is not verified with invalid hash                              0.03s  
+  ✓ email is not verified with invalid user id                           0.03s  
+  ✓ verified user is redirected to dashboard from verification prompt    0.03s  
+  ✓ already verified user visiting verification link is redirected with… 0.03s  
+
+   PASS  Tests\Feature\Auth\PasswordConfirmationTest
+  ✓ confirm password screen can be rendered                              0.04s  
+  ✓ password confirmation requires authentication                        0.02s  
+
+   PASS  Tests\Feature\Auth\PasswordResetTest
+  ✓ reset password link screen can be rendered                           0.02s  
+  ✓ reset password link can be requested                                 0.25s  
+  ✓ reset password screen can be rendered                                0.27s  
+  ✓ password can be reset with valid token                               0.28s  
+  ✓ password cannot be reset with invalid token                          0.25s  
+
+   PASS  Tests\Feature\Auth\RegistrationTest
+  ✓ registration screen can be rendered                                  0.03s  
+  ✓ new users can register                                               0.04s  
+
+   PASS  Tests\Feature\Auth\TwoFactorChallengeTest
+  ✓ two factor challenge redirects to login when not authenticated       0.02s  
+  ✓ two factor challenge can be rendered                                 0.04s  
+
+   PASS  Tests\Feature\Auth\VerificationNotificationTest
+  ✓ sends verification notification                                      0.04s  
+  ✓ does not send verification notification if email is verified         0.03s  
+
+   PASS  Tests\Feature\Chait\AiBlockTest
+  ✓ OpenAI key is encrypted, admin-only and never returned by settings   0.08s  
+  ✓ AI draft can be saved but publishing requires a valid key and model  0.10s  
+  ✓ AI opening waits in the node and a tool continues the published flo… 0.19s  
+  ✓ AI greeting is sent once and expiration ignores stale timers         0.12s  
+  ✓ incoming message is queued by identifier and optional limit advance… 0.09s  
+  ✓ AI tool handoff opens human support and invalidates the session      0.05s  
+  ✓ OpenAI rejection opens human support and keeps the reason metadata-… 0.04s  
+  ✓ cleanup deletes remote items before the conversation                 0.02s  
+  ✓ media inputs are fetched by message id and converted only in memory  0.03s  
+  ✓ removing the key closes active sessions while retaining an encrypte… 0.04s  
+  ✓ video receives guidance without asking OpenAI to analyze it          0.06s  
+  ✓ inactivity may route to human without taking the continue output     0.04s  
+  ✓ an OpenAI response arriving after human interruption is not sent     0.04s  
+  ✓ unsupported document prompts for another format and keeps the AI se… 0.06s  
+  ✓ assistant performs sequential CRM actions and returns call results…  0.08s  
+  ✓ assistant can read uneditable custom values without notes or main c… 0.06s  
+  ✓ assistant cannot mutate unlisted resources or create and remove tag… 0.04s  
+  ✓ assistant checks workspace ownership even for resources accidentall… 0.04s  
+  ✓ assistant tag actions are idempotent across repeated calls and fiel… 0.05s  
+  ✓ assistant preserves a populated field including a change after read… 0.04s  
+  ✓ assistant applies last writer wins only to individually authorized…  0.04s  
+  ✓ assistant treats null empty and whitespace field values as empty bu… 0.03s  
+  ✓ assistant treats null empty and whitespace field values as empty bu… 0.03s  
+  ✓ assistant treats null empty and whitespace field values as empty bu… 0.03s  
+  ✓ assistant treats null empty and whitespace field values as empty bu… 0.03s  
+  ✓ assistant sends media once with no caption even after a new request  0.11s  
+  ✓ a new assistant entry gets its own media allowance                   0.11s  
+  ✓ uncertain media is reconciled without resending and the conversatio… 0.07s  
+  ✓ uncertain media is reconciled without resending and the conversatio… 0.07s  
+  ✓ rejected media consumes its attempt but does not open human support  0.07s  
+  ✓ missing and altered media are blocked before a send attempt with (t… 0.03s  
+  ✓ missing and altered media are blocked before a send attempt with (f… 0.04s  
+  ✓ assistant retains confirmed CRM changes and blocks pending actions…  0.05s  
+  ✓ assistant ignores a late tool response after human interruption      0.05s  
+  ✓ assistant refuses actions after expiry or a mismatched execution ve… 0.03s  
+  ✓ assistant refuses actions after expiry or a mismatched execution ve… 0.03s  
+  ✓ assistant stops after twenty tool calls and hands off without recor… 0.22s  
+  ✓ assistant deadline blocks a tool returned after the time budget      0.05s  
+  ✓ assistant publication validates permissions instructions duplicates… 0.04s  
+  ✓ assistant publication validates permissions instructions duplicates… 0.03s  
+  ✓ assistant publication validates permissions instructions duplicates… 0.03s  
+  ✓ assistant publication validates permissions instructions duplicates… 0.03s  
+  ✓ assistant permits the same resources in different nodes and rejects… 0.04s  
+  ✓ assistant sends the supported outbound media types through the same… 0.06s  
+  ✓ assistant sends the supported outbound media types through the same… 0.06s  
+  ✓ assistant sends the supported outbound media types through the same… 0.06s  
+  ✓ assistant CRM changes survive both terminal outputs and cannot exec… 0.07s  
+  ✓ assistant CRM changes survive both terminal outputs and cannot exec… 0.07s  
+  ✓ assistant rejects invalid field values and a field removed after pu… 0.04s  
+  ✓ draft changes never grant new assistant permissions to the current…  0.03s  
+  ✓ assistant checks deadlines across external requests and does not re… 0.07s  
+  ✓ assistant validates actual media size and extension before publicat… 0.04s  
+  ✓ assistant validates actual media size and extension before publicat… 0.03s  
+  ✓ assistant does not act on an ambiguous reply and supplies explicit…  0.05s  
+  ✓ a reused assistant call id cannot switch resources or turn a denied… 0.04s  
+  ✓ a reused assistant call id cannot finalize an unrelated action       0.06s  
+  ✓ assistant tracking reconciliation does not filter canonicalized pho… 0.07s  
+  ✓ assistant time exhaustion during reconciliation keeps the attempted… 0.06s  
+  ✓ busy assistant sessions requeue their turn and expiry instead of op… 0.03s  
+  ✓ busy assistant sessions requeue their turn and expiry instead of op… 0.03s  
+
+   PASS  Tests\Feature\Chait\AutomationPauseTest
+  ✓ a timed pause converts workspace time to UTC and can be resumed ear… 0.05s  
+  ✓ an indefinite pause stays active and duplicate requests do not chan… 0.03s  
+  ✓ pausing interrupts an exclusive execution and only affects the sele… 0.05s  
+  ✓ pausing interrupts an exclusive execution and only affects the sele… 0.05s  
+  ✓ pausing interrupts an exclusive execution and only affects the sele… 0.05s  
+  ✓ expiration enables only new triggers and does not replay messages r… 0.04s  
+  ✓ human attendance stays blocked after a manual pause expires and fin… 0.04s  
+  ✓ manual pause summaries prefer indefinite pauses and otherwise use t… 0.02s  
+  ✓ invalid pause deadlines and modes are rejected without creating a p… 0.02s  
+  ✓ invalid pause deadlines and modes are rejected without creating a p… 0.02s  
+  ✓ invalid pause deadlines and modes are rejected without creating a p… 0.02s  
+  ✓ invalid pause deadlines and modes are rejected without creating a p… 0.02s  
+  ✓ invalid pause deadlines and modes are rejected without creating a p… 0.02s  
+  ✓ invalid pause deadlines and modes are rejected without creating a p… 0.02s  
+  ✓ pause permissions match resume and require a connection and workspa… 0.04s  
+
+   PASS  Tests\Feature\Chait\ContactTemplateTest
+  ✓ contact templates resolve one snapshot preserving stored data witho… 0.03s  
+  ✓ template documents normalize adjacent literal parts without changin… 0.03s  
+  ✓ strict templates reject malformed structures with ([2, [['standard'… 0.04s  
+  ✓ strict templates reject malformed structures with ([1, [['standard'… 0.04s  
+  ✓ strict templates reject malformed structures with ([1, [['standard'… 0.04s  
+  ✓ strict templates reject malformed structures with ([1, [['custom',…  0.04s  
+  ✓ strict templates reject malformed structures with ([1, [['text', 'a… 0.04s  
+  ✓ strict templates reject malformed structures with ([1, []])          0.05s  
+  ✓ new custom references are workspace scoped and missing old referenc… 0.04s  
+  ✓ response buttons and non AI prompts reject structured documents      0.05s  
+  ✓ URL rendering encodes component data preserves literals and handles… 0.01s  
+  ✓ URL rendering encodes component data preserves literals and handles… 0.01s  
+  ✓ URL rendering encodes component data preserves literals and handles… 0.01s  
+  ✓ final URL and content validation rejects invalid expansion without…  0.01s  
+  ✓ final URL and content validation rejects invalid expansion without…  0.01s  
+  ✓ final URL and content validation rejects invalid expansion without…  0.01s  
+  ✓ final URL and content validation rejects invalid expansion without…  0.01s  
+  ✓ final URL and content validation rejects invalid expansion without…  0.01s  
+  ✓ final URL and content validation rejects invalid expansion without…  0.01s  
+  ✓ invalid dynamic item is skipped safely and subsequent items use cur… 0.13s  
+  ✓ uncertain static content reconciles without rerender or resending a… 0.17s  
+  ✓ custom fields in drafts previews and active versions cannot be dele… 0.04s  
+  ✓ builder creates structured fields atomically and rejects invented r… 0.04s  
+  ✓ operational events are paginated scoped and do not expose stored pa… 0.03s  
+  ✓ provider certification remains pending by default and never rewrite… 0.03s  
+  ✓ AI prompts isolate contact data and invalid personalized prompts co… 0.05s  
+  ✓ AI uncertain response persists only transport metadata and reconcil… 0.20s  
+  ✓ portable import export remaps chip references without leaking conta… 0.03s  
+  ✓ dynamic button prepares message label and URL from one snapshot and… 0.05s  
+  ✓ AI resolves current contact data before every model call while reta… 0.06s  
+  ✓ AI publication with chips is pending certification before any provi… 0.02s  
+  ✓ failed content jobs recover a reserved intent and late confirmation… 0.03s  
+  ✓ confirmed static rejection advances and records only a safe operati… 0.04s  
+  ✓ AI confirmed reply rejection continues and releases the remote conv… 0.06s  
+  ✓ URL escaping preserves valid escapes and component data cannot inje… 0.01s  
+  ✓ renaming fields changes only the catalog label and empty content dr… 0.02s  
+
+   PASS  Tests\Feature\Chait\DatabaseImportTest
+  ✓ import preserves circular references, types, ciphertext and source…  0.04s  
+  ✓ import refuses populated destinations without overwriting rows       0.02s  
+  ✓ invalid conversion rolls back every imported table and constraint c… 0.02s  
+  ✓ mismatched migration history and corrupt references are rejected be… 0.02s  
+
+   PASS  Tests\Feature\Chait\ExternalWebhookTest
+  ✓ administrators create independent webhooks in test mode with opaque… 0.03s  
+  ✓ every administration endpoint requires admin permissions with ('man… 0.02s  
+  ✓ every administration endpoint requires admin permissions with ('age… 0.02s  
+  ✓ administration cannot read or change a webhook through another work… 0.02s  
+  ✓ test requests only capture an encrypted example and its typed paths  0.01s  
+  ✓ paste capture polling and deleting a sample preserve the mapping an… 0.02s  
+  ✓ activation requires a phone mapping valid sources compatible types…  0.03s  
+  ✓ configuration rejects foreign fields tags and contradictory actions… 0.02s  
+  ✓ upsert preserves absent null empty and invalid optional values but…  0.02s  
+  ✓ phone failure prevents all CRM operations with (null)                0.02s  
+  ✓ phone failure prevents all CRM operations with ('')                  0.02s  
+  ✓ phone failure prevents all CRM operations with (' ')                 0.02s  
+  ✓ phone failure prevents all CRM operations with ('123')               0.02s  
+  ✓ phone failure prevents all CRM operations with ('5511999999999@s.wh… 0.02s  
+  ✓ phone failure prevents all CRM operations with ('5511999999999 ext…  0.02s  
+  ✓ phone failure prevents all CRM operations with (false)               0.03s  
+  ✓ phone failure prevents all CRM operations with (['5511999999999'])   0.03s  
+  ✓ international phone normalization accepts DDI forms and rejects loc… 0.01s  
+  ✓ ordered tag conditions compare JSON types and the current payload w… 0.06s  
+  ✓ multiple webhooks share a contact while workspaces remain isolated…  0.07s  
+  ✓ simulation uses the unsaved configuration even when active without…  0.03s  
+  ✓ active payloads are only retained during an explicitly armed captur… 0.05s  
+  ✓ HTTP validation returns explicit statuses without mutating contacts  0.04s  
+  ✓ payload limits and dotted property names are handled without confus… 0.01s  
+  ✓ rate limits use the resolved webhook and include retry information   0.03s  
+  ✓ CRM writes roll back on failure and the receipt records only a safe… 0.05s  
+  ✓ the UAZAPI reuses a contact created by an external webhook and pres… 0.08s  
+  ✓ receipt pruning retains recent metadata and the encrypted example    0.03s  
+  ✓ an armed active capture retains a rejected event for inspection      0.05s  
+  ✓ malformed conditions and destinations produce validation errors      0.05s  
+  ✓ the migration canonicalizes existing phones before adding the uniqu… 0.07s  
+  ✓ the migration detects canonical collisions without modifying or mer… 0.03s  
+  ✓ configuration preserves whitespace in JSON keys and exact equality…  0.06s  
+  ✓ settings webhooks lists only the current workspace for administrato… 0.04s  
+  ✓ settings webhooks lists only the current workspace for administrato… 0.04s  
+  ✓ settings webhooks requires authentication and administrative access  0.04s  
+
+   PASS  Tests\Feature\Chait\FlowAssistantTest
+  ✓ the operational guide and complete catalog reach every model turn a… 0.34s  
+  ✓ cyclic connection batches roll back and resume connects existing tr… 0.22s  
+  ✓ database failures pause safely without exposing SQL or bindings      0.05s  
+  ✓ provider context stays in memory between tool cycles and resume nev… 0.07s  
+  ✓ briefing stores shared history and a plan without changing the save… 0.06s  
+  ✓ approval builds only in the temporary session and saving replaces t… 0.07s  
+  ✓ writing without an approved plan is rejected by the backend even if… 0.04s  
+  ✓ atomic invalid batches roll back but retain previously confirmed ba… 0.07s  
+  ✓ repeated tool calls cannot duplicate nodes or change their payload   0.05s  
+  ✓ missing item and action IDs roll back the entire batch and preserve… 0.05s  
+  ✓ missing item and action IDs roll back the entire batch and preserve… 0.05s  
+  ✓ missing item and action IDs roll back the entire batch and preserve… 0.06s  
+  ✓ missing item and action IDs roll back the entire batch and preserve… 0.06s  
+  ✓ manual shared sessions recover and detect conflicting edits and leg… 0.06s  
+  ✓ discard cancels active work and rejects late tool results with an i… 0.06s  
+  ✓ manual editors read shared history and stop a run without permissio… 0.06s  
+  ✓ active AI blocks manual updates and saving and revoked permissions…  0.06s  
+  ✓ assistant access requires the active workspace and prevents cross-f… 0.02s  
+  ✓ metadata tools reveal definitions only and credential-shaped text i… 0.05s  
+  ✓ patches reject invented resources, forbidden selections, start chan… 0.04s  
+  ✓ patches reject invented resources, forbidden selections, start chan… 0.04s  
+  ✓ patches reject invented resources, forbidden selections, start chan… 0.04s  
+  ✓ patches reject invented resources, forbidden selections, start chan… 0.05s  
+  ✓ provider failure pauses without losing history and explicit resume…  0.09s  
+  ✓ manual unavailable model is never silently replaced                  0.03s  
+  ✓ delete and reconnect are temporary and never alter a published vers… 0.07s  
+  ✓ changed credential and expired execution cannot apply late batches…  0.05s  
+  ✓ changed credential and expired execution cannot apply late batches…  0.05s  
+  ✓ strict tools encode empty properties as objects and require every d… 0.01s  
+  ✓ tool schemas require non-null item and action IDs while optional fi… 0.01s  
+  ✓ tool schemas require non-null item and action IDs while optional fi… 0.01s  
+  ✓ a revised plan supersedes previous pending approval without creatin… 0.06s  
+  ✓ saving commits the authoritative temporary revision and rejects a s… 0.06s  
+  ✓ updates can clear optional configuration but reject unknown nested…  0.13s  
+  ✓ discarded authorization cannot be recovered from historical saved a… 0.16s  
+  ✓ editor assistant builds and edits mixed conditions and connects bot… 0.24s  
+  ✓ condition tool rejects foreign IDs unsupported custom fields and ar… 0.06s  
+  ✓ condition tool rejects foreign IDs unsupported custom fields and ar… 0.08s  
+  ✓ condition tool rejects foreign IDs unsupported custom fields and ar… 0.06s  
+  ✓ condition tool rejects foreign IDs unsupported custom fields and ar… 0.07s  
+  ✓ approved assistant creates a menu and connects its dynamic options…  0.15s  
+  ✓ assistant menu option removal rolls back unless its edge is disconn… 0.13s  
+  ✓ approved assistant can read create edit reorder change kinds and re… 0.21s  
+  ✓ content button strict tool schema exposes every configurable field…  0.02s  
+
+   PASS  Tests\Feature\Chait\FlowConditionTest
+  ✓ condition tag checks combine with contact text checks with ('has',…  0.07s  
+  ✓ condition tag checks combine with contact text checks with ('has',…  0.05s  
+  ✓ condition tag checks combine with contact text checks with ('not_ha… 0.06s  
+  ✓ condition tag checks combine with contact text checks with ('not_ha… 0.06s  
+  ✓ condition tag checks combine with contact text checks with ('has',…  0.06s  
+  ✓ condition tag checks combine with contact text checks with ('not_ha… 0.06s  
+  ✓ condition normalizes Unicode while preserving textual punctuation a… 0.06s  
+  ✓ condition normalizes Unicode while preserving textual punctuation a… 0.06s  
+  ✓ condition normalizes Unicode while preserving textual punctuation a… 0.07s  
+  ✓ condition normalizes Unicode while preserving textual punctuation a… 0.06s  
+  ✓ condition normalizes Unicode while preserving textual punctuation a… 0.07s  
+  ✓ condition normalizes Unicode while preserving textual punctuation a… 0.08s  
+  ✓ condition normalizes Unicode while preserving textual punctuation a… 0.07s  
+  ✓ condition normalizes Unicode while preserving textual punctuation a… 0.07s  
+  ✓ condition normalizes Unicode while preserving textual punctuation a… 0.07s  
+  ✓ condition normalizes Unicode while preserving textual punctuation a… 0.07s  
+  ✓ condition normalizes Unicode while preserving textual punctuation a… 0.07s  
+  ✓ condition normalizes Unicode while preserving textual punctuation a… 0.07s  
+  ✓ all standard fields and absent custom values are supported           0.08s  
+  ✓ incomplete conditions save as drafts but cannot publish and diagnos… 0.12s  
+  ✓ invalid references identifiers and incompatible operators are rejec… 0.05s  
+  ✓ invalid references identifiers and incompatible operators are rejec… 0.05s  
+  ✓ invalid references identifiers and incompatible operators are rejec… 0.05s  
+  ✓ invalid references identifiers and incompatible operators are rejec… 0.06s  
+  ✓ invalid references identifiers and incompatible operators are rejec… 0.06s  
+  ✓ invalid references identifiers and incompatible operators are rejec… 0.06s  
+  ✓ invalid references identifiers and incompatible operators are rejec… 0.06s  
+  ✓ invalid references identifiers and incompatible operators are rejec… 0.06s  
+  ✓ condition graph normalization is idempotent and leaves published ve… 0.08s  
+  ✓ runtime sees earlier field operations and only advances the conditi… 0.20s  
+  ✓ invalid configuration fails the runtime without choosing the no bra… 0.16s  
+  ✓ database failure during evaluation never routes to no                0.14s  
+  ✓ deleting unreferenced resources removes field values and tag links…  0.11s  
+  ✓ deletion blocks every existing published block reference with ('tag… 0.09s  
+  ✓ deletion blocks every existing published block reference with ('tag… 0.09s  
+  ✓ deletion blocks every existing published block reference with ('fie… 0.10s  
+  ✓ deletion blocks every existing published block reference with ('fie… 0.11s  
+  ✓ deletion blocks every existing published block reference with ('tag… 0.09s  
+  ✓ deletion blocks every existing published block reference with ('fie… 0.10s  
+  ✓ deletion blocks every existing published block reference with ('tag… 0.10s  
+  ✓ deletion blocks every existing published block reference with ('fie… 0.10s  
+  ✓ old versions are protected by active executions and released once d… 0.16s  
+  ✓ sequence snapshots protect old versions before an execution starts…  0.10s  
+  ✓ sequence snapshots protect old versions before an execution starts…  0.12s  
+  ✓ active webhooks protect their field and tag references while drafts… 0.08s  
+  ✓ deletion requires admin and cannot reach another workspace resource  0.08s  
+  ✓ legacy published conditions still select the correct branch without… 0.20s  
+  ✓ legacy published conditions still select the correct branch without… 0.18s  
+  ✓ draft-only references permit deletion and become assistant publicat… 0.10s  
+  ✓ condition cannot evaluate a contact from another workspace           0.06s  
+
+   PASS  Tests\Feature\Chait\FlowContentButtonTest
+  ✓ content button sends one interactive message in sequence and never…  0.22s  
+  ✓ content button sends one interactive message in sequence and never…  0.14s  
+  ✓ content button sends one interactive message in sequence and never…  0.11s  
+  ✓ content button allows incomplete drafts but reports fields and homo… 0.12s  
+  ✓ content button rejects duplicate buttons unsafe values unknown kind… 0.05s  
+  ✓ content button rejects duplicate buttons unsafe values unknown kind… 0.05s  
+  ✓ content button rejects duplicate buttons unsafe values unknown kind… 0.05s  
+  ✓ content button rejects duplicate buttons unsafe values unknown kind… 0.05s  
+  ✓ content button rejects duplicate buttons unsafe values unknown kind… 0.05s  
+  ✓ content button rejects duplicate buttons unsafe values unknown kind… 0.06s  
+  ✓ content button rejects duplicate buttons unsafe values unknown kind… 0.06s  
+  ✓ content button rejects duplicate buttons unsafe values unknown kind… 0.06s  
+  ✓ content button honors measured provider limits with ('reply', 'butt… 0.08s  
+  ✓ content button honors measured provider limits with ('copy', 'butto… 0.09s  
+  ✓ early content reply survives HTTP confirmation trailing text and de… 0.27s  
+  ✓ active wait captures the original sent label and preserves the publ… 0.11s  
+  ✓ a reply without an active wait follows normal keyword triggers once… 0.06s  
+  ✓ human pauses and interrupting keywords take precedence over early r… 0.04s  
+  ✓ human pauses and interrupting keywords take precedence over early r… 0.05s  
+  ✓ only explicit replies reserved for this connection contact and vers… 0.02s  
+  ✓ only explicit replies reserved for this connection contact and vers… 0.04s  
+  ✓ only explicit replies reserved for this connection contact and vers… 0.04s  
+  ✓ only explicit replies reserved for this connection contact and vers… 0.04s  
+  ✓ only explicit replies reserved for this connection contact and vers… 0.04s  
+  ✓ only explicit replies reserved for this connection contact and vers… 0.04s  
+  ✓ uncertain button transport reconciles by track id without resending… 0.05s  
+  ✓ uncertain button transport reconciles by track id without resending… 0.05s  
+  ✓ uncertain button transport reconciles by track id without resending… 0.05s  
+  ✓ uncertain button transport reconciles by track id without resending… 0.05s  
+  ✓ a definitive button rejection continues without fallback or retry    0.05s  
+  ✓ pausing during a content delay prevents a later button send          0.04s  
+  ✓ webhook receipt and early reply commit together and failed processi… 0.07s  
+  ✓ AI attendance input recognizes a content reply as text without down… 0.04s  
+  ✓ a late reply after timeout cannot become an early reply for the exp… 0.05s  
+  ✓ human interruption clears an already buffered reply before activati… 0.06s  
+  ✓ missing confirmations and temporary reconciliation failures never r… 0.16s  
+  ✓ legacy text content normalizes and runs with no content button prof… 0.05s  
+  ✓ publication rejects a measured reply id limit incompatible with the… 0.03s  
+
+   PASS  Tests\Feature\Chait\FlowEditorTest
+  ✓ workspace owner creates a flow with one start node and edits its gr… 0.03s  
+  ✓ flow editor access follows workspace roles and the explicit team pe… 0.02s  
+  ✓ flow data is isolated to the requested workspace                     0.01s  
+  ✓ invalid connections, duplicate outputs and cycles are rejected with… 0.02s  
+  ✓ invalid connections, duplicate outputs and cycles are rejected with… 0.02s  
+  ✓ invalid connections, duplicate outputs and cycles are rejected with… 0.02s  
+  ✓ concurrent flow updates return a conflict and preserve the winning…  0.02s  
+
+   PASS  Tests\Feature\Chait\FlowExecutionManagerTest
+  ✓ all active flow states retain the exclusive reservation with ('runn… 0.02s  
+  ✓ all active flow states retain the exclusive reservation with ('wait… 0.02s  
+  ✓ all active flow states retain the exclusive reservation with ('wait… 0.02s  
+  ✓ all active flow states retain the exclusive reservation with ('wait… 0.02s  
+  ✓ finishing twice creates one terminal event and releases the reserva… 0.03s  
+  ✓ flow jumps transfer the reservation without a terminal completion n… 0.02s  
+
+   PASS  Tests\Feature\Chait\FlowMenuTest
+  ✓ menu draft keeps incomplete options while publication reports speci… 0.05s  
+  ✓ menu handles survive reordering and reject removed options or dupli… 0.04s  
+  ✓ menu handles survive reordering and reject removed options or dupli… 0.03s  
+  ✓ menu handles survive reordering and reject removed options or dupli… 0.03s  
+  ✓ menu configuration validates timeout and invalid response bounds wi… 0.03s  
+  ✓ menu configuration validates timeout and invalid response bounds wi… 0.03s  
+  ✓ menu configuration validates timeout and invalid response bounds wi… 0.03s  
+  ✓ menu configuration validates timeout and invalid response bounds wi… 0.03s  
+  ✓ interactive menu publication requires a verified connection and mea… 0.04s  
+  ✓ interactive menu publication requires a verified connection and mea… 0.05s  
+  ✓ numeric menu sends enumerated choices and retains the active reserv… 0.04s  
+  ✓ numeric choice accepts only the exact advertised number with ('2',…  0.04s  
+  ✓ numeric choice accepts only the exact advertised number with (' 2 '… 0.04s  
+  ✓ numeric choice accepts only the exact advertised number with ('02',… 0.04s  
+  ✓ numeric choice accepts only the exact advertised number with ('2.',… 0.04s  
+  ✓ numeric choice accepts only the exact advertised number with ('Supo… 0.04s  
+  ✓ numeric choice accepts only the exact advertised number with ('Quer… 0.04s  
+  ✓ numeric choice accepts only the exact advertised number with ('3',…  0.04s  
+  ✓ numeric choice accepts only the exact advertised number with ('0',…  0.04s  
+  ✓ invalid response sends configured guidance and repeats choices with… 0.07s  
+  ✓ expiry wins once and late replies and jobs cannot reactivate a menu  0.05s  
+  ✓ selection wins over an obsolete expiry job and routes to the chosen… 0.06s  
+  ✓ duplicate receipts and stale or technical events never consume anot… 0.06s  
+  ✓ media is an invalid numeric response without storing its body        0.04s  
+  ✓ interactive formats require the current selection token rather than… 0.05s  
+  ✓ interactive formats require the current selection token rather than… 0.05s  
+  ✓ confirmed interactive rejection falls back only after numeric trans… 0.05s  
+  ✓ uncertain transport reconciles without repeating a menu              0.04s  
+  ✓ unconfirmed send exhausts a bounded query budget and fails rather t… 0.17s  
+  ✓ pause or human opening cancels menu transport and ignores delayed j… 0.05s  
+  ✓ pause or human opening cancels menu transport and ignores delayed j… 0.05s  
+  ✓ menu recovery covers waits outside sequences                         0.04s  
+  ✓ a reply arriving before HTTP acknowledgement is consumed only after… 0.05s  
+  ✓ ordinary text cannot masquerade as a click even with a selection-sh… 0.04s  
+  ✓ ordinary text cannot masquerade as a click even with a selection-sh… 0.04s  
+  ✓ numeric menus ignore interactive selections instead of consuming a…  0.04s  
+
+   PASS  Tests\Feature\Chait\FlowTransportTest
+  ✓ transport validates without effects and confirmed import saves insi… 0.07s  
+  ✓ transport reuses exact names without changing colors or duplicating… 0.06s  
+  ✓ transport rejects incompatible fields and rolls back resources crea… 0.03s  
+  ✓ transport rejects invalid graphs and unknown nested properties with… 0.02s  
+  ✓ transport rejects invalid graphs and unknown nested properties with… 0.02s  
+  ✓ transport rejects invalid graphs and unknown nested properties with… 0.02s  
+  ✓ transport rejects invalid graphs and unknown nested properties with… 0.02s  
+  ✓ transport rejects invalid graphs and unknown nested properties with… 0.02s  
+  ✓ transport rejects invalid graphs and unknown nested properties with… 0.03s  
+  ✓ transport rejects invalid graphs and unknown nested properties with… 0.03s  
+  ✓ transport rejects invalid graphs and unknown nested properties with… 0.03s  
+  ✓ transport rejects invalid graphs and unknown nested properties with… 0.04s  
+  ✓ transport rejects invalid graphs and unknown nested properties with… 0.04s  
+  ✓ transport rejects invalid graphs and unknown nested properties with… 0.03s  
+  ✓ transport rejects invalid graphs and unknown nested properties with… 0.03s  
+  ✓ transport rejects invalid graphs and unknown nested properties with… 0.04s  
+  ✓ transport rejects invalid graphs and unknown nested properties with… 0.04s  
+  ✓ transport rejects invalid graphs and unknown nested properties with… 0.07s  
+  ✓ transport rejects invalid graphs and unknown nested properties with… 0.04s  
+  ✓ transport rejects invalid graphs and unknown nested properties with… 0.03s  
+  ✓ transport rejects invalid graphs and unknown nested properties with… 0.04s  
+  ✓ transport rejects malformed, oversized and deeply nested JSON        0.08s  
+  ✓ transport requires flow editing but no AI permission or credential,… 0.12s  
+  ✓ transport detects saved and preview revision conflicts before creat… 0.11s  
+  ✓ transport blocks active AI and invalidates old plans and generation… 0.17s  
+  ✓ transport preserves publication and exports only the selected persi… 0.13s  
+  ✓ transport sharing associates only resources in the destination work… 0.15s  
+  ✓ transport retains media slots, menu option identities and incomplet… 0.16s  
+  ✓ transport preserves text, condition and button settings and allows…  0.14s  
+  ✓ transport exports media hints without private identifiers and reset… 0.09s  
+  ✓ transport keeps valid positions and deterministically lays out all…  0.08s  
+  ✓ transport guide examples are importable and guide excludes AI const… 0.10s  
+
+   PASS  Tests\Feature\Chait\SequenceTest
+  ✓ sequence reentry does not reset state and replacement preserves the… 0.15s  
+  ✓ published sequence versions preserve their schedules and flow depen… 0.05s  
+  ✓ enrollment request replay cannot restore a replaced participation    0.10s  
+  ✓ drafts may be incomplete but publishing rejects missing schedules a… 0.07s  
+  ✓ relative clocks start after the previous flow and preserve remainin… 0.15s  
+  ✓ overlapping human and manual blockers preserve the clock until both… 0.12s  
+  ✓ fixed past dates wait for their position and human availability wit… 0.09s  
+  ✓ old jobs and repeated due jobs cannot start duplicate or replaced s… 0.09s  
+  ✓ interruptions advance after availability and definitive failure end… 0.09s  
+  ✓ interruptions advance after availability and definitive failure end… 0.08s  
+  ✓ last flow conclusion releases the participation and a future entry…  0.09s  
+  ✓ scheduler reconciles a terminal execution even when the notificatio… 0.04s  
+  ✓ pinned flow jumps keep the stage occupied through the final destina… 0.07s  
+  ✓ sequence HTTP lifecycle checks revisions, enrollment permissions an… 0.05s  
+  ✓ deactivating blocks new enrollment but preserves existing versions…  0.05s  
+  ✓ operations enroll immediately and leave the current flow running un… 0.05s  
+  ✓ publication fixes nested dependencies and rejects empty or inactive… 0.03s  
+  ✓ queued sends reconcile by tracking identifier even when the provide… 0.05s  
+  ✓ reconciliation recovers lost execution jobs and respects durable co… 0.07s  
+  ✓ absolute next stages wait for the preceding flow even after their d… 0.05s  
+  ✓ a persisted uncertain send intent only queries the provider and nev… 0.03s  
+
+   PASS  Tests\Feature\Chait\UazapiChatTest
+  ✓ workspace admin creates a protected UAZAPI instance and receives it… 0.02s  
+  ✓ WhatsApp settings are administrator-only                             0.02s  
+  ✓ workspace status refresh uses the instance token and updates the co… 0.01s  
+  ✓ provider outage is reported separately from the last known connecti… 0.01s  
+  ✓ agent status response omits WhatsApp profile details                 0.01s  
+  ✓ avatar requests are workspace-authorized and cached for fifteen min… 0.02s  
+  ✓ avatar absence is cached and can be refreshed on request             0.02s  
+  ✓ legacy contact notes stay in storage but are not exposed or changed… 0.02s  
+  ✓ chat status and assignment filters combine without excluding waitin… 0.04s  
+  ✓ chat status and assignment filters combine without excluding waitin… 0.03s  
+  ✓ chat status and assignment filters combine without excluding waitin… 0.03s  
+  ✓ chat status and assignment filters combine without excluding waitin… 0.03s  
+  ✓ chat status and assignment filters combine without excluding waitin… 0.03s  
+  ✓ chat status and assignment filters combine without excluding waitin… 0.05s  
+  ✓ sending an image returns provider metadata with a correlation id wi… 0.06s  
+  ✓ an image send timeout remains pending and is not reported as a fail… 0.05s  
+  ✓ history normalizes image metadata and searches the provider by send… 0.02s  
+  ✓ media URLs can be renewed only for messages in the authorized conve… 0.02s  
+  ✓ UAZAPI webhooks are deduplicated and message bodies are not persist… 0.04s  
+  ✓ marking a conversation read uses the provider and clears shared unr… 0.03s  
+  ✓ stale read versions and provider failures preserve unread state      0.03s  
+  ✓ a message received during provider read is not cleared locally       0.04s  
+  ✓ mark read enforces workspace and assignment visibility               0.03s  
+  ✓ administrator replies through UAZAPI without storing message conten… 0.06s  
+  ✓ sending requires an explicit claim for administrators and attendant… 0.02s  
+  ✓ sending requires an explicit claim for administrators and attendant… 0.03s  
+  ✓ administrators explicitly claim and transfer an occupied conversati… 0.07s  
+  ✓ conversation serialization reports automation state and execution s… 0.12s  
+  ✓ a user cannot access conversations from a workspace they do not bel… 0.03s  
+
+   PASS  Tests\Feature\Chait\VoiceMessageTest
+  ✓ voice recordings are converted to OGG Opus and sent as ptt without…  0.22s  
+  ✓ voice recordings are converted to OGG Opus and sent as ptt without…  0.19s  
+  ✓ voice recordings are converted to OGG Opus and sent as ptt without…  0.20s  
+  ✓ voice recordings are converted to OGG Opus and sent as ptt without…  0.17s  
+  ✓ voice recordings are converted to OGG Opus and sent as ptt without…  0.77s  
+  ✓ voice recordings are converted to OGG Opus and sent as ptt without…  1.03s  
+  ✓ voice validation rejects invalid duration and video without sending… 0.11s  
+  ✓ voice validation rejects invalid duration and video without sending… 0.45s  
+  ✓ voice validation rejects invalid duration and video without sending… 0.12s  
+  ✓ oversized files and corrupt recordings are rejected before provider… 0.07s  
+  ✓ oversized files and corrupt recordings are rejected before provider… 0.06s  
+  ✓ voice requires its own UUID and does not accept a caption or text w… 0.08s  
+  ✓ voice requires its own UUID and does not accept a caption or text w… 0.09s  
+  ✓ voice requires its own UUID and does not accept a caption or text w… 0.09s  
+  ✓ voice requires its own UUID and does not accept a caption or text w… 0.12s  
+  ✓ voice requires its own UUID and does not accept a caption or text w… 0.12s  
+  ✓ conversion failure cleans partial output and does not expose proces… 0.04s  
+  ✓ missing processing binaries fail safely and clean the source         0.04s  
+  ✓ provider rejections fail while uncertain responses remain pending w… 0.19s  
+  ✓ provider rejections fail while uncertain responses remain pending w… 0.17s  
+  ✓ provider rejections fail while uncertain responses remain pending w… 0.20s  
+  ✓ provider rejections fail while uncertain responses remain pending w… 0.18s  
+  ✓ provider rejections fail while uncertain responses remain pending w… 0.18s  
+  ✓ provider rejections fail while uncertain responses remain pending w… 0.18s  
+  ✓ provider rejections fail while uncertain responses remain pending w… 0.18s  
+  ✓ provider rejections fail while uncertain responses remain pending w… 0.18s  
+  ✓ provider rejections fail while uncertain responses remain pending w… 0.18s  
+  ✓ provider rejections fail while uncertain responses remain pending w… 0.20s  
+  ✓ provider rejections fail while uncertain responses remain pending w… 0.18s  
+  ✓ voice sending respects ownership assignment and connection before p… 0.08s  
+  ✓ voice sending respects ownership assignment and connection before p… 0.07s  
+  ✓ voice sending respects ownership assignment and connection before p… 0.06s  
+  ✓ assigned agents can send voice messages                              0.14s  
+  ✓ audio history normalizes received and sent voice and downloads auth… 0.04s  
+  ✓ processing timeouts clean partial output and hide command details    0.04s  
+  ✓ permissions and connection are rechecked after conversion before pr… 0.15s  
+  ✓ permissions and connection are rechecked after conversion before pr… 0.17s  
+
+   PASS  Tests\Feature\Chait\WorkspaceIsolationTest
+  ✓ users automatically receive a default workspace                      0.04s  
+
+   PASS  Tests\Feature\DashboardTest
+  ✓ guests are redirected to the login page                              0.01s  
+  ✓ authenticated users can visit the dashboard                          0.02s  
+  ✓ sidebar preference follows the saved cookie                          0.03s  
+
+   PASS  Tests\Feature\ExampleTest
+  ✓ returns a successful response                                        0.02s  
+
+   PASS  Tests\Feature\Settings\AppearanceTest
+  ✓ appearance setting defaults to system and is shared with the page    0.04s  
+  ✓ a user can save their own appearance preference                      0.03s  
+  ✓ the account preference overrides the legacy appearance cookie in th… 0.03s  
+  ✓ public pages use the system theme even when a legacy appearance coo… 0.02s  
+  ✓ appearance setting only accepts supported values                     0.03s  
+  ✓ appearance setting requires authentication                           0.02s  
+
+   PASS  Tests\Feature\Settings\ContactDataTest
+  ✓ contact data requires authentication for the page and every write    0.02s  
+  ✓ owners and admins manage contact definitions with ('owner')          0.06s  
+  ✓ owners and admins manage contact definitions with ('admin')          0.08s  
+  ✓ operational roles cannot manage contact definitions even with flow…  0.06s  
+  ✓ operational roles cannot manage contact definitions even with flow…  0.06s  
+  ✓ operational roles cannot manage contact definitions even with flow…  0.05s  
+  ✓ operational roles cannot manage contact definitions even with flow…  0.06s  
+  ✓ contact data lists only current workspace definitions in name order  0.05s  
+  ✓ writes cannot use inaccessible workspaces or definitions from anoth… 0.08s  
+  ✓ names are trimmed and unique per category and workspace with unchan… 0.09s  
+  ✓ invalid names are rejected for both categories on create and edit w… 0.06s  
+  ✓ invalid names are rejected for both categories on create and edit w… 0.06s  
+  ✓ invalid names are rejected for both categories on create and edit w… 0.06s  
+  ✓ invalid names are rejected for both categories on create and edit w… 0.05s  
+  ✓ invalid names are rejected for both categories on create and edit w… 0.06s  
+  ✓ invalid tag colors are rejected on create and edit with dataset "mi… 0.05s  
+  ✓ invalid tag colors are rejected on create and edit with dataset "em… 0.06s  
+  ✓ invalid tag colors are rejected on create and edit with dataset "sh… 0.05s  
+  ✓ invalid tag colors are rejected on create and edit with dataset "no… 0.05s  
+  ✓ invalid tag colors are rejected on create and edit with dataset "in… 0.05s  
+  ✓ invalid tag colors are rejected on create and edit with dataset "cs… 0.05s  
+  ✓ invalid tag colors are rejected on create and edit with dataset "ar… 0.05s  
+  ✓ renaming preserves contact values tag links and draft and published… 0.11s  
+  ✓ maximum length names and existing flow creation contracts remain su… 0.08s  
+
+   PASS  Tests\Feature\Settings\ProfileUpdateTest
+  ✓ profile page is displayed                                            0.05s  
+  ✓ profile information can be updated                                   0.05s  
+  ✓ email verification status is unchanged when the email address is un… 0.04s  
+  ✓ user can delete their account                                        0.05s  
+  ✓ correct password must be provided to delete account                  0.04s  
+  ✓ profile accepts international phone numbers with dataset "Brazil"    0.03s  
+  ✓ profile accepts international phone numbers with dataset "Switzerla… 0.04s  
+  ✓ profile rejects missing or invalid international phone numbers with… 0.04s  
+  ✓ profile rejects missing or invalid international phone numbers with… 0.05s  
+  ✓ profile rejects missing or invalid international phone numbers with… 0.04s  
+  ✓ profile rejects missing or invalid international phone numbers with… 0.04s  
+  ✓ profile rejects missing or invalid international phone numbers with… 0.04s  
+  ✓ profile rejects missing or invalid international phone numbers with… 0.04s  
+  ✓ profile rejects missing or invalid international phone numbers with… 0.04s  
+  ✓ profile rejects missing or invalid international phone numbers with… 0.04s  
+  ✓ profile rejects missing or invalid international phone numbers with… 0.04s  
+  ✓ profile rejects missing or invalid international phone numbers with… 0.03s  
+  ✓ profile rejects missing or invalid international phone numbers with… 0.03s  
+  ✓ profile rejects missing or invalid international phone numbers with… 0.03s  
+  ✓ profile rejects missing or invalid international phone numbers with… 0.05s  
+  ✓ profile requires the phone field even when omitted                   0.03s  
+
+   PASS  Tests\Feature\Settings\SecurityTest
+  ✓ security page is displayed                                           0.05s  
+  ✓ security page requires password confirmation when enabled            0.03s  
+  ✓ security page does not require password confirmation when disabled   0.04s  
+  ✓ security page renders without two factor when feature is disabled    0.04s  
+  ✓ password can be updated                                              0.04s  
+  ✓ correct password must be provided to update password                 0.04s  
+
+   PASS  Tests\Feature\Settings\TeamTest
+  ✓ workspace admin creates an operational user in the current workspac… 0.06s  
+  ✓ workspace admin links an existing account without changing its acco… 0.05s  
+  ✓ team creation is restricted to workspace admins and cannot write to… 0.05s  
+  ✓ new accounts must use the configured password rules                  0.04s  
+  ✓ new accounts require a name and password but existing accounts do n… 0.04s  
+  ✓ adding an account already in the workspace returns a validation err… 0.04s  
+  ✓ a user can switch only to a workspace they belong to                 0.04s  
+  ✓ new team accounts require a valid international WhatsApp number ato… 0.04s  
+  ✓ new team accounts require a valid international WhatsApp number ato… 0.05s  
+  ✓ new team accounts require a valid international WhatsApp number ato… 0.04s  
+  ✓ new team accounts require a valid international WhatsApp number ato… 0.03s  
+  ✓ new team accounts require a valid international WhatsApp number ato… 0.04s  
+  ✓ new team accounts require a valid international WhatsApp number ato… 0.03s  
+  ✓ new team accounts require a valid international WhatsApp number ato… 0.03s  
+  ✓ new team accounts require a valid international WhatsApp number ato… 0.03s  
+  ✓ new team accounts require a valid international WhatsApp number ato… 0.03s  
+  ✓ new team accounts require a valid international WhatsApp number ato… 0.05s  
+  ✓ new team accounts require a valid international WhatsApp number ato… 0.04s  
+  ✓ new team accounts require a valid international WhatsApp number ato… 0.04s  
+  ✓ new team accounts require a valid international WhatsApp number ato… 0.03s  
+  ✓ new team accounts require the WhatsApp field even when omitted       0.03s  
+  ✓ new team accounts accept non Brazilian international WhatsApp numbe… 0.03s  
+  ✓ linking an existing account ignores all account fields and preserve… 0.04s  
+  ✓ linking an existing account ignores all account fields and preserve… 0.04s  
+  ✓ linking an existing account ignores all account fields and preserve… 0.06s  
+  ✓ linking an existing account ignores all account fields and preserve… 0.05s  
+  ✓ linking an existing account ignores all account fields and preserve… 0.05s  
+  ✓ linking an existing account ignores all account fields and preserve… 0.05s  
+
+  Tests:    567 passed (2819 assertions)
+  Duration: 36.97s
+

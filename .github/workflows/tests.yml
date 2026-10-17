@@ -1,0 +1,125 @@
+name: tests
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+      - master
+      - workos
+  pull_request:
+    branches:
+      - develop
+      - main
+      - master
+      - workos
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: chait_test
+      DB_USERNAME: chait_test
+      DB_PASSWORD: ci-test
+      DB_URL: ''
+      DB_SCHEMA: public
+      UAZAPI_BASE_URL: https://uazapi.example.test
+    strategy:
+      matrix:
+        php-version: ['8.3', '8.4', '8.5']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          tools: composer:v2
+          coverage: xdebug
+          extensions: pdo_pgsql, pdo_sqlite, intl, mbstring, redis
+          ini-values: memory_limit=512M
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Install Node Dependencies
+        run: npm i
+
+      - name: Install Audio Processors
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Copy Environment File
+        run: |
+          cp .env.example .env
+          cp .env.testing.example .env.testing
+
+      - name: Create Isolated Test Database
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE chait_test LOGIN PASSWORD 'ci-test' NOSUPERUSER NOCREATEDB NOCREATEROLE"
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE chait_test OWNER chait_test"
+
+      - name: Generate Application Key
+        run: php artisan key:generate --env=testing
+
+      - name: Build Assets
+        run: npm run build
+
+      - name: Voice Recorder Tests
+        run: npm run test:voice
+
+      - name: Tests
+        run: ./vendor/bin/pest
+
+      - name: Condition Resources Concurrency
+        run: php tests/Concurrency/condition-resources.php
+
+      - name: Flow Assistant Concurrency
+        run: php tests/Concurrency/flow-assistant.php
+
+      - name: Chat Redis Gate Concurrency
+        run: php tests/Concurrency/chat-gate.php
+
+      - name: Install Browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Chat Realtime Browser Tests
+        env:
+          CHAIT_BROWSER_REALTIME: 'true'
+          CHAIT_BROWSER_PORT: '8896'
+        run: npx playwright test tests/Browser/chat-realtime.spec.ts

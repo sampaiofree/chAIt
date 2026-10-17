@@ -1,0 +1,78 @@
+{
+    "connection_id": 1,
+    "workspace_id": 1,
+    "recipient_hash": "15def5148aff7f013f2df6782e1d0c383a82f5ce5e60d97ebd768b58e7d2f666",
+    "started_at": "2026-10-14T20:04:25+00:00",
+    "results": {
+        "button": {
+            "state": "accepted",
+            "track_id": "menu-homologation-a88df9b1-76f6-4fcc-80c2-4cd12abcf46c",
+            "selection_ids": {
+                "menu:2d24c905-1091-440b-a415-ea509c150478:be9d530e-7919-4fce-9cb2-3c707114821d": 1,
+                "menu:2d24c905-1091-440b-a415-ea509c150478:38f04202-3c50-4d0a-bbec-2cb8861c7f7d": 2,
+                "menu:2d24c905-1091-440b-a415-ea509c150478:e56acf04-59ad-4552-9209-72bb3d1caab3": 3
+            },
+            "option_count": 3,
+            "label_length": 20,
+            "reserved_at": "2026-10-14T20:04:26+00:00",
+            "provider_id": "5527992857634:3EB012778F058A4A2088BC",
+            "provider_status": "Delivered",
+            "checked_at": "2026-10-14T20:07:55+00:00",
+            "api_selection": {
+                "option": 1,
+                "message_type": "ButtonsResponseMessage",
+                "message_id": "3AF8BD5BC9DA92995731",
+                "observed_at": "2026-10-14T20:07:57+00:00"
+            }
+        },
+        "list": {
+            "state": "accepted",
+            "track_id": "menu-homologation-76127ee3-ce9a-488c-8e07-71281ff8b613",
+            "selection_ids": {
+                "menu:66b49648-7234-49be-af30-ae11c90cce02:7abadafc-1492-42e0-81f8-aa6f1060ccfc": 1,
+                "menu:66b49648-7234-49be-af30-ae11c90cce02:92ca9165-0229-4676-a36a-7464a33ff6ee": 2,
+                "menu:66b49648-7234-49be-af30-ae11c90cce02:b2de5aa1-17c5-4083-9979-38faa8f2a48e": 3,
+                "menu:66b49648-7234-49be-af30-ae11c90cce02:fa9f845d-f640-43b2-ab73-0b97db47ed13": 4,
+                "menu:66b49648-7234-49be-af30-ae11c90cce02:f7808697-5254-4b62-9a01-74499e1f1052": 5,
+                "menu:66b49648-7234-49be-af30-ae11c90cce02:5a5a1fec-554f-4037-9675-32db75420f8f": 6,
+                "menu:66b49648-7234-49be-af30-ae11c90cce02:4dcef606-495a-4f81-8689-7561e92d7859": 7,
+                "menu:66b49648-7234-49be-af30-ae11c90cce02:d9ab6d0f-3af3-4e9f-a093-e117542c62f3": 8,
+                "menu:66b49648-7234-49be-af30-ae11c90cce02:8f45bfaa-b9b2-46ee-989d-125fecaa2b66": 9,
+                "menu:66b49648-7234-49be-af30-ae11c90cce02:38eddb6e-0eff-4022-a68d-a20ea938f7c3": 10
+            },
+            "option_count": 10,
+            "label_length": 24,
+            "reserved_at": "2026-10-14T20:04:28+00:00",
+            "provider_id": "5527992857634:3EB02B270452FC48E8CF99",
+            "provider_status": "Delivered",
+            "checked_at": "2026-10-14T20:07:56+00:00",
+            "api_selection": {
+                "option": 10,
+                "message_type": "ListResponseMessage",
+                "message_id": "3AC61AFBF853F6A709D8",
+                "observed_at": "2026-10-14T20:07:57+00:00"
+            }
+        }
+    },
+    "webhook_read_status": 200,
+    "webhooks": [
+        {
+            "enabled": true,
+            "host": "chait.test",
+            "events": [
+                "messages",
+                "messages_update",
+                "connection",
+                "chats"
+            ]
+        }
+    ],
+    "webhook_selection_verified": false,
+    "user_confirmation": {
+        "client": "iPhone",
+        "button_rendering": true,
+        "list_rendering": true,
+        "public_webhook_url_available": false
+    },
+    "interactive_formats_enabled": false
+}

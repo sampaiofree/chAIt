@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-15",
+  "scope": "Implementação e testes locais; sem OpenAI paga ou envios WhatsApp reais.",
+  "php": {
+    "passed": 493,
+    "assertions": 2416
+  },
+  "browser": {
+    "passed": 13,
+    "areas": [
+      "Conteúdo com Botão",
+      "Menu",
+      "Assistente construtor"
+    ],
+    "final_visual_recheck": "passed"
+  },
+  "frontend": {
+    "passed": 17
+  },
+  "postgresql_concurrency": {
+    "passed": 4,
+    "scenarios": [
+      "clique antes da ativação",
+      "ativação antes do clique",
+      "resposta antes do timeout",
+      "timeout antes da resposta"
+    ]
+  },
+  "checks": {
+    "types": "passed",
+    "eslint": "passed",
+    "prettier": "passed",
+    "pint": "passed",
+    "build": "passed"
+  },
+  "visual": {
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "widths": [
+      390,
+      768,
+      1024,
+      1280,
+      1440
+    ],
+    "screenshots": 20,
+    "preview_text_contrast_minimum": 4.5,
+    "review": "Campos, ajuda, prévia, reordenação e limite de um botão sem overflow horizontal. Contraste da ação corrigido para o token brand-strong nos dois temas."
+  },
+  "release": {
+    "profiles_enabled": false,
+    "pending": "Homologação real por tipo/conexão, incluindo payload de Resposta no webhook público."
+  }
+}

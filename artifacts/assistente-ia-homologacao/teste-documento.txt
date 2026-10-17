@@ -1,0 +1,2 @@
+Homologação do Assistente IA — chAIt
+Arquivo de teste para validar envio de documentos pelo WhatsApp.

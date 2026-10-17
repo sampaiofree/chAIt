@@ -1,0 +1,27 @@
+{
+    "started_at": "2026-10-14T18:06:49+00:00",
+    "passed": true,
+    "briefing": {
+        "status": "completed",
+        "purpose": "briefing",
+        "cycles": 4,
+        "error": null
+    },
+    "building": {
+        "status": "completed",
+        "purpose": "building",
+        "cycles": 7,
+        "error": null
+    },
+    "outcomes": {
+        "SUPORTE-TESTE": true,
+        "COMPRA-TESTE": true,
+        "INVALIDA-TESTE": true,
+        "PRAZO-TESTE": true
+    },
+    "nodes": 9,
+    "edges": 8,
+    "isolated_schema_removed": true,
+    "source_state_unchanged": true,
+    "finished_at": "2026-10-14T18:08:00+00:00"
+}

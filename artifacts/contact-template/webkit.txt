@@ -1,0 +1,98 @@
+[WebServer] [Thu Oct 15 13:20:49 2026] PHP 8.4.16 Development Server (http://127.0.0.1:8899) started
+[WebServer] [Thu Oct 15 13:20:50 2026] 127.0.0.1:54745 Accepted
+[WebServer] [Thu Oct 15 13:20:50 2026] 127.0.0.1:54745 Closing
+
+Running 4 tests using 1 worker
+
+(node:57232) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] [Thu Oct 15 13:20:51 2026] 127.0.0.1:54752 Accepted
+[WebServer] [Thu Oct 15 13:20:51 2026] 127.0.0.1:54752 Closing
+[WebServer] [Thu Oct 15 13:20:51 2026] 127.0.0.1:54758 Accepted
+[WebServer] [Thu Oct 15 13:20:51 2026] 127.0.0.1:54758 Closing
+[WebServer] [Thu Oct 15 13:20:51 2026] 127.0.0.1:54760 Accepted
+[WebServer] [Thu Oct 15 13:20:51 2026] 127.0.0.1:54760 Closing
+[WebServer] [Thu Oct 15 13:20:52 2026] 127.0.0.1:54766 Accepted
+[WebServer] [Thu Oct 15 13:20:52 2026] 127.0.0.1:54766 Closing
+[WebServer] [Thu Oct 15 13:20:52 2026] 127.0.0.1:54771 Accepted
+[WebServer] [Thu Oct 15 13:20:52 2026] 127.0.0.1:54771 Closing
+[WebServer] [Thu Oct 15 13:20:52 2026] 127.0.0.1:54773 Accepted
+[WebServer] [Thu Oct 15 13:20:52 2026] 127.0.0.1:54773 Closing
+[WebServer] [Thu Oct 15 13:20:52 2026] 127.0.0.1:54775 Accepted
+[WebServer] [Thu Oct 15 13:20:52 2026] 127.0.0.1:54775 Closing
+[WebServer] [Thu Oct 15 13:20:52 2026] 127.0.0.1:54780 Accepted
+[WebServer] [Thu Oct 15 13:20:52 2026] 127.0.0.1:54780 Closing
+[WebServer] [Thu Oct 15 13:20:53 2026] 127.0.0.1:54786 Accepted
+[WebServer] [Thu Oct 15 13:20:53 2026] 127.0.0.1:54786 Closing
+[WebServer] [Thu Oct 15 13:20:53 2026] 127.0.0.1:54787 Accepted
+[WebServer] [Thu Oct 15 13:20:53 2026] 127.0.0.1:54787 Closing
+[WebServer] [Thu Oct 15 13:20:53 2026] 127.0.0.1:54789 Accepted
+[WebServer] [Thu Oct 15 13:20:53 2026] 127.0.0.1:54789 Closing
+[WebServer] [Thu Oct 15 13:20:53 2026] 127.0.0.1:54792 Accepted
+[WebServer] [Thu Oct 15 13:20:53 2026] 127.0.0.1:54792 Closing
+[WebServer] [Thu Oct 15 13:20:53 2026] 127.0.0.1:54794 Accepted
+[WebServer] [Thu Oct 15 13:20:53 2026] 127.0.0.1:54794 Closing
+[WebServer] [Thu Oct 15 13:20:53 2026] 127.0.0.1:54796 Accepted
+[WebServer] [Thu Oct 15 13:20:53 2026] 127.0.0.1:54796 Closing
+[WebServer] [Thu Oct 15 13:20:53 2026] 127.0.0.1:54798 Accepted
+[WebServer] [Thu Oct 15 13:20:53 2026] 127.0.0.1:54798 Closing
+[WebServer] [Thu Oct 15 13:20:54 2026] 127.0.0.1:54807 Accepted
+[WebServer] [Thu Oct 15 13:20:54 2026] 127.0.0.1:54807 Closing
+[WebServer] [Thu Oct 15 13:20:54 2026] 127.0.0.1:54809 Accepted
+[WebServer] [Thu Oct 15 13:20:54 2026] 127.0.0.1:54809 Closing
+  ✓  1 tests/Browser/contact-template.spec.ts:113:9 › contact templates webkit › cursor atomic chips undo redo literal paste formatting and saved recovery (3.1s)
+[WebServer] [Thu Oct 15 13:20:54 2026] 127.0.0.1:54811 Accepted
+[WebServer] [Thu Oct 15 13:20:54 2026] 127.0.0.1:54811 Closing
+[WebServer] [Thu Oct 15 13:20:54 2026] 127.0.0.1:54817 Accepted
+[WebServer] [Thu Oct 15 13:20:54 2026] 127.0.0.1:54817 Closing
+[WebServer] [Thu Oct 15 13:20:54 2026] 127.0.0.1:54819 Accepted
+[WebServer] [Thu Oct 15 13:20:54 2026] 127.0.0.1:54819 Closing
+[WebServer] [Thu Oct 15 13:20:54 2026] 127.0.0.1:54826 Accepted
+[WebServer] [Thu Oct 15 13:20:55 2026] 127.0.0.1:54826 Closing
+[WebServer] [Thu Oct 15 13:20:55 2026] 127.0.0.1:54831 Accepted
+[WebServer] [Thu Oct 15 13:20:55 2026] 127.0.0.1:54831 Closing
+[WebServer] [Thu Oct 15 13:20:55 2026] 127.0.0.1:54833 Accepted
+[WebServer] [Thu Oct 15 13:20:55 2026] 127.0.0.1:54833 Closing
+[WebServer] [Thu Oct 15 13:20:55 2026] 127.0.0.1:54835 Accepted
+[WebServer] [Thu Oct 15 13:20:55 2026] 127.0.0.1:54835 Closing
+[WebServer] [Thu Oct 15 13:20:55 2026] 127.0.0.1:54840 Accepted
+[WebServer] [Thu Oct 15 13:20:55 2026] 127.0.0.1:54840 Closing
+  ✓  2 tests/Browser/contact-template.spec.ts:218:9 › contact templates webkit › partial chip selection delete and composition preserve atomic editing (1.8s)
+[WebServer] [Thu Oct 15 13:20:56 2026] 127.0.0.1:54846 Accepted
+[WebServer] [Thu Oct 15 13:20:56 2026] 127.0.0.1:54846 Closing
+[WebServer] [Thu Oct 15 13:20:56 2026] 127.0.0.1:54852 Accepted
+[WebServer] [Thu Oct 15 13:20:56 2026] 127.0.0.1:54852 Closing
+[WebServer] [Thu Oct 15 13:20:56 2026] 127.0.0.1:54854 Accepted
+[WebServer] [Thu Oct 15 13:20:56 2026] 127.0.0.1:54854 Closing
+[WebServer] [Thu Oct 15 13:20:56 2026] 127.0.0.1:54856 Accepted
+[WebServer] [Thu Oct 15 13:20:56 2026] 127.0.0.1:54856 Closing
+[WebServer] [Thu Oct 15 13:20:57 2026] 127.0.0.1:54865 Accepted
+[WebServer] [Thu Oct 15 13:20:57 2026] 127.0.0.1:54865 Closing
+[WebServer] [Thu Oct 15 13:20:57 2026] 127.0.0.1:54867 Accepted
+[WebServer] [Thu Oct 15 13:20:57 2026] 127.0.0.1:54867 Closing
+[WebServer] [Thu Oct 15 13:20:57 2026] 127.0.0.1:54869 Accepted
+[WebServer] [Thu Oct 15 13:20:57 2026] 127.0.0.1:54869 Closing
+[WebServer] [Thu Oct 15 13:20:57 2026] 127.0.0.1:54874 Accepted
+[WebServer] [Thu Oct 15 13:20:57 2026] 127.0.0.1:54874 Closing
+  ✓  3 tests/Browser/contact-template.spec.ts:273:9 › contact templates webkit › cross workspace clipboard and reply conversion give a local explanation (1.9s)
+[WebServer] [Thu Oct 15 13:20:58 2026] 127.0.0.1:54880 Accepted
+[WebServer] [Thu Oct 15 13:20:58 2026] 127.0.0.1:54880 Closing
+[WebServer] [Thu Oct 15 13:20:58 2026] 127.0.0.1:54886 Accepted
+[WebServer] [Thu Oct 15 13:20:58 2026] 127.0.0.1:54886 Closing
+[WebServer] [Thu Oct 15 13:20:58 2026] 127.0.0.1:54888 Accepted
+[WebServer] [Thu Oct 15 13:20:58 2026] 127.0.0.1:54888 Closing
+[WebServer] [Thu Oct 15 13:20:58 2026] 127.0.0.1:54890 Accepted
+[WebServer] [Thu Oct 15 13:20:58 2026] 127.0.0.1:54890 Closing
+[WebServer] [Thu Oct 15 13:20:58 2026] 127.0.0.1:54895 Accepted
+[WebServer] [Thu Oct 15 13:20:58 2026] 127.0.0.1:54895 Closing
+[WebServer] [Thu Oct 15 13:20:58 2026] 127.0.0.1:54897 Accepted
+[WebServer] [Thu Oct 15 13:20:58 2026] 127.0.0.1:54897 Closing
+[WebServer] [Thu Oct 15 13:20:58 2026] 127.0.0.1:54899 Accepted
+[WebServer] [Thu Oct 15 13:20:59 2026] 127.0.0.1:54899 Closing
+[WebServer] [Thu Oct 15 13:20:59 2026] 127.0.0.1:54908 Accepted
+[WebServer] [Thu Oct 15 13:20:59 2026] 127.0.0.1:54908 Closing
+[WebServer] [Thu Oct 15 13:21:01 2026] 127.0.0.1:54918 Accepted
+  ✓  4 tests/Browser/contact-template.spec.ts:324:9 › contact templates webkit › contact fields remain usable at project widths in light and dark themes (3.4s)
+[WebServer] [Thu Oct 15 13:21:01 2026] 127.0.0.1:54918 Closing
+
+  4 passed (13.0s)
