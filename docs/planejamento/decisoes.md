@@ -177,11 +177,15 @@ Confirmado nesta rodada: Numérico inicial; espera de 5 minutos, ajustável de 1
 
 Implementado ContactTemplate v1 dentro do grafo v2, com chips por ID, edição leve, clipboard isolado por workspace, resolução consistente por mensagem e snapshot atualizado por chamada IA. Textos legados e chaves literais não são convertidos. Resposta/Menu/Operações/Condição/recursos IA não recebem chips. Conteúdo continua após inválidos ou recusas; IA segue Continuar para prompt inválido/falha do envio. Incerteza usa intenção persistida e conciliação, sem reenvio/recálculo; esgotamento fica desconhecido. Eventos seguros são consultáveis no editor. Publicação/envio com chips dependem de homologação da conexão por falta de escape UAZAPI comprovado. Ver [contrato](../modulos/campos-do-contato-fluxos.md). [Notificações internas](notificacoes-operacionais-fluxos.md) ficam fora da entrega.
 
+## Revisão aprovada em 17/10/2026 — operação por novas mensagens
+
+Nos dois modos, a lista vem exclusivamente do banco local. Contatos e conversas WhatsApp são descobertos somente por mensagens recebidas via webhook após o marco de ativação da conexão; não há importação inicial, varredura geral, reconciliação periódica nem recuperação retrospectiva de webhooks perdidos. Conexões existentes recebem o marco na implantação e mantêm seus registros anteriores. Histórico é consultado apenas por conversa conhecida. A prévia textual de até 200 caracteres permanece como exceção aprovada à regra de não persistir conteúdo integral de mensagens. [Especificação](../ajuste-integracao-uazapi-sem-sincronizacao.md).
+
 ## Revisão aprovada em 16/10/2026 — volume e tempo real
 
 A decisão B-06 passa a permitir uma prévia textual de até 200 caracteres por conversa e conteúdo temporário criptografado necessário ao processamento assíncrono. O histórico completo continua no provedor; jobs e logs contêm apenas referências. Conteúdo temporário é apagado após conclusão dos consumidores e expira em até 24 horas em falha/pendência. Mídias ficam temporariamente no disco privado quando necessárias ao processamento, sem base64 persistido.
 
-A lista vem do banco do CHAIT, com importação progressiva de 200 chats e atualizações por webhook. Laravel Reverb distribui eventos apenas aos usuários autorizados. Histórico é consultado somente ao abrir a conversa, com eventos posteriores na memória da tela. IndexedDB, sincronização completa periódica e recuperação automática de webhooks não recebidos ficam fora desta entrega. [Contrato operacional atualizado](../operacao/chat-realtime.md).
+A lista vem do banco do CHAIT e é atualizada por webhooks; a importação progressiva descrita na revisão de 16/10 foi substituída pela decisão de 17/10. Laravel Reverb distribui eventos apenas aos usuários autorizados. Histórico é consultado somente ao abrir a conversa, com eventos posteriores na memória da tela. IndexedDB, sincronização completa periódica e recuperação automática de webhooks não recebidos ficam fora desta entrega. [Contrato operacional atualizado](../operacao/chat-realtime.md).
 
 ## Revisão documental de 16/10/2026 — estado observado e ajustes recentes
 

@@ -26,28 +26,39 @@ class ChatProjection
         }
     }
 
-    public function sync(UazapiConnection $connection, array $chat, ?array $message = null): ?Thread
+    public function sync(UazapiConnection $connection, array $chat, ?array $message = null, bool $allowCreate = false): ?Thread
     {
         $external = (string) ($chat['wa_chatid'] ?? $chat['chatid'] ?? $chat['jid'] ?? $chat['id'] ?? $message['chatid'] ?? data_get($message, 'key.remoteJid') ?? '');
-        if ($external === '' || strlen($external) > 191 || str_contains($external, '@g.us') || ($chat['wa_isGroup'] ?? false)) {
+        if ($external === '' || strlen($external) > 191 || str_contains($external, '@g.us') || ($chat['wa_isGroup'] ?? false) || ($message['isGroup'] ?? false)) {
+            return null;
+        }
+        if ($allowCreate && ! preg_match('/^[0-9]+@s\.whatsapp\.net$/D', $external)) {
             return null;
         }
 
-        return DB::transaction(function () use ($connection, $chat, $message, $external) {
-            $channel = ContactChannel::where('workspace_id', $connection->workspace_id)->where('type', 'whatsapp')->where('external_id', $external)->first();
-            if (! $channel) {
-                $rawPhone = $chat['phone'] ?? null;
-                if (preg_match('/^([0-9]+)@s\.whatsapp\.net$/D', $external, $matches)) {
-                    $rawPhone = $matches[1];
-                }
-                $phone = app(InternationalPhone::class)->normalize($rawPhone);
-                if ($phone === null) {
-                    return null;
-                }
-                $contact = app(ContactIdentity::class)->locked($connection->workspace_id, $phone);
-                $channel = ContactChannel::firstOrCreate(['workspace_id' => $connection->workspace_id, 'type' => 'whatsapp', 'external_id' => $external], ['contact_id' => $contact->id]);
+        return DB::transaction(function () use ($connection, $chat, $message, $external, $allowCreate) {
+            $thread = Thread::where('workspace_id', $connection->workspace_id)->where('uazapi_connection_id', $connection->id)->where('external_chat_id', $external)->first();
+            if (! $thread && ! $allowCreate) {
+                return null;
             }
-            $contact = $channel->contact()->lockForUpdate()->firstOrFail();
+            if ($thread) {
+                $contact = $thread->contact()->lockForUpdate()->firstOrFail();
+                $thread = Thread::whereKey($thread->id)->lockForUpdate()->firstOrFail();
+            } else {
+                $channel = ContactChannel::where('workspace_id', $connection->workspace_id)->where('type', 'whatsapp')->where('external_id', $external)->first();
+                if (! $channel) {
+                    preg_match('/^([0-9]+)@s\.whatsapp\.net$/D', $external, $matches);
+                    $phone = app(InternationalPhone::class)->normalize($matches[1]);
+                    if ($phone === null) {
+                        return null;
+                    }
+                    $contact = app(ContactIdentity::class)->locked($connection->workspace_id, $phone);
+                    $channel = ContactChannel::firstOrCreate(['workspace_id' => $connection->workspace_id, 'type' => 'whatsapp', 'external_id' => $external], ['contact_id' => $contact->id]);
+                }
+                $contact = $channel->contact()->lockForUpdate()->firstOrFail();
+                $thread = Thread::firstOrCreate(['workspace_id' => $connection->workspace_id, 'uazapi_connection_id' => $connection->id, 'external_chat_id' => $external], ['contact_id' => $contact->id, 'channel' => 'whatsapp', 'status' => 'bot']);
+                $thread = Thread::whereKey($thread->id)->lockForUpdate()->firstOrFail();
+            }
             $name = $chat['name'] ?? $chat['wa_contactName'] ?? $chat['wa_name'] ?? $message['senderName'] ?? null;
             if (! $contact->display_name && is_string($name)) {
                 $contact->display_name = mb_substr($name, 0, 255);
@@ -59,12 +70,10 @@ class ChatProjection
             if ($contact->isDirty()) {
                 $contact->save();
             }
-            $thread = Thread::firstOrCreate(['workspace_id' => $connection->workspace_id, 'uazapi_connection_id' => $connection->id, 'external_chat_id' => $external], ['contact_id' => $contact->id, 'channel' => 'whatsapp', 'status' => 'bot']);
-            $thread = Thread::whereKey($thread->id)->lockForUpdate()->firstOrFail();
             $time = $this->timestamp($message['messageTimestamp'] ?? $message['timestamp'] ?? $chat['wa_lastMsgTimestamp'] ?? $chat['updatedAt'] ?? null);
             $fromMe = (bool) ($message['fromMe'] ?? data_get($message, 'key.fromMe') ?? false);
             // A snapshot without a timestamp must not overwrite a known message.
-            $newer = $time && (! $thread->last_message_at || $time->gte($thread->last_message_at));
+            $newer = $message && $time && (! $thread->last_message_at || $time->gte($thread->last_message_at));
             if ($newer) {
                 $type = strtolower((string) ($message['messageType'] ?? $message['type'] ?? $chat['wa_lastMessageType'] ?? 'text'));
                 $content = $message['content'] ?? null;
@@ -90,7 +99,7 @@ class ChatProjection
                     $thread->unread_count++;
                     $thread->unread_version++;
                 }
-            } elseif ($newer && isset($chat['wa_unreadCount'])) {
+            } elseif ($time && (! $thread->last_message_at || $time->gte($thread->last_message_at)) && isset($chat['wa_unreadCount'])) {
                 $count = max(0, (int) $chat['wa_unreadCount']);
                 if ($count !== $thread->unread_count) {
                     $thread->unread_count = $count;
@@ -138,7 +147,7 @@ class ChatProjection
                 'tags' => $thread->contact->tags->map->only(['id', 'name'])->values(),
                 'custom_fields' => $thread->contact->customFieldValues->map(fn ($v) => ['id' => $v->field_id, 'name' => $v->field?->name, 'value' => $v->value])->values(),
                 'automations_paused' => $hasManual,
-                'automation' => ['state' => ! $thread->uazapi_connection_id ? 'unavailable' : ($reasons->isEmpty() ? 'allowed' : 'paused'), 'pause_reasons' => $reasons->all(), 'execution_status' => $executions->get($key)?->first()?->status, 'can_resume' => $hasManual && ! $human, 'can_pause' => ! $hasManual && (bool) $thread->uazapi_connection_id, 'expires_at' => $hasManual && ! $manual->contains(fn ($p) => $p->expires_at === null) ? $manual->max('expires_at') : null],
+                'automation' => ['state' => ! $thread->uazapi_connection_id ? 'unavailable' : ($reasons->isEmpty() ? 'allowed' : 'paused'), 'pause_reasons' => $reasons->all(), 'execution_status' => $executions->get($key)?->first()?->status, 'can_resume' => $hasManual && ! $human, 'can_pause' => ! $hasManual && (bool) $thread->uazapi_connection_id, 'expires_at' => $hasManual && ! $manual->contains(fn ($p) => $p->expires_at === null) ? Carbon::parse($manual->max('expires_at'))->toIso8601String() : null],
             ];
             if ($thread->id === $detailId) {
                 $data['notes'] = $thread->notes->map(fn ($n) => ['id' => $n->id, 'body' => $n->body, 'author' => $n->user?->name, 'created_at' => $n->created_at])->values();

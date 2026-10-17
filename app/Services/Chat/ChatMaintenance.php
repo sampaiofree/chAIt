@@ -2,7 +2,6 @@
 
 namespace App\Services\Chat;
 
-use App\Jobs\Chat\ImportChats;
 use App\Models\ChatOperation;
 use App\Models\UazapiConnection;
 use App\Models\UazapiInbox;
@@ -24,11 +23,6 @@ class ChatMaintenance
                 app(ChatPublisher::class)->send($operation->workspace_id, 'operation.finished', ['operation_id' => $operation->id, 'status' => 'confirmation_pending', 'result' => ['data' => ['status' => 'confirmation_pending', 'track_id' => $operation->track_id]]], $operation->thread_id, $operation->user_id);
             }
         });
-        UazapiConnection::where('chat_import_status', 'running')->where('chat_import_dispatched_at', '<', now()->subMinutes(2))->eachById(function ($connection): void {
-            ImportChats::dispatch($connection->id, $connection->chat_import_offset);
-            $connection->update(['chat_import_dispatched_at' => now()]);
-        });
-        UazapiConnection::where('chat_import_status', 'failed')->where('status', 'connected')->where(fn ($q) => $q->whereNull('chat_import_dispatched_at')->orWhere('chat_import_dispatched_at', '<', now()->subMinutes(5)))->eachById(fn ($connection) => app(ChatReconciliation::class)->start($connection));
     }
 
     public function prune(): void
@@ -53,6 +47,6 @@ class ChatMaintenance
 
     public function metrics(): array
     {
-        return ['provider' => UazapiConnection::query()->limit(1000)->get()->map(fn ($connection) => ['connection_id' => $connection->id, 'limited_last_hour' => (int) Cache::get('chat-provider:connection:'.$connection->id.':limited', 0), 'last_latency_ms' => Cache::get('chat-provider:connection:'.$connection->id.':latency_ms'), 'reconciliation_status' => $connection->chat_import_status, 'reconciliation_offset' => $connection->chat_import_offset, 'last_reconciled_at' => $connection->chat_last_reconciled_at, 'last_webhook_at' => $connection->chat_last_webhook_at])->all(), 'inbound_pending' => UazapiInbox::where('status', 'pending')->count(), 'inbound_oldest_at' => UazapiInbox::where('status', 'pending')->min('created_at'), 'inbound_failed' => UazapiInbox::where('status', 'failed')->count(), 'operations_pending' => ChatOperation::whereIn('status', ['pending', 'running'])->count(), 'operations_oldest_at' => ChatOperation::whereIn('status', ['pending', 'running'])->min('created_at'), 'temporary_expiring_hour' => UazapiInbox::whereNotNull('payload')->where('expires_at', '<=', now()->addHour())->count()];
+        return ['provider' => UazapiConnection::query()->limit(1000)->get()->map(fn ($connection) => ['connection_id' => $connection->id, 'limited_last_hour' => (int) Cache::get('chat-provider:connection:'.$connection->id.':limited', 0), 'last_latency_ms' => Cache::get('chat-provider:connection:'.$connection->id.':latency_ms'), 'activated_at' => $connection->activated_at, 'last_webhook_at' => $connection->chat_last_webhook_at])->all(), 'inbound_pending' => UazapiInbox::where('status', 'pending')->count(), 'inbound_oldest_at' => UazapiInbox::where('status', 'pending')->min('created_at'), 'inbound_failed' => UazapiInbox::where('status', 'failed')->count(), 'operations_pending' => ChatOperation::whereIn('status', ['pending', 'running'])->count(), 'operations_oldest_at' => ChatOperation::whereIn('status', ['pending', 'running'])->min('created_at'), 'temporary_expiring_hour' => UazapiInbox::whereNotNull('payload')->where('expires_at', '<=', now()->addHour())->count()];
     }
 }

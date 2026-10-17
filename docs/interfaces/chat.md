@@ -143,7 +143,7 @@ As antigas faixas de 700/950 px foram substituídas pelo breakpoint de 1024 px. 
 - Usar componentes reutilizáveis de interface entre visualizações sempre que a stack permitir.
 - Proteger estado/rascunhos do chat ao alternar entre conversas ou telas, evitando perda acidental de texto.
 - Empregar acessibilidade por teclado, rótulos acessíveis e estados visíveis de carregamento/erro.
-- Buscar o histórico pelo backend/adaptador. No modo de tempo real, prévias e conteúdo temporário criptografado seguem o [contrato de dados](../operacao/chat-realtime.md), sem cópia completa do histórico.
+- Mostrar lista e filtros do banco local nos dois modos; workspace novo exibe estado vazio até receber uma mensagem elegível. Buscar histórico paginado somente pelo identificador da conversa conhecida via backend/adaptador. Prévia limitada e conteúdo temporário criptografado seguem o [contrato de dados](../operacao/chat-realtime.md), sem cópia completa do histórico.
 
 ## 6. Estado dos pontos de experiência
 

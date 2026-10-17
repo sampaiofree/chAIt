@@ -20,9 +20,9 @@
 
 1. Administradores iniciam/gerenciam a instância por workspace e o QR Code; credencial administrativa fica no ambiente e token da instância é criptografado no banco, nunca entregue ao navegador.
 2. Laravel autentica webhooks por conexão/segredo e recebe eventos de conexão, chats e mensagens.
-3. Com `CHAIT_REALTIME_ENABLED=false` (padrão do código), o chat mantém o caminho anterior de consultas/sincronização com a UAZAPI e atualizações periódicas.
-4. Com `CHAIT_REALTIME_ENABLED=true`, a lista usa projeção local, importação progressiva e Reverb. Webhooks são aceitos em caixa de entrada criptografada; operações assíncronas retornam `202` com `data.operation_id`, e seus resultados chegam por eventos autorizados. Histórico é consultado ao abrir a conversa.
-5. O novo caminho permite prévia local de até 200 caracteres e conteúdo temporário necessário ao processamento. Payloads são apagados após os consumidores concluírem e expiram em até 24 horas em falha/pendência; mídias temporárias ficam no disco privado, sem base64 persistido. Jobs usam IDs, e não corpos; isso não cria histórico completo local.
+3. Em ambos os modos, a lista usa conversas locais criadas por mensagens recebidas via webhook após o marco de ativação; não há consulta geral `/chat/find`, importação inicial ou reconciliação periódica.
+4. Com `CHAIT_REALTIME_ENABLED=false`, a interface atualiza a lista por consultas periódicas ao banco. Com `true`, Reverb distribui eventos autorizados e operações assíncronas retornam `202` com `data.operation_id`. O histórico de uma conversa conhecida é consultado ao abri-la e pode ser paginado somente pelo seu identificador externo.
+5. Os dois modos permitem prévia local de até 200 caracteres e conteúdo temporário necessário ao processamento. Payloads são apagados após os consumidores concluírem e expiram em até 24 horas em falha/pendência; mídias temporárias ficam no disco privado, sem base64 persistido. Jobs usam IDs, e não corpos; isso não cria histórico completo local.
 
 Configure `UAZAPI_BASE_URL` e `UAZAPI_ADMIN_TOKEN`. Recebimento real de webhooks exige URL pública HTTPS. Infraestrutura, limites, limpeza e reversão do novo caminho estão em [Chat em tempo real](../operacao/chat-realtime.md). Os contratos síncronos de voz/leitura abaixo descrevem o caminho anterior; no novo caminho são executados por operações assíncronas.
 
@@ -116,7 +116,7 @@ O endpoint existente de mídia verifica ID e vínculo com a conversa antes de ch
 
 ### Leitura compartilhada
 
-O backend chama `POST /chat/read` com header `token`, `number` igual ao identificador da conversa autorizada e `read=true`. A documentação informa que isso zera as não lidas e remove o indicador do chat; a confirmação de leitura ao remetente depende das configurações do WhatsApp. No caminho anterior, a lista é sincronizada pelo contador retornado em `/chat/find`; no modo de tempo real, a projeção local e os eventos atualizam os contadores. [Contrato oficial](https://docs.uazapi.com/openapi-bundled.json).
+O backend chama `POST /chat/read` com header `token`, `number` igual ao identificador da conversa autorizada e `read=true`. A documentação informa que isso zera as não lidas e remove o indicador do chat; a confirmação de leitura ao remetente depende das configurações do WhatsApp. Nos dois modos, a lista e os contadores vêm da projeção local e dos eventos recebidos; o modo sem Reverb consulta essa projeção periodicamente. [Contrato oficial](https://docs.uazapi.com/openapi-bundled.json).
 
 A leitura compartilhada persiste `unread_count` e `unread_version`. Isso não exclui a prévia e o conteúdo temporário permitidos no modo de tempo real; ver o contrato inicial deste documento. O histórico retorna a versão observada antes da consulta. A rota de leitura exige essa versão e só zera o contador se ela continuar atual após a confirmação UAZAPI. Se uma mensagem entrar durante a operação, o contador local permanece, o backend tenta restaurar o estado não lido no provedor com `read=false`, e a interface recebe conflito para atualizar o histórico.
 

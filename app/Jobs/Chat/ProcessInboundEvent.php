@@ -66,6 +66,11 @@ class ProcessInboundEvent implements ShouldQueue
 
                 return;
             }
+            if ($inbox->event_type === 'messages' && UazapiInbox::where('uazapi_connection_id', $inbox->uazapi_connection_id)->where('event_type', 'connection')->where('id', '<', $inbox->id)->where('status', 'pending')->where('expires_at', '>', now())->exists()) {
+                $this->release(1);
+
+                return;
+            }
             $publisher->begin();
             DB::transaction(function () use ($inbox, $projection, $publisher, $flows): void {
                 $inbox = UazapiInbox::whereKey($inbox->id)->lockForUpdate()->firstOrFail();
@@ -79,16 +84,28 @@ class ProcessInboundEvent implements ShouldQueue
                     if (in_array($raw, ['connected', 'open', 'online', 'disconnected', 'close', 'offline', 'connecting'], true)) {
                         $connected = in_array($raw, ['connected', 'open', 'online'], true);
                         $phone = app(InternationalPhone::class)->normalize($payload['owner'] ?? data_get($payload, 'instance.phone'));
-                        $connection->update(['status' => $connected ? 'connected' : ($raw === 'connecting' ? 'connecting' : 'disconnected'), 'phone' => $phone ?? $connection->phone, 'connected_at' => $connected ? ($connection->connected_at ?? now()) : null, 'provider_checked_at' => now()]);
+                        $connection->update(['status' => $connected ? 'connected' : ($raw === 'connecting' ? 'connecting' : 'disconnected'), 'phone' => $phone ?? $connection->phone, 'connected_at' => $connected ? ($connection->connected_at ?? now()) : null, 'activated_at' => $connected ? ($connection->activated_at ?? now()) : $connection->activated_at, 'provider_checked_at' => now()]);
                         $publisher->send($connection->workspace_id, 'connection.changed', ['status' => $connection->status, 'phone' => $connection->phone, 'connected_at' => $connection->connected_at, 'last_checked_at' => $connection->provider_checked_at]);
                     }
                 } elseif ($inbox->event_type === 'messages' || $inbox->event_type === 'chats') {
                     $message = $inbox->event_type === 'messages' ? ($payload['message'] ?? []) : null;
-                    $thread = $projection->sync($connection, $payload['chat'] ?? [], $message);
+                    $timestamp = $message ? $projection->timestamp($message['messageTimestamp'] ?? null) : null;
+                    $rawTimestamp = $message['messageTimestamp'] ?? null;
+                    $milliseconds = (is_int($rawTimestamp) || is_string($rawTimestamp)) && preg_match('/^[0-9]{13}$/D', (string) $rawTimestamp);
+                    $fromMe = $message['fromMe'] ?? data_get($message, 'key.fromMe');
+                    $messageChat = $message['chatid'] ?? data_get($message, 'key.remoteJid');
+                    $eligible = $message && $connection->activated_at && $milliseconds && $timestamp && $timestamp->gte($connection->activated_at)
+                        && is_bool($fromMe) && is_string($messageChat) && $messageChat === $inbox->chat_id && ! ($message['isGroup'] ?? false);
+                    $thread = null;
+                    if (! $message || $eligible) {
+                        $thread = $projection->sync($connection, $payload['chat'] ?? [], $message, (bool) ($eligible && ! $fromMe));
+                    }
                     if ($thread && $message) {
                         $serialized = app(UazapiChatController::class)->transientMessage($message, $connection->workspace, $thread);
                         $publisher->send($connection->workspace_id, 'message.received', $serialized, $thread->id);
-                        $flows->handle($connection, $thread, $message, $inbox->id);
+                        if (! $fromMe) {
+                            $flows->handle($connection, $thread, $message, $inbox->id);
+                        }
                     }
                 } elseif ($inbox->event_type === 'messages_update') {
                     $ids = data_get($payload, 'event.MessageIDs', []);

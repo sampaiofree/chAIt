@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\Chat\ProcessInboundEvent;
 use App\Models\Contact;
 use App\Models\ContactChannel;
 use App\Models\ContactCustomFieldValue;
@@ -7,12 +8,14 @@ use App\Models\ExternalWebhook;
 use App\Models\ExternalWebhookReceipt;
 use App\Models\Thread;
 use App\Models\UazapiConnection;
+use App\Models\UazapiInbox;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Contacts\InternationalPhone;
 use App\Services\ExternalWebhooks\PayloadFields;
 use App\Services\ExternalWebhooks\WebhookFailure;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 
 function externalFixture(): array
@@ -254,16 +257,19 @@ test('CRM writes roll back on failure and the receipt records only a safe error'
 });
 
 test('the UAZAPI reuses a contact created by an external webhook and preserves its data', function () {
+    Queue::fake();
     [, $workspace, $webhook] = externalFixture();
     externalActivate($webhook, [externalMapping('display_name', ['name'])]);
     $this->postJson(externalReceiveUrl($webhook), ['phone' => '5527999999999', 'name' => 'CRM'])->assertOk();
     $contact = Contact::sole();
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id, 'activated_at' => now()->subMinute()]);
     $secret = hash_hmac('sha256', 'uazapi-webhook:'.$connection->id, (string) config('app.key'));
     $connection->update(['webhook_secret_hash' => hash('sha256', $secret)]);
-    $this->postJson(route('webhooks.uazapi', [$connection, $secret]), ['EventType' => 'messages', 'id' => 'shared-contact', 'message' => ['id' => 'message-shared', 'chatid' => '5527999999999@s.whatsapp.net', 'fromMe' => true], 'chat' => ['wa_chatid' => '5527999999999@s.whatsapp.net', 'name' => 'WhatsApp']])->assertOk();
+    $this->postJson(route('webhooks.uazapi', [$connection, $secret]), ['EventType' => 'messages', 'id' => 'shared-contact', 'message' => ['id' => 'message-shared', 'chatid' => '5527999999999@s.whatsapp.net', 'fromMe' => false, 'messageTimestamp' => now()->timestamp * 1000], 'chat' => ['wa_chatid' => '5527999999999@s.whatsapp.net', 'name' => 'WhatsApp']])->assertOk();
+    app()->call([new ProcessInboundEvent(UazapiInbox::sole()->id), 'handle']);
     expect(Contact::count())->toBe(1)->and(ContactChannel::sole()->contact_id)->toBe($contact->id)->and(Thread::sole()->contact_id)->toBe($contact->id)->and($contact->fresh()->display_name)->toBe('CRM');
-    $this->postJson(route('webhooks.uazapi', [$connection, $secret]), ['EventType' => 'messages', 'id' => 'lid-event', 'message' => ['chatid' => '123456789012345@lid', 'fromMe' => true]])->assertOk();
+    $this->postJson(route('webhooks.uazapi', [$connection, $secret]), ['EventType' => 'messages', 'id' => 'lid-event', 'message' => ['id' => 'lid-message', 'chatid' => '123456789012345@lid', 'fromMe' => true, 'messageTimestamp' => now()->timestamp * 1000]])->assertOk();
+    app()->call([new ProcessInboundEvent(UazapiInbox::latest('id')->first()->id), 'handle']);
     expect(Contact::count())->toBe(1);
 });
 

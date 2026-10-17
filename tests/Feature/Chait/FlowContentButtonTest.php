@@ -1,11 +1,13 @@
 <?php
 
+use App\Jobs\Chat\ProcessInboundEvent;
 use App\Jobs\ExpireFlowWait;
 use App\Models\AiSession;
 use App\Models\Contact;
 use App\Models\FlowExecution;
 use App\Models\Thread;
 use App\Models\UazapiConnection;
+use App\Models\UazapiInbox;
 use App\Models\User;
 use App\Services\FlowAssistant\AssistantTools;
 use App\Services\Flows\AiInboundMessage;
@@ -26,7 +28,7 @@ function contentButtonFixture(string $kind = 'reply', bool $withWait = true, arr
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id, 'webhook_secret_hash' => hash('sha256', 'button-test-secret')]);
+    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id, 'webhook_secret_hash' => hash('sha256', 'button-test-secret'), 'activated_at' => now()->subMinute()]);
     $thread = Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $contact->id, 'external_chat_id' => $contact->phone.'@s.whatsapp.net', 'status' => 'bot', 'human_opened_at' => null]);
     $field = $workspace->contactCustomFields()->create(['name' => 'Resposta', 'type' => 'text']);
     $profile = ['verified' => true, 'max_text_length' => 4000, 'max_label_length' => 30, 'max_value_length' => 2000, 'max_reply_id_length' => 128];
@@ -56,7 +58,7 @@ function contentButtonFixture(string $kind = 'reply', bool $withWait = true, arr
 
 function contentButtonReply(array $f, array $extra = []): array
 {
-    return ['messageid' => 'content-click', 'messageType' => 'ButtonsResponseMessage', 'buttonOrListid' => $f['selection'], 'chatid' => $f['thread']->external_chat_id, ...$extra];
+    return ['messageid' => 'content-click', 'messageType' => 'ButtonsResponseMessage', 'buttonOrListid' => $f['selection'], 'chatid' => $f['thread']->external_chat_id, 'fromMe' => false, 'messageTimestamp' => now()->timestamp * 1000, ...$extra];
 }
 
 function contentButtonRun(array $f): void
@@ -278,13 +280,16 @@ test('webhook receipt and early reply commit together and failed processing can 
     $url = route('webhooks.uazapi', [$f['connection']->id, 'button-test-secret']);
     $payload = ['EventType' => 'messages', 'id' => 'button-event', 'message' => contentButtonReply($f), 'chat' => ['wa_chatid' => $f['thread']->external_chat_id, 'phone' => $f['contact']->phone]];
     $this->mock(FlowInboundProcessor::class)->shouldReceive('handle')->once()->andThrow(new RuntimeException('Synthetic processing failure'));
-    $this->postJson($url, $payload)->assertStatus(500);
+    $this->postJson($url, $payload)->assertOk();
+    app()->call([new ProcessInboundEvent(UazapiInbox::sole()->id), 'handle']);
     expect(DB::table('uazapi_webhook_receipts')->count())->toBe(0);
+    expect(UazapiInbox::sole()->status)->toBe('failed');
     app()->instance(FlowInboundProcessor::class, new FlowInboundProcessor(app(FlowRuntime::class)));
     $this->postJson($url, $payload)->assertOk();
+    app()->call([new ProcessInboundEvent(UazapiInbox::sole()->id), 'handle']);
     $this->postJson($url, $payload)->assertOk();
     expect($f['execution']->fresh()->context)->toHaveKey('early_button_reply');
-    expect(DB::table('uazapi_webhook_receipts')->count())->toBe(2);
+    expect(DB::table('uazapi_webhook_receipts')->count())->toBe(1);
     contentButtonRun($f);
     expect(contentButtonValue($f))->toBe('Tenho interesse');
     expect(json_encode(DB::table('uazapi_webhook_receipts')->get()))->not->toContain('Tenho interesse', 'Quer conhecer');

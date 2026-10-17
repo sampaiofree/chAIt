@@ -11,7 +11,6 @@ use App\Models\UazapiConnection;
 use App\Models\Workspace;
 use App\Services\Chat\ChatOperations;
 use App\Services\Chat\ChatProjection;
-use App\Services\Chat\ChatReconciliation;
 use App\Services\Chat\HumanAssignment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -33,9 +32,8 @@ class ChatController extends Controller
         ])['tag_ids'] ?? [];
         $connection = UazapiConnection::where('workspace_id', $workspace->id)->first();
         if (! $connection) {
-            return response()->json(['data' => [], 'selected_thread' => null, 'next_cursor' => null, 'import' => ['status' => 'unavailable', 'offset' => 0, 'complete' => true]]);
+            return response()->json(['data' => [], 'selected_thread' => null, 'next_cursor' => null, 'end_cursor' => null]);
         }
-        $connection = app(ChatReconciliation::class)->start($connection);
         $membership = $request->user()->membershipFor($workspace);
         $query = Thread::where('workspace_id', $workspace->id)->where('uazapi_connection_id', $connection->id);
         if (! WorkspaceRole::from($membership->role)->atLeast(WorkspaceRole::Admin) && ! $membership->can_view_unassigned) {
@@ -86,18 +84,14 @@ class ChatController extends Controller
         }
         $endCursor = $last ? base64_encode(json_encode(['at' => $last->sort_at, 'id' => $last->id])) : null;
 
-        return response()->json(['data' => $serialized->values(), 'selected_thread' => $selected, 'next_cursor' => $more ? $endCursor : null, 'end_cursor' => $endCursor, 'import' => ['status' => $connection->chat_import_status, 'offset' => $connection->chat_import_offset, 'complete' => $connection->chat_import_status === 'complete' || $connection->chat_last_reconciled_at !== null]]);
+        return response()->json(['data' => $serialized->values(), 'selected_thread' => $selected, 'next_cursor' => $more ? $endCursor : null, 'end_cursor' => $endCursor]);
     }
 
     public function import(Request $request, Workspace $workspace): JsonResponse
     {
-        abort_unless(config('chat.enabled'), 404);
         $this->ensureWorkspaceAccess($request->user(), $workspace);
-        $connection = UazapiConnection::where('workspace_id', $workspace->id)->firstOrFail();
-        abort_unless($connection->status === 'connected', 409, 'WhatsApp desconectado.');
-        $connection = app(ChatReconciliation::class)->start($connection, true);
 
-        return response()->json(['data' => ['status' => $connection->chat_import_status, 'offset' => $connection->chat_import_offset]], $connection->chat_import_status === 'complete' ? 200 : 202);
+        return response()->json(['message' => 'A importação de conversas não está mais disponível.'], 410);
     }
 
     public function connect(Request $request, Workspace $workspace, string $kind = 'connect'): JsonResponse
@@ -127,7 +121,7 @@ class ChatController extends Controller
         abort_unless($thread->workspace_id === $workspace->id && $thread->uazapi_connection_id, 404);
         $member = $request->user()->membershipFor($workspace);
         abort_unless(WorkspaceRole::from($member->role)->atLeast(WorkspaceRole::Admin) || $member->can_view_unassigned || $thread->assigned_to_user_id === $request->user()->id, 404);
-        $payload = $request->only(['read_version', 'track_id', 'preview', 'refresh']);
+        $payload = $request->only(['read_version', 'track_id', 'preview', 'refresh', 'offset']);
         if ($kind === 'media') {
             $payload['message_id'] = (string) $request->route('messageId');
         }

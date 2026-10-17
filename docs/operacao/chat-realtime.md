@@ -6,13 +6,11 @@ Para a instalação inicial, siga a ordem completa de [Deploy do chAIt](deploy.m
 
 ## Persistência e regras do produto
 
-A lista vem de `threads`, contatos e estados locais. `GET /workspaces/{workspace}/conversations` não consulta a UAZAPI no novo caminho. Retorna `data`, `selected_thread`, `next_cursor` e `import` (status, offset, complete). A leitura local continua disponível quando o WhatsApp estiver desconectado.
+A lista vem de `threads`, contatos e estados locais nos dois modos. `GET /workspaces/{workspace}/conversations` não consulta a UAZAPI e retorna `data`, `selected_thread` e cursores de paginação local. A leitura local continua disponível quando o WhatsApp estiver desconectado. Um workspace novo começa sem conversas, mesmo que o número tenha chats anteriores no provedor.
 
-A primeira abertura agenda uma importação em segundo plano, independentemente de já existirem contatos/conversas. O job percorre automaticamente páginas compactas de 200 chats; `POST /workspaces/{workspace}/uazapi/import` permite retomar manualmente uma importação com falha. Bloqueio, offset persistido e upsert impedem importações concorrentes da mesma página. O navegador lê páginas locais por cursor. A interface informa quando a importação inicial ainda não terminou; uma base parcial não garante busca em toda a conta WhatsApp.
+Somente mensagens recebidas depois de `uazapi_connections.activated_at` descobrem contatos e conversas. A migração marca as conexões já existentes no instante da implantação; uma conexão nova recebe o marco na primeira confirmação de conexão. Reconectar o mesmo número não altera esse horário nem apaga conversas. Eventos `chats` atualizam apenas conversas já conhecidas. Mensagens enviadas, grupos, eventos históricos e mensagens com horário inválido ou anterior ao marco não descobrem contatos.
 
-Após uma varredura completa, `chat_last_reconciled_at` inicia um prazo de 24 horas. Ao abrir a lista depois desse prazo, o servidor agenda uma nova varredura em segundo plano e responde com os dados locais. O mesmo estado persistido guarda o offset do ciclo em andamento. Falhas preservam o último offset e são retomadas após cinco minutos pelo `chat:recover` ou na próxima visita; trabalhos interrompidos em execução são reenviados após dois minutos. Sem conexão WhatsApp, a lista local permanece disponível e uma nova varredura espera a reconexão. A migração deixa `chat_last_reconciled_at` vazio nas instalações existentes, causando uma varredura inicial após a ativação do novo caminho.
-
-`chat_last_webhook_at` registra o último evento processado. Webhooks continuam atualizando a lista, mas não adiam a varredura completa. `chat:metrics` mostra os dois horários, o estado e o offset sem conteúdo de mensagens. Uma varredura ordenada e paginada pode sofrer alterações enquanto a UAZAPI recebe mensagens; a garantia é uma conferência periódica, não uma fotografia transacional do provedor.
+`/chat/find`, a importação inicial e a varredura periódica foram retirados da operação. `POST /workspaces/{workspace}/uazapi/import` responde `410` para clientes antigos, e jobs de importação ainda enfileirados terminam sem consultar o provedor. `chat:recover` recupera somente webhooks e operações já aceitos localmente; não busca eventos perdidos na UAZAPI. `chat_last_webhook_at` e `activated_at` são exibidos por `chat:metrics` sem conteúdo de mensagens.
 
 A conversa mantém ID, direção, tipo e horário da última mensagem e uma prévia textual de até 200 caracteres. Mídias mantêm apenas tipo/metadados. Campos ausentes ou snapshots antigos não devem apagar uma prévia mais recente. Isso substitui a proibição anterior de persistir qualquer prévia; não autoriza armazenar o histórico completo.
 
@@ -24,7 +22,7 @@ Não há IndexedDB. O histórico é consultado ao abrir uma conversa e fica na m
 
 O endpoint existente autentica a conexão/segredo, limita o corpo a 256 KiB e aceita `messages`, `messages_update`, `chats` e `connection`. Tokens são removidos antes da persistência. `200` indica aceitação durável; falha de despacho posterior é recuperável pela caixa de entrada. Eventos de mensagens são deduplicados por conexão e identidade. Recibos possuem identidade própria e podem afetar múltiplas mensagens; a ordem dos IDs não altera sua identidade. Snapshots de conexão/chats sem identificador de evento são aceitos novamente, pois um conteúdo igual pode representar uma transição posterior legítima.
 
-A ordem de aceitação é respeitada por contato/conexão; timestamps protegem a prévia contra eventos antigos. O frontend mescla histórico/eventos por ID e `track_id`, sem regredir entrega/leitura. Canais privados são individuais por usuário; destinatários são calculados novamente pelo servidor conforme o acesso vigente ao workspace/conversa. Uma transferência remove a conversa da tela dos usuários sem acesso. Nenhum token UAZAPI é entregue ao navegador.
+A ordem de aceitação é respeitada por contato/conexão; o horário da mensagem deve ser igual ou posterior ao marco de ativação. Timestamps protegem a prévia contra eventos antigos. O frontend mescla histórico/eventos por ID e `track_id`, sem regredir entrega/leitura. Canais privados são individuais por usuário; destinatários são calculados novamente pelo servidor conforme o acesso vigente ao workspace/conversa. Uma transferência remove a conversa da tela dos usuários sem acesso. Nenhum token UAZAPI é entregue ao navegador.
 
 Operações assíncronas retornam `202` com `data.operation_id`. O resultado chega como `operation.finished`; históricos grandes são enviados em partes transitórias. Envios com timeout ou execução interrompida ficam `confirmation_pending`, sem reenvio automático. Jobs atrasados revalidam responsável/permissão e estado da automação. Operações de conexão guardam a etapa confirmada para não recriar instâncias durante espera por cota.
 
@@ -66,7 +64,7 @@ Todas as chamadas UAZAPI compartilham espaçamento de 8 chamadas/s e até duas s
 
 ## Operação e validação
 
-- `chat:recover`: reencaminha eventos/operações já aceitos e retoma importações ou reconciliações interrompidas; não busca mensagens individuais perdidas na UAZAPI.
+- `chat:recover`: reencaminha eventos e operações já aceitos localmente; não importa chats nem busca mensagens perdidas na UAZAPI.
 - `chat:prune`: descarta conteúdo/arquivos temporários expirados; agendado a cada minuto.
 - `chat:metrics`: contagens e idade dos pendentes, falhas e conteúdos próximos da expiração, sem corpos.
 - Horizon registra espera em inbound/automations/ai/media/default; snapshots são coletados a cada cinco minutos. Encaminhar alertas da infraestrutura conforme os limites operacionais da instalação.

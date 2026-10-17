@@ -6,7 +6,7 @@ SaaS de atendimento WhatsApp por workspace, com Laravel no backend e Vue 3 + Ine
 
 Defina `UAZAPI_BASE_URL` e `UAZAPI_ADMIN_TOKEN` no ambiente do servidor. O token administrativo permanece no Laravel, e o token por instância é criptografado no banco. Cada workspace pode iniciar uma instância pelo botão **Conectar com QR Code** na tela de conversas.
 
-O histórico das mensagens é consultado na UAZAPI. O Laravel guarda contatos, atribuição, estados das conversas e notas. Com o chat em tempo real ativo, também guarda os metadados da última mensagem e uma prévia textual limitada para a lista; não mantém o histórico completo. A lista é lida do banco, com importação inicial e reconciliação completa a cada 24 horas em segundo plano. Consulte [ativação e operação do chat](docs/operacao/chat-realtime.md).
+O histórico das mensagens é consultado por conversa na UAZAPI. O Laravel guarda contatos, atribuição, estados, notas, metadados da última mensagem e uma prévia textual de até 200 caracteres; não mantém o histórico completo. Nos dois modos, a lista vem do banco local e novas conversas surgem apenas após mensagens recebidas por webhook depois da ativação. Não há importação ou reconciliação geral de chats. Consulte [ativação e operação do chat](docs/operacao/chat-realtime.md).
 
 Administradores configuram a chave própria em **Configurações → OpenAI**. Ela é criptografada por workspace e não é devolvida à interface. O bloco IA usa contexto remoto durante a sessão, limpa itens e conversa ao encerrá-la e mantém apenas metadados locais. A remoção ou troca da chave encerra sessões ativas e preserva temporariamente a credencial criptografada necessária para concluir a limpeza remota.
 

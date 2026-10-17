@@ -203,7 +203,7 @@ return [
         'maxTime' => 3600, 'maxJobs' => 1000, 'memory' => $queue === 'media' ? 256 : 128,
         'tries' => 1, 'timeout' => 210, 'nice' => 0,
     ]])->all() : [
-        'supervisor-1' => ['connection' => 'redis', 'queue' => ['automations', 'default'], 'balance' => 'auto', 'autoScalingStrategy' => 'time', 'maxProcesses' => 1, 'maxTime' => 0, 'maxJobs' => 0, 'memory' => 128, 'tries' => 1, 'timeout' => 210, 'nice' => 0],
+        'supervisor-1' => ['connection' => 'redis', 'queue' => ['inbound', 'automations', 'default'], 'balance' => 'auto', 'autoScalingStrategy' => 'time', 'maxProcesses' => 1, 'maxTime' => 0, 'maxJobs' => 0, 'memory' => 128, 'tries' => 1, 'timeout' => 210, 'nice' => 0],
     ],
     'environments' => env('CHAIT_REALTIME_ENABLED', false) ? ['production' => [], 'local' => [], 'testing' => []] : [
         'production' => ['supervisor-1' => ['maxProcesses' => 10, 'balanceMaxShift' => 1, 'balanceCooldown' => 3]],

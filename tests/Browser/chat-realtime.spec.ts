@@ -288,50 +288,41 @@ test('loss of realtime is visible and does not query the provider for history', 
     expect(state.counts().historyCalls).toBe(1);
 });
 
-test('filtered searches stop after three remote page requests and offer manual continuation', async ({
+test('filtered searches page through local conversations without importing chats', async ({
     page,
 }) => {
     const state = await setup(page);
     await expect(
         page.getByText('Mensagem do histórico', { exact: true }),
     ).toBeVisible();
+    const cursors: string[] = [];
     let imports = 0;
-    await page.route('**/workspaces/*/conversations?**', (route) =>
-        route.fulfill({
+    await page.route('**/workspaces/*/conversations?**', (route) => {
+        const cursor = new URL(route.request().url()).searchParams.get(
+            'cursor',
+        );
+        cursors.push(cursor || 'first');
+
+        return route.fulfill({
             json: {
-                data: [],
-                selected_thread: null,
-                next_cursor: null,
-                end_cursor: null,
-                import: {
-                    status: 'partial',
-                    offset: imports * 200,
-                    complete: false,
-                },
+                data: cursor ? [] : [state.thread],
+                selected_thread: state.thread,
+                next_cursor: cursor ? null : 'second-page',
             },
-        }),
-    );
-    await page.route('**/workspaces/*/uazapi/import', async (route) => {
-        imports++;
-        await route.fulfill({
-            status: 202,
-            json: { data: { status: 'running' } },
-        });
-        state.emit('import.completed', {
-            offset: imports * 200,
-            complete: false,
         });
     });
-    await page.getByPlaceholder('Buscar conversas').fill('Contato ausente');
-    await expect.poll(() => imports).toBe(3);
+    await page.route('**/workspaces/*/uazapi/import', (route) => {
+        imports++;
+
+        return route.fulfill({ status: 410, json: {} });
+    });
+    await page.getByPlaceholder('Buscar conversas').fill('Contato');
     await expect(
         page.getByRole('button', { name: 'Carregar mais conversas' }),
     ).toBeEnabled();
-    await page.clock.install();
-    await page.clock.fastForward(65000);
-    expect(imports).toBe(3);
     await page.getByRole('button', { name: 'Carregar mais conversas' }).click();
-    await expect.poll(() => imports).toBe(4);
+    await expect.poll(() => cursors).toEqual(['first', 'second-page']);
+    expect(imports).toBe(0);
 });
 
 test('conversation events respect the selected contact tags', async ({

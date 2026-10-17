@@ -17,7 +17,7 @@ class UazapiConnection extends Model
 
     protected function casts(): array
     {
-        return ['instance_token' => 'encrypted', 'connected_at' => 'datetime', 'provider_checked_at' => 'datetime', 'chat_import_dispatched_at' => 'datetime', 'chat_last_reconciled_at' => 'datetime', 'chat_last_webhook_at' => 'datetime', 'chat_import_offset' => 'integer'];
+        return ['instance_token' => 'encrypted', 'connected_at' => 'datetime', 'activated_at' => 'datetime', 'provider_checked_at' => 'datetime', 'chat_import_dispatched_at' => 'datetime', 'chat_last_reconciled_at' => 'datetime', 'chat_last_webhook_at' => 'datetime', 'chat_import_offset' => 'integer'];
     }
 
     public function workspace(): BelongsTo

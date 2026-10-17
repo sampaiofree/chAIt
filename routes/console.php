@@ -52,9 +52,7 @@ Artisan::command('flows:reconcile-sends', function () {
 Schedule::command('flows:reconcile-sends')->everyMinute()->withoutOverlapping();
 
 Artisan::command('chat:recover', function () {
-    if (config('chat.enabled')) {
-        app(ChatMaintenance::class)->recover();
-    }
+    app(ChatMaintenance::class)->recover();
 })->purpose('Reencaminha somente eventos e operações já aceitos pelo CHAIT');
 Artisan::command('chat:prune', function () {
     app(ChatMaintenance::class)->prune();

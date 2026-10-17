@@ -1,9 +1,11 @@
 <?php
 
+use App\Jobs\Chat\ProcessInboundEvent;
 use App\Models\Contact;
 use App\Models\Thread;
 use App\Models\ThreadAssignment;
 use App\Models\UazapiConnection;
+use App\Models\UazapiInbox;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
@@ -13,6 +15,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 
 function uazapiWebhookUrl(UazapiConnection $connection): string
 {
@@ -278,7 +281,7 @@ test('chat status and assignment filters combine without excluding waiting atten
     expect(collect($response->json('data'))->pluck('id')->sort()->values()->all())->toBe($expected);
 })->with(['all', 'mine', 'unassigned'])->with(['all', 'open']);
 
-test('provider-backed chat filters by workspace contact tags before limiting the list', function () {
+test('local chat filters by workspace contact tags before limiting the list', function () {
     Http::fake(['*/chat/find' => Http::response(['chats' => []])]);
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
@@ -373,7 +376,7 @@ test('history normalizes image metadata and searches the provider by send correl
     Http::fake(['*/message/find' => function (ClientRequest $request) {
         if ($request['track_id'] ?? null) {
             return Http::response(['messages' => [[
-                'id' => 'provider-message-2', 'track_id' => 'send-attempt-2', 'fromMe' => true, 'messageType' => 'image',
+                'id' => 'provider-message-2', 'chatid' => '551155501234@s.whatsapp.net', 'track_id' => 'send-attempt-2', 'fromMe' => true, 'messageType' => 'image',
                 'fileURL' => 'https://cdn.test/image.jpg', 'text' => 'Legenda', 'status' => 'Sent',
             ]]], 200);
         }
@@ -402,6 +405,23 @@ test('history normalizes image metadata and searches the provider by send correl
         ->assertJsonPath('data.0.caption', 'Legenda')
         ->assertJsonPath('data.0.media_url', 'https://cdn.test/image.jpg')
         ->assertJsonPath('read_version', 3);
+    Http::assertSent(fn ($request) => $request->url() === 'https://api.uazapi.test/message/find' && ($request['track_id'] ?? null) === 'send-attempt-2' && $request['chatid'] === $thread->external_chat_id);
+
+});
+
+test('history correlation rejects a provider result from another conversation', function () {
+    config(['services.uazapi.base_url' => 'https://api.uazapi.test']);
+    Http::fake(['*/message/find' => fn (ClientRequest $request) => Http::response(['messages' => ($request['track_id'] ?? null) ? [[
+        'id' => 'other-chat-message', 'chatid' => '551166601234@s.whatsapp.net', 'track_id' => 'send-attempt-2',
+    ]] : []], 200)]);
+    $user = User::factory()->create();
+    $workspace = $user->fresh()->currentWorkspace;
+    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
+    $thread = Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $contact->id, 'external_chat_id' => '551155501234@s.whatsapp.net']);
+
+    $this->actingAs($user)->getJson(route('workspaces.conversations.messages', [$workspace, $thread]).'?track_id=send-attempt-2')
+        ->assertOk()->assertJsonCount(0, 'data');
 });
 
 test('media URLs can be renewed only for messages in the authorized conversation', function () {
@@ -431,8 +451,9 @@ test('media URLs can be renewed only for messages in the authorized conversation
 });
 
 test('UAZAPI webhooks are deduplicated and message bodies are not persisted', function () {
+    Queue::fake();
     $workspace = Workspace::factory()->create();
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id, 'activated_at' => now()->subMinute()]);
     $secret = hash_hmac('sha256', 'uazapi-webhook:'.$connection->id, (string) config('app.key'));
     $connection->update(['webhook_secret_hash' => hash('sha256', $secret)]);
     $payload = [
@@ -442,7 +463,7 @@ test('UAZAPI webhooks are deduplicated and message bodies are not persisted', fu
             'id' => 'message-123',
             'chatid' => '551155501234@s.whatsapp.net',
             'fromMe' => false,
-            'messageTimestamp' => 1781000000,
+            'messageTimestamp' => now()->timestamp * 1000,
             'text' => 'conteúdo que não deve ser salvo',
         ],
         'chat' => [
@@ -460,13 +481,37 @@ test('UAZAPI webhooks are deduplicated and message bodies are not persisted', fu
     $nextMessage['message']['id'] = 'message-124';
     unset($nextMessage['chat']['wa_unreadCount']);
     $this->postJson(uazapiWebhookUrl($connection), $nextMessage)->assertOk()->assertJsonPath('ok', true);
+    foreach (UazapiInbox::orderBy('id')->get() as $inbox) {
+        app()->call([new ProcessInboundEvent($inbox->id), 'handle']);
+    }
 
-    expect(DB::table('uazapi_webhook_receipts')->count())->toBe(2)
+    expect(UazapiInbox::count())->toBe(2)
         ->and(DB::table('contacts')->where('workspace_id', $workspace->id)->count())->toBe(1)
         ->and(DB::table('threads')->where('uazapi_connection_id', $connection->id)->count())->toBe(1)
         ->and(Thread::query()->where('uazapi_connection_id', $connection->id)->value('unread_count'))->toBe(2)
         ->and(Thread::query()->where('uazapi_connection_id', $connection->id)->value('unread_version'))->toBe(2)
         ->and(DB::table('messages')->count())->toBe(0);
+});
+
+test('known conversation history is paged by its chat id without scanning chats', function () {
+    config(['chat.enabled' => false, 'services.uazapi.base_url' => 'https://api.uazapi.test']);
+    $user = User::factory()->create();
+    $workspace = $user->fresh()->currentWorkspace;
+    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
+    $thread = Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $contact->id, 'external_chat_id' => '5527888888888@s.whatsapp.net']);
+    Http::fake(function (ClientRequest $request) use ($thread) {
+        expect($request->url())->toBe('https://api.uazapi.test/message/find')
+            ->and($request['chatid'])->toBe($thread->external_chat_id);
+        $offset = (int) ($request['offset'] ?? 0);
+        $count = $offset === 0 ? 100 : 1;
+
+        return Http::response(['messages' => array_map(fn ($index) => ['id' => 'message-'.$offset.'-'.$index, 'chatid' => $thread->external_chat_id, 'messageType' => 'text', 'text' => 'Olá'], range(1, $count))]);
+    });
+    $url = route('workspaces.conversations.messages', [$workspace, $thread]);
+    $this->actingAs($user)->getJson($url)->assertOk()->assertJsonCount(100, 'data')->assertJsonPath('next_offset', 100);
+    $this->getJson($url.'?offset=100')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('next_offset', null);
+    Http::assertSentCount(2);
 });
 
 test('marking a conversation read uses the provider and clears shared unread state', function () {

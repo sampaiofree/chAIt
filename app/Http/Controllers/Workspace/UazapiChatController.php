@@ -6,8 +6,6 @@ use App\Enums\WorkspaceRole;
 use App\Http\Controllers\Chat\ChatController;
 use App\Http\Controllers\Concerns\EnsuresWorkspaceAccess;
 use App\Http\Controllers\Controller;
-use App\Models\Contact;
-use App\Models\ContactChannel;
 use App\Models\FlowExecution;
 use App\Models\Note;
 use App\Models\Thread;
@@ -18,11 +16,8 @@ use App\Services\Chat\ChatProjection;
 use App\Services\Chat\ChatPublisher;
 use App\Services\Chat\HumanAssignment;
 use App\Services\Chat\InboundEvents;
-use App\Services\Contacts\ContactIdentity;
-use App\Services\Contacts\InternationalPhone;
 use App\Services\Flows\FlowAutomationControl;
 use App\Services\Flows\FlowExecutionManager;
-use App\Services\Flows\FlowInboundProcessor;
 use App\Services\Uazapi\UazapiClient;
 use App\Services\Uazapi\UazapiDeferredException;
 use App\Services\Uazapi\UazapiRejectedException;
@@ -34,7 +29,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
@@ -129,6 +123,7 @@ class UazapiChatController extends Controller
                 'status' => $connected ? 'connected' : ($rawStatus ?: 'disconnected'),
                 'phone' => $phone ?: $connection->phone,
                 'connected_at' => $connected ? ($connection->connected_at ?? now()) : null,
+                'activated_at' => $connected ? ($connection->activated_at ?? now()) : $connection->activated_at,
                 'profile_name' => data_get($data, 'instance.profileName') ?? $connection->profile_name,
                 'profile_pic_url' => data_get($data, 'instance.profilePicUrl') ?? $connection->profile_pic_url,
                 'last_disconnect_at' => $this->providerTimestamp(data_get($data, 'instance.lastDisconnect')) ?? $connection->last_disconnect_at,
@@ -177,63 +172,7 @@ class UazapiChatController extends Controller
 
     public function index(Request $request, Workspace $workspace, UazapiClient $uazapi): JsonResponse
     {
-        if (config('chat.enabled') && ! $request->attributes->get('chat_operation_direct')) {
-            return app(ChatController::class)->index($request, $workspace, app(ChatProjection::class));
-        }
-        $this->ensureWorkspaceAccess($request->user(), $workspace);
-        $tagIds = $request->validate([
-            'tag_ids' => ['sometimes', 'array'],
-            'tag_ids.*' => ['integer', 'distinct', Rule::exists('tags', 'id')->where('workspace_id', $workspace->id)],
-        ])['tag_ids'] ?? [];
-        $connection = UazapiConnection::query()->where('workspace_id', $workspace->id)->first();
-        abort_unless($connection && $connection->status === 'connected', 409, 'Conecte o WhatsApp para carregar as conversas.');
-
-        $membership = $request->user()->membershipFor($workspace);
-        $role = WorkspaceRole::from($membership->role);
-        $items = $this->asList($uazapi->chats($connection), ['chats', 'data', 'items']);
-        foreach ($items as $chat) {
-            $this->syncChat($workspace, $connection, $chat);
-        }
-
-        $query = Thread::query()->where('workspace_id', $workspace->id)
-            ->where('uazapi_connection_id', $connection->id)
-            ->with(['contact', 'assignedTo', 'notes.user'])
-            ->when(! $role->atLeast(WorkspaceRole::Admin) && ! $membership->can_view_unassigned,
-                fn ($q) => $q->where('assigned_to_user_id', $request->user()->id));
-
-        $assignment = $request->string('assignment')->toString();
-        if ($assignment === 'mine') {
-            $query->where('assigned_to_user_id', $request->user()->id);
-        }
-        if ($assignment === 'unassigned') {
-            $query->whereNull('assigned_to_user_id');
-        }
-        $status = $request->string('status')->toString();
-        if ($status === 'open') {
-            $query->whereIn('status', ['open', 'in_progress']);
-        }
-        if ($status === 'completed') {
-            $query->where('status', 'completed');
-        }
-        if ($tagIds !== []) {
-            $query->whereHas('contact.tags', fn ($q) => $q->where('tags.workspace_id', $workspace->id)->whereIn('tags.id', $tagIds));
-        }
-        if ($search = trim((string) $request->string('search'))) {
-            $digits = preg_replace('/\D+/', '', $search);
-            $query->whereHas('contact', function ($q) use ($search, $digits) {
-                $q->where('display_name', 'like', "%{$search}%");
-                if ($digits !== '') {
-                    $q->orWhere('phone', 'like', '%'.$digits.'%');
-                }
-            });
-        }
-        $threads = $query->orderByDesc('last_message_at')->limit(100)->get();
-        $selected = $threads->firstWhere('id', $request->integer('thread_id')) ?? $threads->first();
-
-        return response()->json([
-            'data' => $threads->map(fn (Thread $thread) => $this->serialize($thread))->values(),
-            'selected_thread' => $selected ? $this->serialize($selected, true) : null,
-        ]);
+        return app(ChatController::class)->index($request, $workspace, app(ChatProjection::class));
     }
 
     public function history(Request $request, Workspace $workspace, Thread $thread, UazapiClient $uazapi): JsonResponse
@@ -246,21 +185,23 @@ class UazapiChatController extends Controller
         $readVersion = (int) $thread->unread_version;
         $connection = $thread->uazapiConnection;
         abort_unless($connection, 404);
+        abort_unless(filled($thread->external_chat_id), 404);
+        $offset = (int) ($request->validate(['offset' => ['sometimes', 'integer', 'min:0', 'max:100000']])['offset'] ?? 0);
         try {
-            $messages = array_reverse($this->asList($uazapi->messages($connection, $thread->external_chat_id ?: $thread->contact->phone), ['messages', 'data', 'items']));
+            $page = $this->asList($uazapi->messages($connection, $thread->external_chat_id, $offset), ['messages', 'data', 'items']);
+            $messages = array_reverse($page);
             $trackId = $request->string('track_id')->toString();
-            if ($trackId !== '') {
-                $chatId = $thread->external_chat_id ?: $thread->contact->phone;
-                $correlated = $this->asList($uazapi->messages($connection, $chatId, 0, $trackId), ['messages', 'data', 'items']);
+            if ($offset === 0 && $trackId !== '') {
+                $correlated = array_values(array_filter($this->asList($uazapi->messages($connection, $thread->external_chat_id, 0, $trackId, restrictToChat: true), ['messages', 'data', 'items']), fn ($item) => ($item['chatid'] ?? data_get($item, 'key.remoteJid')) === $thread->external_chat_id));
                 $messages = [...$messages, ...$correlated];
             }
             $messages = collect($messages)->unique(fn (array $message) => (string) (data_get($message, 'id') ?? data_get($message, 'messageid') ?? data_get($message, 'track_id')))->values();
 
-            return response()->json(['data' => $messages->map(fn ($message) => $this->transientMessage($message, $workspace, $thread))->values(), 'history_limited' => false, 'read_version' => $readVersion]);
+            return response()->json(['data' => $messages->map(fn ($message) => $this->transientMessage($message, $workspace, $thread))->values(), 'next_offset' => count($page) === 100 ? $offset + 100 : null, 'history_limited' => false, 'read_version' => $readVersion]);
         } catch (UazapiDeferredException $exception) {
             throw $exception;
         } catch (HttpClientException|RuntimeException) {
-            return response()->json(['data' => [], 'history_limited' => true, 'message' => 'A UAZAPI não disponibilizou este histórico. Mensagens antigas podem ter expirado ou não terem sido sincronizadas pelo aparelho.'], 503);
+            return response()->json(['data' => [], 'next_offset' => null, 'history_limited' => true, 'message' => 'A UAZAPI não disponibilizou este histórico. Mensagens antigas podem ter expirado ou não terem sido sincronizadas pelo aparelho.'], 503);
         }
     }
 
@@ -624,135 +565,14 @@ class UazapiChatController extends Controller
         return response()->json(['data' => $note->load('user')], 201);
     }
 
-    public function webhook(Request $request, UazapiConnection $connection, string $secret, FlowInboundProcessor $flows): JsonResponse
+    public function webhook(Request $request, UazapiConnection $connection, string $secret): JsonResponse
     {
         abort_unless($connection->webhook_secret_hash && hash_equals($connection->webhook_secret_hash, hash('sha256', $secret)), 404);
         $providerToken = $request->input('token');
         abort_if(is_string($providerToken) && ! hash_equals((string) $connection->instance_token, $providerToken), 404);
-        if (config('chat.enabled')) {
-            $inbox = app(InboundEvents::class)->accept($request, $connection);
+        $inbox = app(InboundEvents::class)->accept($request, $connection);
 
-            return response()->json(['ok' => true, 'receipt_id' => $inbox->id]);
-        }
-        $eventType = substr((string) ($request->input('EventType') ?? $request->input('event') ?? $request->input('type') ?? 'event'), 0, 64);
-        $message = (array) $request->input('message', []);
-        $eventId = (string) ($request->input('id') ?? data_get($message, 'id') ?? data_get($message, 'messageid') ?? data_get($message, 'key.id') ?? '');
-        $eventKey = $eventId ?: implode('|', [
-            data_get($message, 'messageTimestamp') ?? data_get($message, 'timestamp') ?? '',
-            data_get($message, 'chatid') ?? data_get($message, 'key.remoteJid') ?? '',
-            data_get($message, 'fromMe') ?? data_get($message, 'key.fromMe') ?? '',
-            $request->input('status', ''),
-        ]);
-        $dedupe = hash('sha256', $connection->id.'|'.$eventType.'|'.$eventKey);
-
-        return DB::transaction(function () use ($request, $connection, $flows, $eventType, $message, $eventId, $dedupe): JsonResponse {
-            // Match the executor's contact-first lock order. Receipt and processing commit together.
-            $chat = (array) $request->input('chat', []);
-            $external = data_get($chat, 'wa_chatid') ?? data_get($chat, 'chatid') ?? data_get($chat, 'jid') ?? data_get($chat, 'id')
-                ?? data_get($message, 'chatid') ?? data_get($message, 'key.remoteJid');
-            $contactId = Thread::where('uazapi_connection_id', $connection->id)->where('external_chat_id', $external)->value('contact_id');
-            if ($contactId) {
-                Contact::where('workspace_id', $connection->workspace_id)->whereKey($contactId)->lockForUpdate()->firstOrFail();
-            }
-            $inserted = DB::table('uazapi_webhook_receipts')->insertOrIgnore([
-                'uazapi_connection_id' => $connection->id, 'event_type' => $eventType, 'event_id' => $eventId ?: null,
-                'dedupe_hash' => $dedupe, 'created_at' => now(), 'updated_at' => now(),
-            ]);
-            if (str_contains(strtolower($eventType), 'connection')) {
-                $payload = $request->all();
-                $status = strtolower((string) (data_get($payload, 'instance.status') ?? (is_string($request->input('status')) ? $request->input('status') : '')));
-                $connected = (bool) (data_get($payload, 'status.connected') ?? in_array($status, ['connected', 'open', 'online'], true));
-                $connection->update(['status' => $connected ? 'connected' : 'disconnected', 'connected_at' => $connected ? ($connection->connected_at ?? now()) : null]);
-            }
-            if ($inserted && strtolower($eventType) === 'messages') {
-                $chat = (array) $request->input('chat', []);
-                $external = (string) (data_get($chat, 'wa_chatid') ?? data_get($chat, 'chatid') ?? data_get($chat, 'jid') ?? data_get($chat, 'id')
-                    ?? data_get($message, 'chatid') ?? data_get($message, 'key.remoteJid') ?? '');
-                if ($external !== '') {
-                    $chat['wa_chatid'] = $external;
-                    $chat['phone'] = data_get($chat, 'phone') ?? $external;
-                    $chat['name'] = data_get($chat, 'name') ?? data_get($chat, 'wa_name') ?? $request->input('pushName');
-                    $this->syncChat($connection->workspace, $connection, $chat);
-                    $thread = Thread::query()->where('uazapi_connection_id', $connection->id)->where('external_chat_id', $external)->first();
-                    if ($thread) {
-                        $fromMe = (bool) (data_get($message, 'fromMe') ?? data_get($message, 'key.fromMe') ?? false);
-                        $time = $this->providerTimestamp(data_get($message, 'messageTimestamp') ?? data_get($message, 'timestamp')) ?? now();
-                        $chatUnread = $this->providerUnreadCount($chat);
-                        $thread = DB::transaction(function () use ($thread, $fromMe, $time, $chatUnread): Thread {
-                            $current = Thread::query()->whereKey($thread->id)->lockForUpdate()->firstOrFail();
-                            $current->forceFill([
-                                'last_message_at' => $time,
-                                'last_inbound_at' => $fromMe ? $current->last_inbound_at : $time,
-                                'last_outbound_at' => $fromMe ? $time : $current->last_outbound_at,
-                                'unread_count' => $fromMe || $chatUnread !== null ? $current->unread_count : $current->unread_count + 1,
-                                'unread_version' => ! $fromMe && $chatUnread === null ? $current->unread_version + 1 : $current->unread_version,
-                            ])->save();
-
-                            return $current;
-                        });
-                        if (! $fromMe) {
-                            $flows->handle($connection, $thread, $message);
-                        }
-                    }
-                }
-            }
-
-            // Deliberately discard message body and provider payload.
-            return response()->json(['ok' => true]);
-        }, 3);
-    }
-
-    private function syncChat(Workspace $workspace, UazapiConnection $connection, array $chat): void
-    {
-        $external = (string) (data_get($chat, 'wa_chatid') ?? data_get($chat, 'chatid') ?? data_get($chat, 'jid') ?? data_get($chat, 'id') ?? '');
-        if ((bool) data_get($chat, 'wa_isGroup')) {
-            return;
-        }
-        if ($external === '') {
-            return;
-        }
-        $channel = ContactChannel::where('workspace_id', $workspace->id)->where('type', 'whatsapp')->where('external_id', $external)->first();
-        if (! $channel) {
-            $rawPhone = data_get($chat, 'phone');
-            // A provider JID identifies a channel. Only real phone JIDs carry an international number.
-            if ((! is_string($rawPhone) || str_contains($rawPhone, '@')) && preg_match('/^([0-9]+)@s\.whatsapp\.net$/D', $external, $matches)) {
-                $rawPhone = $matches[1];
-            }
-            $phone = app(InternationalPhone::class)->normalize($rawPhone);
-            if ($phone === null) {
-                return;
-            }
-            $channel = DB::transaction(function () use ($workspace, $external, $phone) {
-                $contact = app(ContactIdentity::class)->locked($workspace->id, $phone);
-
-                return ContactChannel::firstOrCreate([
-                    'workspace_id' => $workspace->id, 'type' => 'whatsapp', 'external_id' => $external,
-                ], ['contact_id' => $contact->id]);
-            }, 3);
-        }
-        $contact = $channel->contact;
-        $name = data_get($chat, 'name') ?? data_get($chat, 'wa_name') ?? data_get($chat, 'wa_contactName') ?? data_get($chat, 'pushName');
-        if ($name && ! $contact->display_name) {
-            $contact->update(['display_name' => $name]);
-        }
-        $knownImage = data_get($chat, 'imagePreview') ?? data_get($chat, 'imagePreviewUrl') ?? data_get($chat, 'image');
-        if (is_string($knownImage) && $knownImage !== '') {
-            $profile = $contact->profile ?? [];
-            $profile['imagePreview'] = $knownImage;
-            $contact->update(['profile' => $profile]);
-        }
-        $thread = Thread::query()->firstOrCreate([
-            'workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'external_chat_id' => $external,
-        ], ['contact_id' => $contact->id, 'channel' => 'whatsapp', 'status' => 'bot']);
-        $thread->contact_id = $contact->id;
-        $thread->channel = 'whatsapp';
-        $thread->last_message_at = $this->providerTimestamp(data_get($chat, 'wa_lastMsgTimestamp') ?? data_get($chat, 'updatedAt') ?? data_get($chat, 'lastMessageTime')) ?? $thread->last_message_at;
-        $providerUnread = $this->providerUnreadCount($chat);
-        if ($providerUnread !== null && $thread->unread_count !== $providerUnread) {
-            $thread->unread_count = $providerUnread;
-            $thread->unread_version++;
-        }
-        $thread->save();
+        return response()->json(['ok' => true, 'receipt_id' => $inbox->id]);
     }
 
     private function serialize(Thread $thread, bool $detail = false): array

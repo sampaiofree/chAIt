@@ -85,10 +85,12 @@ A UAZAPI é a fonte do **histórico completo disponível**. A decisão B-06 de 1
 
 O Laravel mantém workspaces, credenciais criptografadas, vínculos/permissões, contatos e valores do CRM, atribuições, estados, notas internas e metadados operacionais. `Aguardar Resposta` pode gravar texto aceito no campo personalizado escolhido; isso é captura funcional do CRM.
 
-| Modo                                              | Lista e atualização                                                                                             | Conteúdo no backend                                                                                                                                                                                                  |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CHAIT_REALTIME_ENABLED=false` (padrão do código) | Consulta/sincronização de chats pela UAZAPI e atualização periódica da interface.                               | Caminho anterior, sem caixa de entrada durável de corpos.                                                                                                                                                            |
-| `CHAIT_REALTIME_ENABLED=true`                     | Lista local, importação progressiva e eventos autorizados via Reverb; histórico consultado ao abrir a conversa. | Prévia textual de até 200 caracteres por conversa e payloads temporários criptografados em `uazapi_inbox`/`chat_operations`; exclusão após consumidores concluídos e retenção máxima de 24 horas em falha/pendência. |
+| Modo | Lista e atualização | Conteúdo no backend |
+| --- | --- | --- |
+| `CHAIT_REALTIME_ENABLED=false` (padrão) | Lista local alimentada por webhooks; interface consulta o banco periodicamente. | Prévia de até 200 caracteres e payloads criptografados temporários em `uazapi_inbox`; histórico somente na UAZAPI. |
+| `CHAIT_REALTIME_ENABLED=true` | A mesma lista local, com eventos autorizados via Reverb. | A mesma política de prévia e caixa temporária; operações assíncronas usam `chat_operations`. |
+
+Nenhum modo importa listas de contatos/chats ou sincroniza histórico. A primeira mensagem recebida após o marco de ativação cria a referência operacional; uma simples entrada mantém o estado `bot` até uma regra de atendimento humano alterá-lo. Eventos `chats` só atualizam conversas já conhecidas. `POST /uazapi/import` foi encerrado com resposta `410` para clientes antigos.
 
 Arquivos necessários ao processamento assíncrono podem permanecer temporariamente no disco privado, com o mesmo limite; base64 não é persistido. Jobs levam referências, não corpos. Logs não devem conter mensagens. A retenção da base ativa não elimina cópias em backups anteriores.
 
@@ -97,7 +99,7 @@ O novo caminho está implementado sob configuração e exige ativação/validaç
 ### 3.2 Implicações e riscos
 
 - **Dependência do provedor:** se a UAZAPI estiver indisponível, limitada ou não retornar parte do histórico, o chat pode não conseguir exibir mensagens antigas.
-- **Disponibilidade e ordenação:** carregamento inicial, paginação, busca, histórico e sincronização precisam ser testados na API real. Não presumir que todo tipo de consulta ou recuperação histórica esteja disponível.
+- **Disponibilidade e ordenação:** paginação e disponibilidade do histórico por conversa precisam ser testadas na API real; lista, busca e filtros usam o banco local. Não presumir que todo tipo de consulta ou recuperação histórica esteja disponível.
 - **Notas internas:** a tela atual mostra o histórico de notas no perfil do contato, separado das mensagens; não são enviadas ao WhatsApp.
 - **Informações necessárias para operar:** guardar referências externas e estados internos não equivale a armazenar o conteúdo das mensagens.
 - **Mobile e notificações:** a bolinha e a leitura compartilhada acompanham o modo ativo (consultas periódicas ou eventos Reverb). Notificações push não são concedidas pela existência do tempo real.
@@ -233,7 +235,7 @@ Sem esse gatilho, a conversa tem o comportamento normal do chat: avaliação de 
 - **Laravel API/backend:** autenticação, autorização, workspaces, contatos, atribuições, status, notas e auditoria.
 - **Adaptador de canal** (`ChannelProvider` / `WhatsAppProvider`): encapsula consultas/envios do WhatsApp, evitando espalhar chamadas UAZAPI pelo domínio.
 - **UAZAPI:** provedor inicial para mensagens, mídias e eventos do WhatsApp.
-- **Filas Laravel + Horizon:** processamento assíncrono de webhooks, normalização de eventos, reconciliação e notificações.
+- **Filas Laravel + Horizon:** processamento assíncrono de webhooks, normalização de eventos e notificações.
 - **Atualização:** consultas periódicas no caminho anterior; Laravel Reverb no modo de tempo real, conforme [contrato operacional](../operacao/chat-realtime.md).
 - **Clientes web e mobile:** consomem a API de domínio; não acessam credenciais da UAZAPI diretamente.
 
@@ -258,7 +260,7 @@ Uma estrutura de sessões de atendimento humano (por exemplo, `human_sessions`) 
 - Validar autenticação/assinatura dos webhooks conforme recursos do provedor e impor controles contra uso indevido.
 - Identificar **a conexão** que recebeu o evento e derivar seu workspace no backend; não confiar em `workspace_id` vindo do payload como autorização.
 - Tratar eventos duplicados de forma **idempotente**.
-- Prever eventos atrasados/fora de ordem e reconciliação ao reconectar.
+- Prever eventos atrasados/fora de ordem e preservar o marco de ativação ao reconectar, sem recuperação retrospectiva.
 - Não permitir que tarefas atrasadas provoquem transferência ou mudança de status indevida.
 - Revalidar permissões e atribuição **antes** de enviar uma resposta.
 - Respeitar a política da seção 3: histórico completo fora da base local, prévias e conteúdo temporário limitados no modo de tempo real, jobs por referência e ausência de corpos em logs/monitoramento.

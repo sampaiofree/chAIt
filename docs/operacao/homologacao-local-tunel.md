@@ -32,7 +32,7 @@ php artisan chat:register-local-webhook https://ORIGEM-DO-WEBHOOK.trycloudflare.
 
 Use `php artisan horizon:status`, `php artisan schedule:list`, `php artisan chat:metrics` e `curl -o /dev/null -w '%{http_code}\n' https://ORIGEM-DO-WEBHOOK.trycloudflare.com/` para conferir os serviços. O `GET /` deve retornar 404. Ao reiniciar qualquer Quick Tunnel, atualize o respectivo host no `.env` ou registre novamente o webhook e reinicie os processos que leem a configuração. Não reutilize uma URL de túnel encerrado.
 
-A tela de Conversas consulta a lista no banco antes de receber o status da conexão. A importação inicial ou a reconciliação vencida segue na fila; apenas o histórico e os avatares ainda sem URL local consultam a UAZAPI. As fotos visíveis são buscadas automaticamente, e a URL obtida fica salva no perfil do contato. Um erro de imagem força uma renovação; enquanto isso, as iniciais aparecem.
+A tela de Conversas consulta a lista no banco antes de receber o status da conexão. Uma conversa nova aparece após uma mensagem individual recebida pelo webhook, com horário posterior à ativação da conexão. O histórico de uma conversa conhecida e os avatares ainda sem URL local consultam a UAZAPI. As fotos visíveis são buscadas automaticamente, e a URL obtida fica salva no perfil do contato. Um erro de imagem força uma renovação; enquanto isso, as iniciais aparecem.
 
 ## Evidência de aceite
 

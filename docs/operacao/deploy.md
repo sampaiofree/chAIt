@@ -13,7 +13,7 @@ Guia manual via SSH para um servidor já configurado. Execute os comandos na ord
 - Para o novo atendimento: domínio WebSocket com certificado válido (por exemplo, `ws.seu-dominio.com`), proxy para Reverb e gerenciador de processos para Horizon e Reverb. PHP-FPM, Horizon e Reverb são processos separados.
 - Cron no usuário da aplicação, executado a cada minuto. Ele atende sequências, menus, conciliação de envios, recuperação da caixa de entrada e descarte do conteúdo temporário.
 
-O primeiro deploy passa a ter duas fases: instalar e preparar a infraestrutura com `CHAIT_REALTIME_ENABLED=false`; depois validar o novo caminho em homologação e ativá-lo de forma controlada. Com a opção desligada, a aplicação usa o atendimento anterior: os novos limites e o atendimento por Reverb só passam a valer quando ela estiver habilitada.
+O primeiro deploy passa a ter duas fases: instalar e preparar a infraestrutura com `CHAIT_REALTIME_ENABLED=false`; depois validar o tempo real em homologação e ativá-lo de forma controlada. Nos dois modos, a lista vem do banco local e novas conversas dependem do webhook e da fila `inbound`. Com a opção desligada, a interface consulta periodicamente o backend; Reverb e os novos limites só passam a valer quando ela estiver habilitada.
 
 Conecte-se ao servidor e entre na pasta do projeto, substituindo os exemplos:
 
@@ -103,7 +103,7 @@ php artisan storage:link
 php artisan optimize
 ```
 
-O build precisa das dependências de desenvolvimento do npm. Reverb e Echo já estão nos arquivos de lock: não executar instaladores interativos de broadcasting no servidor. A migration `2026_10_16_000001_create_chat_runtime` entra pelo comando normal, mesmo com a opção desligada; ela adiciona projeção da conversa, progresso da importação, caixa de entrada criptografada e operações assíncronas.
+O build precisa das dependências de desenvolvimento do npm. Reverb e Echo já estão nos arquivos de lock: não executar instaladores interativos de broadcasting no servidor. A migration `2026_10_16_000001_create_chat_runtime` entra pelo comando normal, mesmo com a opção desligada; ela adicionou projeção da conversa, metadados legados de importação, caixa de entrada criptografada e operações assíncronas. A migração posterior de ativação interrompe o uso dos metadados legados.
 
 5. Configure um gerenciador de processos, como Supervisor ou systemd, para executar os dois serviços abaixo na pasta do projeto, com reinício automático, mesmo ambiente e acesso ao Redis e ao armazenamento privado:
 
@@ -114,7 +114,7 @@ php artisan reverb:start --host=127.0.0.1 --port=8080
 
 Cada comando é um serviço independente; ambos devem continuar ativos após desconectar o SSH. Configure pelo menos 240 segundos para encerramento gracioso do Horizon. Os timeouts atuais são 180 segundos nos jobs pesados, 210 no supervisor e 240 no `retry_after` Redis; preserve essa ordem. Exemplos de systemd e Nginx estão no [guia de tempo real](chat-realtime.md#exemplo-de-serviço-e-proxy).
 
-Com `CHAIT_REALTIME_ENABLED=false`, o Horizon consome `automations` e `default`. Com a opção habilitada, o mesmo Horizon gerencia cinco supervisores, inicialmente até dez workers: 3 `inbound`, 3 `automations`, 2 `ai`, 1 `media` e 1 `default`. Não é necessário iniciar cinco comandos Horizon. Os limites são configuráveis e precisam ser medidos no servidor; não representam capacidade homologada.
+Com `CHAIT_REALTIME_ENABLED=false`, o Horizon consome `inbound`, `automations` e `default`. Com a opção habilitada, o mesmo Horizon gerencia cinco supervisores, inicialmente até dez workers: 3 `inbound`, 3 `automations`, 2 `ai`, 1 `media` e 1 `default`. Não é necessário iniciar cinco comandos Horizon. Os limites são configuráveis e precisam ser medidos no servidor; não representam capacidade homologada.
 
 6. Configure o domínio WebSocket com HTTPS e proxy HTTP/1.1 para `127.0.0.1:8080`, preservando `/app/`, `/apps/` e os headers `Upgrade` e `Connection`. A porta interna 8080 fica privada. O navegador usa `wss://ws.seu-dominio.com:443`; a autenticação dos canais privados usa a sessão da aplicação em `/broadcasting/auth`. Não habilite logs de corpos ou debug do Reverb. Redija os segredos das URLs de webhooks nos logs de acesso.
 
@@ -140,7 +140,7 @@ php artisan up
 
 O gerenciador precisa reiniciar os serviços. Siga a seção de verificação abaixo. Mantenha acesso restrito durante a homologação; liberar o modo de manutenção não substitui esse controle.
 
-Na primeira abertura de Conversas após a ativação, a lista vem do banco e a importação completa é agendada no Horizon. A migração de reconciliação deixa o horário de última varredura vazio, inclusive para conexões antes marcadas como importadas; aguarde a conclusão e confira `reconciliation_status=complete` e `last_reconciled_at` em `php artisan chat:metrics`. Depois disso, uma abertura com mais de 24 horas desde a última varredura agenda uma nova, sem bloquear a lista. Confira também `last_webhook_at` após receber um evento real. Valide que a lista continua acessível durante uma indisponibilidade da UAZAPI e que uma falha retoma do offset persistido. Mantenha `QUEUE_CONNECTION=redis`, `CACHE_STORE=redis`, Horizon, Reverb e o cron de `schedule:run` ativos; com fila `sync`, a importação deixaria de ocorrer em segundo plano.
+A lista vem do banco nos dois modos e permanece vazia em um workspace sem conversas locais. A migração `2026_10_17_000002_track_uazapi_activation` marca as conexões existentes no instante do deploy, sem excluir dados; confira `activated_at` e `last_webhook_at` em `php artisan chat:metrics` após uma mensagem nova de teste. Nenhuma abertura de tela ou reconexão inicia importação. Valide que a lista permanece acessível durante indisponibilidade da UAZAPI e que o histórico de uma conversa conhecida retorna apenas de `/message/find`. Mantenha `QUEUE_CONNECTION=redis`, `CACHE_STORE=redis`, Horizon e o cron de `schedule:run` ativos nos dois modos; a fila `inbound` processa os webhooks. Reverb é necessário apenas quando o tempo real está habilitado.
 
 9. Após homologação, repita a ativação controlada no servidor de produção e confirme os processos antes de liberar o acesso. Caso a instalação de produção ainda esteja na fase de infraestrutura, mantenha `CHAIT_REALTIME_ENABLED=false` e o acesso restrito. Preservar a opção desligada não homologa o novo atendimento.
 
@@ -195,7 +195,7 @@ Substitua o domínio pelo valor de `APP_URL`. Confirme que o Horizon está ativo
 Com o novo caminho habilitado, confirme em homologação:
 
 - Horizon com os cinco supervisores e Reverb ativo no gerenciador, sem reinícios contínuos; publicação HTTPS e assinatura de canal privado funcionando. Usuários sem permissão não recebem conteúdo da conversa.
-- Lista obtida do banco local, importação compartilhada em páginas de 200 e indicação de resultados parciais. A lista deve importar mesmo quando um webhook já tiver criado uma conversa.
+- Lista obtida somente do banco local, vazia em workspace novo até a primeira mensagem recebida elegível; sem chamada a `/chat/find`, importação ou aviso de resultados parciais.
 - Uma aba parada não consulta periodicamente conexão, lista ou histórico na UAZAPI. A abertura de uma conversa consulta as mensagens; envio e atualização da lista não recarregam o histórico.
 - Mensagens/recibos atualizam a conversa aberta pelo Reverb. Ao interromper o WebSocket, a interface avisa; reconectar não consulta automaticamente o histórico.
 - Operações retornam `202` e concluem pelo canal privado. Falta de confirmação ou timeout não dispara novo envio automático.

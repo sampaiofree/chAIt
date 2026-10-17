@@ -24,7 +24,7 @@ class InboundEvents
             abort_if(isset($payload[$field]) && ! is_array($payload[$field]), 422);
         }
         $message = $payload['message'] ?? [];
-        $messageId = $message['id'] ?? $message['messageid'] ?? data_get($message, 'key.id');
+        $messageId = $message['messageid'] ?? data_get($message, 'key.id') ?? $message['id'] ?? null;
         abort_if($type === 'messages' && (! is_string($messageId) || $messageId === '' || strlen($messageId) > 191), 422);
         abort_if($type === 'chats' && empty($payload['chat']), 422);
         if ($type === 'messages_update') {
@@ -36,15 +36,24 @@ class InboundEvents
         $chat = data_get($payload, 'chat.wa_chatid') ?? data_get($payload, 'chat.chatid') ?? data_get($message, 'chatid') ?? data_get($message, 'key.remoteJid') ?? data_get($payload, 'event.chatid') ?? data_get($payload, 'event.Chat') ?? '';
         abort_unless(is_string($chat) && strlen($chat) <= 191, 422);
         abort_if($type !== 'connection' && $chat === '', 422);
+        if ($type === 'messages') {
+            $messageChat = $message['chatid'] ?? data_get($message, 'key.remoteJid');
+            foreach (['wa_chatid', 'chatid'] as $field) {
+                abort_if(isset($payload['chat'][$field]) && $messageChat !== $payload['chat'][$field], 422);
+            }
+        }
         abort_if($type === 'connection' && ! is_string(data_get($payload, 'instance.status') ?? $payload['status'] ?? null), 422);
         $identity = match ($type) {
-            'messages' => $messageId,
+            'messages' => $chat.'|'.$messageId,
             'messages_update' => json_encode($this->canonical($payload), JSON_THROW_ON_ERROR),
             // Repeated state snapshots without an event ID can represent a later transition.
             default => is_string($payload['event_id'] ?? null) && $payload['event_id'] !== '' ? $payload['event_id'] : (string) Str::uuid(),
         };
         $hash = hash('sha256', $connection->id.'|'.$type.'|'.$identity);
         $inbox = UazapiInbox::firstOrCreate(['dedupe_hash' => $hash], ['status' => 'pending', 'workspace_id' => $connection->workspace_id, 'uazapi_connection_id' => $connection->id, 'event_type' => $type, 'chat_id' => $chat, 'payload' => $payload, 'expires_at' => now()->addHours(config('chat.temporary_hours'))]);
+        if ($inbox->status === 'failed' && $inbox->expires_at->isFuture()) {
+            $inbox->update(['status' => 'pending']);
+        }
         if ($inbox->status === 'pending') {
             $this->dispatch($inbox);
         }

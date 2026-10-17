@@ -110,15 +110,10 @@ class UazapiClient
         return $this->send($this->execute($connection, 'post', '/message/find', ['id' => $messageId], $budget, read: true));
     }
 
-    public function chats(UazapiConnection $connection, int $offset = 0, int $limit = 100): array
-    {
-        return $this->send($this->execute($connection, 'post', '/chat/find', ['limit' => $limit, 'offset' => $offset, 'compact' => (bool) config('chat.enabled'), 'sort' => '-wa_lastMsgTimestamp'], read: true));
-    }
-
-    public function messages(UazapiConnection $connection, string $chatId, int $offset = 0, ?string $trackId = null, ?AiTurnBudget $budget = null): array
+    public function messages(UazapiConnection $connection, string $chatId, int $offset = 0, ?string $trackId = null, ?AiTurnBudget $budget = null, bool $restrictToChat = false): array
     {
         return $this->send($this->execute($connection, 'post', '/message/find', array_filter([
-            'chatid' => $trackId === null && $chatId !== '' ? $chatId : null, 'limit' => 100, 'offset' => $offset, 'track_id' => $trackId,
+            'chatid' => ($trackId === null || $restrictToChat) ? $chatId : null, 'limit' => 100, 'offset' => $offset, 'track_id' => $trackId,
         ], fn ($value) => $value !== null && $value !== ''), $budget, interactive: true, read: true));
     }
 

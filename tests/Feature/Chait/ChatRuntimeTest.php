@@ -23,7 +23,6 @@ use App\Services\Chat\ChatMaintenance;
 use App\Services\Chat\ChatOperations;
 use App\Services\Chat\ChatProjection;
 use App\Services\Chat\ChatPublisher;
-use App\Services\Chat\ChatReconciliation;
 use App\Services\Chat\TransportContext;
 use App\Services\Flows\FlowInboundProcessor;
 use App\Services\Uazapi\UazapiClient;
@@ -48,7 +47,7 @@ function runtimeChat(): array
 {
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id, 'status' => 'connected', 'chat_import_status' => 'complete', 'chat_last_reconciled_at' => now()]);
+    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id, 'status' => 'connected', 'activated_at' => now()->subMinute()]);
     $secret = hash_hmac('sha256', 'uazapi-webhook:'.$connection->id, (string) config('app.key'));
     $connection->update(['webhook_secret_hash' => hash('sha256', $secret)]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id, 'phone' => '5527999999999']);
@@ -70,7 +69,7 @@ function receiveRuntimeWebhook(array $f, array $payload)
 test('local list and connection never call the provider', function () {
     $f = runtimeChat();
     Http::fake();
-    $this->actingAs($f['user'])->getJson(route('workspaces.conversations.index', $f['workspace']))->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('import.complete', true);
+    $this->actingAs($f['user'])->getJson(route('workspaces.conversations.index', $f['workspace']))->assertOk()->assertJsonCount(1, 'data');
     $this->getJson(route('workspaces.uazapi.status', $f['workspace']))->assertOk()->assertJsonPath('data.status', 'connected');
     Http::assertNothingSent();
 });
@@ -97,89 +96,106 @@ test('contact tag filters combine with search, assignment and open status in the
     $this->actingAs($agent)->getJson($url.'?'.http_build_query(['tag_ids' => [$first->id, $second->id]]))->assertOk()->assertJsonCount(0, 'data');
 });
 
-test('initial import is tracked independently of existing webhook conversations and shared across tabs', function () {
+test('an empty workspace lists no provider chats in either mode', function (bool $realtime) {
+    config(['chat.enabled' => $realtime]);
     $f = runtimeChat();
+    $f['thread']->delete();
     $f['connection']->update(['chat_import_status' => 'not_started', 'chat_last_reconciled_at' => null]);
-    $url = route('workspaces.conversations.index', $f['workspace']);
-    $this->actingAs($f['user'])->getJson($url)->assertOk()->assertJsonPath('import.status', 'running');
-    $this->getJson($url)->assertOk();
-    Queue::assertPushed(ImportChats::class, 1);
-});
-
-test('stale local list starts only one background reconciliation without querying the provider', function () {
-    $f = runtimeChat();
-    $f['connection']->update(['chat_last_reconciled_at' => now()->subHours(25), 'chat_last_webhook_at' => now()]);
     Http::fake();
-    $url = route('workspaces.conversations.index', $f['workspace']);
 
-    $this->actingAs($f['user'])->getJson($url)->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('import.complete', true);
-    $this->getJson($url)->assertOk();
-
+    $this->actingAs($f['user'])->getJson(route('workspaces.conversations.index', $f['workspace']))
+        ->assertOk()->assertJsonCount(0, 'data')->assertJsonMissingPath('import');
+    Queue::assertNotPushed(ImportChats::class);
     Http::assertNothingSent();
-    Queue::assertPushed(ImportChats::class, 1);
-    expect($f['connection']->fresh()->chat_import_status)->toBe('running')
-        ->and($f['connection']->fresh()->chat_import_offset)->toBe(0)
-        ->and($f['connection']->fresh()->chat_last_reconciled_at->lt(now()->subDay()))->toBeTrue();
-});
+})->with([true, false]);
 
-test('a disconnected connection keeps the local list without scheduling reconciliation', function () {
+test('existing conversations remain local after stale reconciliation state and disconnection', function (bool $realtime) {
+    config(['chat.enabled' => $realtime]);
     $f = runtimeChat();
-    $f['connection']->update(['status' => 'disconnected', 'chat_last_reconciled_at' => now()->subDays(2)]);
-    $this->actingAs($f['user'])->getJson(route('workspaces.conversations.index', $f['workspace']))->assertOk()->assertJsonCount(1, 'data');
-    Queue::assertNotPushed(ImportChats::class);
-});
+    $f['connection']->update(['status' => 'disconnected', 'chat_import_status' => 'failed', 'chat_last_reconciled_at' => now()->subDays(2)]);
+    Http::fake();
 
-test('reconciliation continues through compact pages and starts the next 24 hours only on completion', function () {
-    $f = runtimeChat();
-    $previous = now()->subDays(2);
-    $f['connection']->update(['chat_import_status' => 'running', 'chat_import_offset' => 0, 'chat_last_reconciled_at' => $previous]);
-    config(['chat.requests_per_second' => 100000]);
-    Http::fake(['*/chat/find' => Http::sequence()
-        ->push(['chats' => array_fill(0, 200, ['wa_chatid' => 'group@g.us', 'wa_isGroup' => true])])
-        ->push(['chats' => [['wa_chatid' => $f['thread']->external_chat_id, 'wa_lastMsgTimestamp' => now()->timestamp]]])]);
-
-    app()->call([(new ImportChats($f['connection']->id, 0)), 'handle']);
-    expect($f['connection']->fresh()->chat_import_status)->toBe('running')
-        ->and($f['connection']->fresh()->chat_import_offset)->toBe(200)
-        ->and($f['connection']->fresh()->chat_last_reconciled_at->timestamp)->toBe($previous->timestamp);
-    Queue::assertPushed(ImportChats::class, fn ($job) => $job->offset === 200);
-
-    app()->call([(new ImportChats($f['connection']->id, 200)), 'handle']);
-    expect($f['connection']->fresh()->chat_import_status)->toBe('complete')
-        ->and($f['connection']->fresh()->chat_import_offset)->toBe(201)
-        ->and($f['connection']->fresh()->chat_last_reconciled_at->greaterThan($previous))->toBeTrue();
-    Http::assertSentCount(2);
-});
-
-test('failed reconciliation preserves its offset and retries after the backoff', function () {
-    $f = runtimeChat();
-    $previous = now()->subDays(2);
-    $f['connection']->update(['chat_import_status' => 'running', 'chat_import_offset' => 200, 'chat_last_reconciled_at' => $previous]);
-    Http::fake(['*/chat/find' => Http::response(['chats' => ['invalid' => 'page']])]);
-
-    app()->call([(new ImportChats($f['connection']->id, 200)), 'handle']);
-    expect($f['connection']->fresh()->chat_import_status)->toBe('failed')
-        ->and($f['connection']->fresh()->chat_import_offset)->toBe(200)
-        ->and($f['connection']->fresh()->chat_last_reconciled_at->timestamp)->toBe($previous->timestamp);
-    app(ChatReconciliation::class)->start($f['connection']->fresh());
-    Queue::assertNotPushed(ImportChats::class);
-
-    $this->travel(6)->minutes();
+    $this->actingAs($f['user'])->getJson(route('workspaces.conversations.index', $f['workspace']))
+        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $f['thread']->id);
     app(ChatMaintenance::class)->recover();
-    Queue::assertPushed(ImportChats::class, fn ($job) => $job->offset === 200);
-    expect($f['connection']->fresh()->chat_import_status)->toBe('running');
+    Queue::assertNotPushed(ImportChats::class);
+    Http::assertNothingSent();
+})->with([true, false]);
+
+test('retired import endpoint and jobs never scan the provider', function () {
+    $f = runtimeChat();
+    Http::fake();
+    $this->actingAs($f['user'])->postJson(route('workspaces.uazapi.import', $f['workspace']))->assertStatus(410);
+    app()->call([(new ImportChats($f['connection']->id, 0)), 'handle']);
+    Queue::assertNotPushed(ImportChats::class);
+    Http::assertNothingSent();
 });
 
-test('chat imports use compact pages of 200 and advance only once', function () {
+test('only new inbound messages discover a conversation in either chat mode', function (bool $realtime) {
+    config(['chat.enabled' => $realtime]);
+    $user = User::factory()->create();
+    $workspace = $user->fresh()->currentWorkspace;
+    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id, 'activated_at' => now()->subMinute()]);
+    $secret = hash_hmac('sha256', 'uazapi-webhook:'.$connection->id, (string) config('app.key'));
+    $connection->update(['webhook_secret_hash' => hash('sha256', $secret)]);
+    $url = route('webhooks.uazapi', [$connection, $secret]);
+    $chatId = '5527999999999@s.whatsapp.net';
+    $message = fn (string $id, array $changes = []) => ['EventType' => 'messages', 'token' => $connection->instance_token,
+        'message' => ['id' => $id, 'messageid' => $id, 'chatid' => $chatId, 'fromMe' => false, 'messageType' => 'text', 'text' => 'Olá', 'messageTimestamp' => now()->timestamp * 1000, ...$changes]];
+    Http::fake();
+
+    $this->postJson($url, ['EventType' => 'chats', 'chat' => ['wa_chatid' => $chatId, 'wa_lastMsgTimestamp' => now()->timestamp]])->assertOk();
+    $this->postJson($url, $message('sent', ['fromMe' => true]))->assertOk();
+    $this->postJson($url, $message('old', ['messageTimestamp' => now()->subDay()->timestamp * 1000]))->assertOk();
+    $this->postJson($url, $message('seconds', ['messageTimestamp' => now()->timestamp]))->assertOk();
+    $this->postJson($url, $message('group', ['isGroup' => true]))->assertOk();
+    $this->postJson($url, [...$message('wrong-chat'), 'chat' => ['chatid' => '5527888888888@s.whatsapp.net']])->assertUnprocessable();
+    foreach (UazapiInbox::orderBy('id')->get() as $inbox) {
+        app()->call([new ProcessInboundEvent($inbox->id), 'handle']);
+    }
+    expect(Thread::count())->toBe(0)->and(Contact::count())->toBe(0);
+
+    $this->postJson($url, $message('new'))->assertOk();
+    $this->postJson($url, $message('provider-variant', ['messageid' => 'new']))->assertOk();
+    expect(UazapiInbox::where('event_type', 'messages')->count())->toBe(5);
+    app()->call([new ProcessInboundEvent(UazapiInbox::latest('id')->first()->id), 'handle']);
+    expect(UazapiInbox::latest('id')->first()->status)->toBe('processed');
+    expect(Contact::count())->toBe(1)->and(Thread::count())->toBe(1)
+        ->and(Thread::sole()->status)->toBe('bot')
+        ->and(Thread::sole()->last_message_preview)->toBe('Olá')
+        ->and(Thread::sole()->unread_count)->toBe(1);
+
+    $this->postJson($url, $message('second', ['text' => 'Outra']))->assertOk();
+    app()->call([new ProcessInboundEvent(UazapiInbox::latest('id')->first()->id), 'handle']);
+    expect(Contact::count())->toBe(1)->and(Thread::count())->toBe(1)->and(Thread::sole()->unread_count)->toBe(2);
+    $this->actingAs($user)->getJson(route('workspaces.conversations.index', $workspace))->assertOk()->assertJsonCount(1, 'data');
+    Http::assertNothingSent();
+})->with([true, false]);
+
+test('reconnection preserves the original activation cutoff', function () {
     $f = runtimeChat();
-    $f['connection']->update(['chat_import_status' => 'running']);
-    Http::fake(['*/chat/find' => Http::response(['chats' => [['wa_chatid' => $f['thread']->external_chat_id, 'wa_lastMsgTimestamp' => now()->timestamp, 'wa_lastMessageType' => 'text', 'wa_lastMessageTextVote' => 'import preview']]])]);
-    $job = new ImportChats($f['connection']->id, 0);
-    app()->call([$job, 'handle']);
-    app()->call([$job, 'handle']);
-    Http::assertSentCount(1);
-    Http::assertSent(fn ($request) => $request['limit'] === 200 && $request['compact'] === true && $request['offset'] === 0);
-    expect($f['connection']->fresh()->chat_import_status)->toBe('complete')->and($f['connection']->fresh()->chat_import_offset)->toBe(1);
+    $original = $f['connection']->activated_at;
+    foreach (['disconnected', 'connected'] as $state) {
+        receiveRuntimeWebhook($f, ['EventType' => 'connection', 'instance' => ['status' => $state]])->assertOk();
+        app()->call([new ProcessInboundEvent(UazapiInbox::latest('id')->first()->id), 'handle']);
+    }
+    expect($f['connection']->fresh()->activated_at->equalTo($original))->toBeTrue();
+    expect(Thread::count())->toBe(1);
+});
+
+test('first connection confirmation records an activation cutoff only once', function () {
+    $f = runtimeChat();
+    $f['connection']->update(['status' => 'disconnected', 'activated_at' => null]);
+    receiveRuntimeWebhook($f, ['EventType' => 'connection', 'instance' => ['status' => 'connected']])->assertOk();
+    app()->call([new ProcessInboundEvent(UazapiInbox::latest('id')->first()->id), 'handle']);
+    $original = $f['connection']->fresh()->activated_at;
+    expect($original)->not->toBeNull();
+
+    receiveRuntimeWebhook($f, ['EventType' => 'connection', 'instance' => ['status' => 'disconnected']])->assertOk();
+    app()->call([new ProcessInboundEvent(UazapiInbox::latest('id')->first()->id), 'handle']);
+    receiveRuntimeWebhook($f, ['EventType' => 'connection', 'instance' => ['status' => 'connected']])->assertOk();
+    app()->call([new ProcessInboundEvent(UazapiInbox::latest('id')->first()->id), 'handle']);
+    expect($f['connection']->fresh()->activated_at->equalTo($original))->toBeTrue();
 });
 
 test('webhook acceptance encrypts content and queues only a reference', function () {
@@ -456,6 +472,14 @@ test('accepted inbox survives a dispatch outage and can be recovered without cal
     app(ChatMaintenance::class)->recover();
     Queue::assertPushed(ProcessInboundEvent::class, fn ($job) => $job->inboxId === $inbox->id);
     Http::assertNothingSent();
+});
+
+test('scheduled recovery dispatches inbound events with realtime disabled', function () {
+    config(['chat.enabled' => false]);
+    $f = runtimeChat();
+    $inbox = UazapiInbox::create(['workspace_id' => $f['workspace']->id, 'uazapi_connection_id' => $f['connection']->id, 'event_type' => 'messages', 'chat_id' => $f['thread']->external_chat_id, 'dedupe_hash' => hash('sha256', 'legacy-recovery'), 'payload' => runtimeWebhook($f)['message'], 'status' => 'pending', 'expires_at' => now()->addDay()]);
+    $this->artisan('chat:recover')->assertExitCode(0);
+    Queue::assertPushed(ProcessInboundEvent::class, fn ($job) => $job->inboxId === $inbox->id);
 });
 
 test('a successful human send uses its persisted tracking ID and updates the preview without a webhook', function () {

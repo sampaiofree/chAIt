@@ -133,12 +133,8 @@ const realtimeConnected = ref(false);
 const liveMessages = new Map<number, Message[]>();
 const liveStatuses = new Map<string, string>();
 const nextCursor = ref<string | null>(null);
-const endCursor = ref<string | null>(null);
-const importState = ref({ status: 'not_started', offset: 0, complete: false });
 const loadingThreads = ref(false);
-const automaticPages = ref(0);
 let searchGeneration = 0;
-let importGeneration = 0;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 let listAbort: AbortController | undefined;
 const threads = ref<Thread[]>([]);
@@ -166,6 +162,8 @@ const workspaceTags = computed(
         }[],
 );
 const historyLimited = ref(false);
+const historyNextOffset = ref<number | null>(null);
+const loadingOlder = ref(false);
 const messagesElement = ref<HTMLElement | null>(null);
 const isAtLatest = ref(true);
 const hasNewMessages = ref(false);
@@ -388,70 +386,45 @@ function params() {
     return q;
 }
 async function loadThreads(append = false) {
-    if (realtimeEnabled) {
-        const generation = searchGeneration;
-        listAbort?.abort();
-        listAbort = new AbortController();
-        loadingThreads.value = true;
-        try {
-            const query = params();
-            if (append && (nextCursor.value || endCursor.value))
-                query.set('cursor', (nextCursor.value || endCursor.value)!);
-            const result = await api(`${root()}/conversations?${query}`, {
-                signal: listAbort.signal,
-            });
-            if (generation !== searchGeneration) return;
-            const combined = append
-                ? [...threads.value, ...result.data]
-                : result.data;
-            threads.value = Array.from(
-                new Map<number, Thread>(
-                    combined.map((item: Thread) => [item.id, item]),
-                ).values(),
-            );
-            nextCursor.value = result.next_cursor;
-            endCursor.value = result.end_cursor || endCursor.value;
-            importState.value = result.import;
-            if (selected.value)
-                selected.value =
-                    threads.value.find(
-                        (item) => item.id === selected.value?.id,
-                    ) ||
-                    (result.selected_thread?.id === selected.value.id
-                        ? result.selected_thread
-                        : selected.value);
-            if (!selected.value && result.selected_thread)
-                choose(result.selected_thread);
-        } catch {
-            /* Keep existing local data; no provider polling fallback. */
-        } finally {
-            loadingThreads.value = false;
-        }
-        return;
-    }
-    if (connection.value?.status !== 'connected') return;
+    const generation = searchGeneration;
+    const previousId = selected.value?.id;
+    listAbort?.abort();
+    listAbort = new AbortController();
+    loadingThreads.value = true;
     try {
-        const oldId = selected.value?.id;
-        const workspaceId = workspace.value.id;
-        const result = await api(`${root()}/conversations?${params()}`);
-        if (workspace.value.id !== workspaceId) return;
-        threads.value = result.data;
-        // A poll that started on another conversation must not replace the one
-        // selected while it was in flight (and discard its voice recording).
-        const changedSelection = selected.value?.id !== oldId;
-        selected.value =
-            (changedSelection
-                ? threads.value.find(
-                      (thread) => thread.id === selected.value?.id,
-                  )
-                : result.selected_thread) ||
-            threads.value.find((t: Thread) => t.id === oldId) ||
-            threads.value[0] ||
-            null;
-        if (selected.value) await loadHistory();
-        else messages.value = [];
+        const query = params();
+        if (append && nextCursor.value) query.set('cursor', nextCursor.value);
+        const result = await api(`${root()}/conversations?${query}`, {
+            signal: listAbort.signal,
+        });
+        if (generation !== searchGeneration) return;
+        const combined = append
+            ? [...threads.value, ...result.data]
+            : result.data;
+        threads.value = Array.from(
+            new Map<number, Thread>(
+                combined.map((item: Thread) => [item.id, item]),
+            ).values(),
+        );
+        nextCursor.value = result.next_cursor;
+        if (selected.value)
+            selected.value =
+                threads.value.find((item) => item.id === selected.value?.id) ||
+                (result.selected_thread?.id === selected.value.id
+                    ? result.selected_thread
+                    : selected.value);
+        if (!selected.value && result.selected_thread)
+            choose(result.selected_thread);
+        else if (
+            !realtimeEnabled &&
+            selected.value?.id === previousId &&
+            !append
+        )
+            await loadHistory();
     } catch {
-        /* keep the last loaded conversations while UAZAPI is unavailable */
+        /* Keep existing local data; no provider polling fallback. */
+    } finally {
+        loadingThreads.value = false;
     }
 }
 async function loadHistory() {
@@ -494,7 +467,7 @@ async function loadHistory() {
         )
             return;
         const available = mergeChatMessages<Message>(
-            [],
+            renderedThreadId === target.id ? messages.value : [],
             [
                 ...history.data,
                 ...(realtimeEnabled ? liveMessages.get(target.id) || [] : []),
@@ -589,6 +562,7 @@ async function loadHistory() {
             hasNewMessages.value = true;
         renderedThreadId = target.id;
         historyLimited.value = !!history.history_limited;
+        historyNextOffset.value = history.next_offset ?? null;
         await nextTick();
         await Promise.all(
             messages.value
@@ -613,6 +587,7 @@ async function loadHistory() {
                 (message) => message.thread_id === target.id,
             );
             historyLimited.value = true;
+            historyNextOffset.value = null;
             historyReadVersion.value = null;
         }
     }
@@ -620,6 +595,38 @@ async function loadHistory() {
         contactForm.display_name = target.contact.display_name ?? '';
         contactForm.email = target.contact.email ?? '';
         contactForm.cpf = target.contact.cpf ?? '';
+    }
+}
+async function loadOlderMessages() {
+    if (
+        !selected.value ||
+        historyNextOffset.value === null ||
+        loadingOlder.value
+    )
+        return;
+    const targetId = selected.value.id;
+    const workspaceId = workspace.value.id;
+    const offset = historyNextOffset.value;
+    const element = messagesElement.value;
+    const previousHeight = element?.scrollHeight ?? 0;
+    loadingOlder.value = true;
+    try {
+        const history = await api(
+            `${root()}/conversations/${targetId}/messages?offset=${offset}`,
+        );
+        if (
+            selected.value?.id !== targetId ||
+            workspace.value.id !== workspaceId
+        )
+            return;
+        messages.value = mergeChatMessages(messages.value, history.data || []);
+        historyNextOffset.value = history.next_offset ?? null;
+        await nextTick();
+        if (element) element.scrollTop += element.scrollHeight - previousHeight;
+    } catch {
+        if (selected.value?.id === targetId) historyLimited.value = true;
+    } finally {
+        loadingOlder.value = false;
     }
 }
 function updateLatestPosition() {
@@ -691,12 +698,7 @@ async function refreshConnection() {
         );
         connection.value = result.data;
         connectionLoaded.value = true;
-        if (
-            connection.value?.status === 'connected' &&
-            !realtimeEnabled &&
-            result.data.provider_available &&
-            old !== 'connected'
-        )
+        if (!realtimeEnabled && old !== connection.value?.status)
             await loadThreads();
     } catch {
         /* keep the last known provider status */
@@ -1137,70 +1139,19 @@ function receiveChat(event: ChatUpdate) {
         }
         return;
     }
-    if (event.type === 'import.failed') {
-        importState.value.status = 'failed';
-        return;
-    }
-    if (event.type === 'import.completed') {
-        if (event.data.complete) {
-            void loadThreads().then(continueSearch);
-            return;
-        }
-        if (importGeneration !== searchGeneration) {
-            void loadThreads().then(continueSearch);
-            return;
-        }
-        void loadThreads(true).then(continueSearch);
-    }
-}
-async function continueSearch() {
-    if (
-        !realtimeEnabled ||
-        (!search.value &&
-            assignment.value === 'all' &&
-            statusFilter.value === 'all' &&
-            appliedTagIds.value.length === 0) ||
-        threads.value.length >= 200 ||
-        importState.value.complete ||
-        importState.value.status === 'running' ||
-        automaticPages.value >= 3
-    )
-        return;
-    automaticPages.value++;
-    importGeneration = searchGeneration;
-    await importNextPage();
-}
-async function importNextPage() {
-    if (importState.value.status === 'running') return;
-    importState.value.status = 'running';
-    try {
-        await api(`${root()}/uazapi/import`, { method: 'POST', body: '{}' });
-    } catch {
-        importState.value.status = 'failed';
-    }
 }
 async function loadMoreChats() {
     if (loadingThreads.value) return;
     if (nextCursor.value) await loadThreads(true);
-    else if (
-        !importState.value.complete &&
-        importState.value.status !== 'running'
-    ) {
-        importGeneration = searchGeneration;
-        await importNextPage();
-    }
 }
 function onListScroll(event: Event) {
-    if (!realtimeEnabled) return;
     const element = event.target as HTMLElement;
-    if (
-        element.scrollHeight - element.scrollTop - element.clientHeight < 120 &&
-        (!search.value || automaticPages.value < 3)
-    )
+    if (element.scrollHeight - element.scrollTop - element.clientHeight < 120)
         void loadMoreChats();
 }
 function choose(thread: Thread) {
     selected.value = thread;
+    historyNextOffset.value = null;
     if (realtimeEnabled) {
         messages.value = [];
         liveMessages.delete(thread.id);
@@ -1451,6 +1402,7 @@ watch(
         pendingMedia.value = [];
         messages.value = [];
         selected.value = null;
+        historyNextOffset.value = null;
         connectionLoaded.value = false;
         renderedThreadId = null;
         historyReadVersion.value = null;
@@ -1459,14 +1411,11 @@ watch(
         liveMessages.clear();
         liveStatuses.clear();
         nextCursor.value = null;
-        endCursor.value = null;
         searchGeneration++;
         renewedMedia.clear();
         mediaCache.clear();
-        if (realtimeEnabled) {
-            void refreshConnection();
-            void loadThreads();
-        }
+        void refreshConnection();
+        void loadThreads();
     },
     { flush: 'sync' },
 );
@@ -1478,20 +1427,11 @@ watch(realtimeConnected, (connected) => {
     }
 });
 watch([search, assignment, statusFilter, appliedTagIds], () => {
-    if (!realtimeEnabled) {
-        void loadThreads();
-        return;
-    }
     searchGeneration++;
-    automaticPages.value = 0;
     nextCursor.value = null;
-    endCursor.value = null;
     clearTimeout(searchTimer);
     listAbort?.abort();
-    searchTimer = setTimeout(
-        () => void loadThreads().then(continueSearch),
-        300,
-    );
+    searchTimer = setTimeout(() => void loadThreads(), 300);
 });
 watch(
     () => selected.value?.id,
@@ -1531,10 +1471,9 @@ onMounted(async () => {
         return;
     }
     await refreshConnection();
+    await loadThreads();
     statusTimer = window.setInterval(refreshConnection, 15000);
-    listTimer = window.setInterval(() => {
-        if (connection.value?.status === 'connected') loadThreads();
-    }, 30000);
+    listTimer = window.setInterval(() => void loadThreads(), 30000);
 });
 onUnmounted(() => {
     window.clearInterval(dateLabelTimer);
@@ -1598,7 +1537,8 @@ onUnmounted(() => {
                     desatualizadas.
                 </p>
                 <p v-else>
-                    WhatsApp desconectado. Conecte para carregar as conversas.
+                    WhatsApp desconectado. As conversas locais continuam
+                    disponíveis.
                 </p>
                 <a v-if="isAdmin" href="/settings/whatsapp"
                     >Configurar conexão</a
@@ -1612,29 +1552,11 @@ onUnmounted(() => {
                 Tempo real indisponível. Os dados podem estar desatualizados;
                 reabra a conversa após reconectar.
             </p>
-            <p v-if="realtimeEnabled && !importState.complete" class="notice">
-                Lista parcial. Nem todas as conversas foram carregadas.
-            </p>
-            <p
-                v-if="realtimeEnabled && importState.status === 'failed'"
-                class="notice"
-                role="status"
-            >
-                Não foi possível atualizar a lista. Uma nova tentativa será
-                feita automaticamente.
-            </p>
             <AppButton
-                v-if="realtimeEnabled && (nextCursor || !importState.complete)"
-                :disabled="
-                    loadingThreads ||
-                    (!nextCursor && importState.status === 'running')
-                "
+                v-if="nextCursor"
+                :disabled="loadingThreads"
                 @click="loadMoreChats"
-                >{{
-                    !nextCursor && importState.status === 'running'
-                        ? 'Carregando conversas…'
-                        : 'Carregar mais conversas'
-                }}</AppButton
+                >Carregar mais conversas</AppButton
             >
             <div class="thread-list" @scroll="onListScroll">
                 <button
@@ -1670,7 +1592,7 @@ onUnmounted(() => {
                                     aria-label="Mensagens não lidas"
                                 ></span></span></span
                         ><small
-                            v-if="realtimeEnabled && thread.last_message_type"
+                            v-if="thread.last_message_type"
                             class="message-preview"
                             >{{ previewText(thread) }}</small
                         >
@@ -1686,11 +1608,12 @@ onUnmounted(() => {
                         ></span
                     >
                 </button>
-                <p
-                    v-if="connection?.status === 'connected' && !threads.length"
-                    class="empty"
-                >
-                    Nenhuma conversa encontrada.
+                <p v-if="connectionLoaded && !threads.length" class="empty">
+                    {{
+                        activeFilterCount || search
+                            ? 'Nenhuma conversa encontrada.'
+                            : 'As conversas aparecerão após a primeira mensagem recebida.'
+                    }}
                 </p>
             </div>
         </section>
@@ -1762,6 +1685,18 @@ onUnmounted(() => {
                     class="messages"
                     @scroll.passive="updateLatestPosition"
                 >
+                    <AppButton
+                        v-if="historyNextOffset !== null"
+                        type="button"
+                        variant="secondary"
+                        :disabled="loadingOlder"
+                        @click="loadOlderMessages"
+                        >{{
+                            loadingOlder
+                                ? 'Carregando…'
+                                : 'Carregar mensagens anteriores'
+                        }}</AppButton
+                    >
                     <div v-if="historyLimited" class="history-warning">
                         A UAZAPI não disponibilizou este histórico. Mensagens
                         antigas podem ter expirado ou não terem sido

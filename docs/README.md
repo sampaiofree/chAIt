@@ -13,7 +13,7 @@
 - Vue Flow para o editor visual de fluxos; versões publicadas executam no backend.
 - Chat e multiatendimento como primeira entrega.
 - Ao finalizar, liberar o responsável ativo e preservar o último atendente e histórico operacional.
-- Manter o histórico completo de mensagens na UAZAPI, aceitando sua retenção limitada. A revisão de 16/10 permite prévia local de até 200 caracteres e conteúdo temporário criptografado por até 24 horas no caminho de tempo real; ver [política e operação](operacao/chat-realtime.md).
+- Manter o histórico completo de mensagens na UAZAPI, aceitando sua retenção limitada. A revisão de 17/10 mantém prévia local de até 200 caracteres e conteúdo temporário criptografado por até 24 horas nos dois modos, com lista local alimentada apenas por novas mensagens recebidas; ver [política e operação](operacao/chat-realtime.md).
 - Atendimento humano somente por gatilho definido; sem ele, processamento normal da conversa.
 - Responsável ou administrador pode responder, finalizar e criar notas.
 - Dois seletores na lista; contato com nome, email, CPF e notas; anexos documento/imagem/vídeo e busca na coluna de conversas.

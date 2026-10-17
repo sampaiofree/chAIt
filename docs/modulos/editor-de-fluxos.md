@@ -245,7 +245,7 @@ Etiquetas e campos têm exclusão administrativa com confirmação; referências
 
 ### 6.1. Primeiro contato e boas-vindas
 
-- `Primeiro contato` significa a **primeira mensagem recebida** daquele lead naquela conexão WhatsApp; não equivale a reabrir a conversa ou mandar mensagem depois de semanas.
+- `Primeiro contato` significa a **primeira mensagem nova e elegível recebida após a ativação** daquele lead naquela conexão WhatsApp; não vem de importação ou histórico e não equivale a reabrir a conversa ou mandar mensagem depois de semanas.
 - Boas-vindas deve disparar **no máximo uma vez por lead por conexão**.
 - A primeira mensagem é classificada **antes** de escolher o fluxo: se houver palavra-chave elegível, ela tem prioridade sobre boas-vindas.
 - Se a primeira mensagem disparar uma palavra-chave, **não enviar boas-vindas depois** como compensação; o primeiro contato já ocorreu.
