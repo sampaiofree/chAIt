@@ -2,13 +2,15 @@
 
 ## Evidência atual e limite
 
-Na conexão 1 do workspace 1, `activated_at = 2026-10-17 20:30:31 UTC`. Os nove eventos informados como `processed` comprovam que seus jobs terminaram; não comprovam que eram mensagens recebidas elegíveis. Apenas um tinha `event_type = messages`. As nove threads anteriores, sem `last_inbound_at`, não demonstram recebimento após o corte: foram criadas antes deste fluxo. O payload de um evento `processed` é descartado quando não há consumidores pendentes; se já estiver nulo, o banco atual não permite classificar esse evento antigo. Não atribuir a causa a timezone, Horizon ou interface sem a próxima entrega identificada.
+Na conexão 1 do workspace 1, `activated_at = 2026-10-17 20:30:31 UTC`. O evento 12 (`messages`) foi aceito e processado com `decision = invalid_phone` no código anterior: a validação de telefone extraído do JID impediu a criação da conversa. O evento 13 (`chats`) terminou em `chat_unknown`, conforme a regra de não descobrir contatos por snapshots. O payload de um evento `processed` é descartado quando não há consumidores pendentes; se já estiver nulo, não é possível reconstruir o identificador completo pelo payload. A classe estrutural do JID ainda pode ser consultada sem revelar seus dígitos.
 
 ## Caminho implementado
 
 `POST /webhooks/uazapi/{connection}/{secret}` usa o grupo `web`, com exceção de CSRF para `webhooks/uazapi/*`; não exige login. O controller compara o hash do segredo da URL e, quando o corpo traz `token`, compara-o com o token da instância. `InboundEvents::accept` exige JSON de até 256 KiB, `EventType` permitido, ID de mensagem e chat para `messages`, normaliza o envelope para armazenamento criptografado em `uazapi_inbox` e deduplica por conexão, tipo, chat e `messageid`. O HTTP 200 devolve `receipt_id` após a aceitação durável. Entrega repetida pode devolver o mesmo ID sem nova linha; a coluna `delivery_count` contabiliza esse caso após a migração de diagnóstico. Respostas 404, 413, 415 e 422 não significam aceitação na inbox.
 
-`ProcessInboundEvent` consome a fila `inbound`. Eventos `connection` atualizam estado e ativação; `messages_update` só publica recibos de conversas conhecidas; `chats` só atualiza uma conversa conhecida. Para `messages`, a criação exige `fromMe === false`, timestamp Unix em milissegundos igual ou posterior a `activated_at`, conversa individual, JID `dígitos@s.whatsapp.net` e telefone validado. A projeção cria ou reutiliza contato, canal e thread com status inicial `bot`; os fluxos só recebem uma mensagem de entrada depois de existir uma thread. Um evento pode terminar `processed` mesmo que essas condições não sejam atendidas.
+`ProcessInboundEvent` consome a fila `inbound`. Eventos `connection` atualizam estado e ativação; `messages_update` só publica recibos de conversas conhecidas; `chats` só atualiza uma conversa conhecida. Para `messages`, a criação exige `fromMe === false`, timestamp Unix em milissegundos igual ou posterior a `activated_at`, conversa individual e JID de número no formato `[1-9][0-9]{7,14}@s.whatsapp.net`. O JID original identifica o canal e a thread. A projeção cria ou reutiliza contato com telefone normalizado quando possível; se a biblioteca rejeitar os dígitos, o contato fica com `phone = NULL`, sem inventar outro número. A thread começa em `bot`; os fluxos só recebem uma mensagem de entrada depois de existir a thread. Um evento pode terminar `processed` mesmo que essas condições não sejam atendidas.
+
+A [UAZAPI define `message.chatid` como JID da conversa e `message.sender` como JID do remetente](https://docs.uazapi.com/webhook/messages); o JID não é um cadastro telefônico digitado pelo usuário. A [Anatel documenta o acréscimo do nono dígito aos celulares brasileiros](https://www.gov.br/anatel/pt-br/regulado/numeracao/codigos-nacionais/nono-digito). A biblioteca pode rejeitar um JID WhatsApp brasileiro com oito dígitos locais, mesmo que ele sirva para endereçar a conversa. O chAIt mantém `InternationalPhone` rigoroso para cadastros telefônicos e preserva o JID recebido para histórico e envio.
 
 O timezone da aplicação é UTC. `activated_at` é gravado em UTC e `messageTimestamp` é convertido a UTC antes da comparação. Um timestamp em segundos é classificado `invalid_timestamp`; `messages_update.event.Timestamp` em segundos não entra nessa comparação. Na fração de milissegundo do instante da ativação, uma mensagem arredondada pelo provedor ao milissegundo anterior pode ficar antes do corte; isso não explica um evento ocorrido minutos depois. Para conferir um timestamp conhecido sem revelar a mensagem: `SELECT to_timestamp(1788868800000 / 1000.0) AT TIME ZONE 'UTC';`, substituindo apenas o número.
 
@@ -54,10 +56,20 @@ LEFT JOIN threads t
 WHERE i.id = 123; -- substituir pelo ID do recibo
 ```
 
-`inbound_projected` com `thread_id` confirma processamento e gravação. `outbound_unknown`, `before_activation`, `invalid_timestamp`, `invalid_direction`, `group_message`, `unsupported_jid`, `invalid_phone`, `not_activated` e `unprojectable` explicam ausência de projeção. `chat_unknown` e `receipt_unknown` são eventos que não descobrem contato. `pending` aponta para fila/dispatch; `failed` aponta para log `Inbound processing failed.` pelo ID. Uma entrega HTTP 200 sem novo ID pode ser deduplicação **somente se** `delivery_count` de um recibo existente aumentar; caso contrário, confirmar pela resposta JSON `receipt_id` e pela configuração/entrega da UAZAPI que o POST atingiu essa rota Laravel.
+`inbound_projected` com `thread_id` confirma processamento e gravação. `outbound_unknown`, `before_activation`, `invalid_timestamp`, `invalid_direction`, `group_message`, `unsupported_jid`, `not_activated` e `unprojectable` explicam ausência de projeção. `invalid_phone` identifica eventos processados antes da correção, não é emitido pelo novo código. `chat_unknown` e `receipt_unknown` são eventos que não descobrem contato. `pending` aponta para fila/dispatch; `failed` aponta para log `Inbound processing failed.` pelo ID. Uma entrega HTTP 200 sem novo ID pode ser deduplicação **somente se** `delivery_count` de um recibo existente aumentar; caso contrário, confirmar pela resposta JSON `receipt_id` e pela configuração/entrega da UAZAPI que o POST atingiu essa rota Laravel.
 
 Após `inbound_projected`, consultar `GET /workspaces/1/conversations` com usuário autorizado e filtros vazios (`assignment=all&status=all&search=`). A lista é local nos dois modos. No modo atual, a tela consulta o endpoint a cada 30 segundos; com tempo real, Reverb atualiza a tela, mas recarregar consulta o mesmo endpoint. Administradores e agentes com `can_view_unassigned` veem threads sem responsável; outros agentes veem somente as atribuídas a si. Filtros por atribuição, status, tag e busca também podem ocultar uma thread válida. Não registrar o JSON inteiro da resposta, pois contém dados de contato e prévia.
 
-## Evidência ainda necessária para a causa em produção
+## Consulta estrutural do evento 12
 
-O código antigo não registrava a direção, o timestamp ou a classe do JID do único `messages` já processado às 20:33:09. Se seu `payload` estiver nulo, para classificá-lo seria preciso uma cópia privada já existente do payload na UAZAPI ou seus metadados sanitizados. O teste novo com `decision` fornece a classificação sem reter conteúdo. Se não surgir nenhum `messages` novo, comparar a entrega da UAZAPI para a instância e URL corretas com os recibos do CHAIT; HTTP 200 agregado do Nginx pode pertencer aos outros tipos de evento.
+Se for necessário confirmar se o JID rejeitado tinha 12 dígitos brasileiros, executar apenas esta consulta, que não imprime número, token nem conteúdo:
+
+```sql
+SELECT id,
+       length(split_part(chat_id, '@', 1)) AS digitos,
+       left(split_part(chat_id, '@', 1), 2) = '55' AS prefixo_br,
+       split_part(chat_id, '@', 2) AS dominio_jid
+FROM uazapi_inbox WHERE id = 12;
+```
+
+O evento 12 já está `processed`; o deploy não o reprojeta automaticamente. Homologar com uma nova mensagem recebida depois do deploy, observando novo recibo `inbound_projected` e `thread_id` preenchido nas consultas acima.

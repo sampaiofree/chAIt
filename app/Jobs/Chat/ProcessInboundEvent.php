@@ -9,6 +9,7 @@ use App\Models\UazapiInbox;
 use App\Queue\Middleware\WorkspaceCapacity;
 use App\Services\Chat\ChatProjection;
 use App\Services\Chat\ChatPublisher;
+use App\Services\Chat\WhatsAppJid;
 use App\Services\Contacts\InternationalPhone;
 use App\Services\Flows\FlowInboundProcessor;
 use Illuminate\Bus\Queueable;
@@ -107,8 +108,7 @@ class ProcessInboundEvent implements ShouldQueue
                         ! is_bool($fromMe) => 'invalid_direction',
                         ! is_string($messageChat) || $messageChat !== $inbox->chat_id => 'invalid_chat',
                         ($message['isGroup'] ?? false) || ($payload['chat']['wa_isGroup'] ?? false) => 'group_message',
-                        ! $fromMe && ! preg_match('/^[0-9]+@s\.whatsapp\.net$/D', $messageChat) => 'unsupported_jid',
-                        ! $fromMe && app(InternationalPhone::class)->normalize(strstr($messageChat, '@', true)) === null => 'invalid_phone',
+                        ! $fromMe && ! app(WhatsAppJid::class)->isIndividual($messageChat) => 'unsupported_jid',
                         default => 'unprojectable',
                     };
                     $thread = null;

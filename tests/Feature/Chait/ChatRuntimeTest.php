@@ -10,6 +10,7 @@ use App\Jobs\ProcessAiTurn;
 use App\Models\AiSession;
 use App\Models\ChatOperation;
 use App\Models\Contact;
+use App\Models\ContactChannel;
 use App\Models\Flow;
 use App\Models\FlowExecution;
 use App\Models\Thread;
@@ -24,6 +25,7 @@ use App\Services\Chat\ChatOperations;
 use App\Services\Chat\ChatProjection;
 use App\Services\Chat\ChatPublisher;
 use App\Services\Chat\TransportContext;
+use App\Services\Chat\WhatsAppJid;
 use App\Services\Flows\FlowInboundProcessor;
 use App\Services\Uazapi\UazapiClient;
 use App\Services\Uazapi\UazapiDeferredException;
@@ -156,7 +158,7 @@ test('only new inbound messages discover a conversation in either chat mode', fu
         app()->call([new ProcessInboundEvent($inbox->id), 'handle']);
     }
     expect(Thread::count())->toBe(0)->and(Contact::count())->toBe(0);
-    expect(UazapiInbox::orderBy('id')->pluck('decision')->all())->toBe(['chat_unknown', 'outbound_unknown', 'before_activation', 'invalid_timestamp', 'group_message', 'unsupported_jid', 'invalid_phone']);
+    expect(UazapiInbox::orderBy('id')->pluck('decision')->all())->toBe(['chat_unknown', 'outbound_unknown', 'before_activation', 'invalid_timestamp', 'group_message', 'unsupported_jid', 'unsupported_jid']);
 
     $this->postJson($url, $message('new'))->assertOk();
     $this->postJson($url, $message('provider-variant', ['messageid' => 'new']))->assertOk();
@@ -179,6 +181,88 @@ test('only new inbound messages discover a conversation in either chat mode', fu
     $this->actingAs($user)->getJson(route('workspaces.conversations.index', $workspace))->assertOk()->assertJsonCount(1, 'data');
     Http::assertNothingSent();
 })->with([true, false]);
+
+test('incoming Brazilian WhatsApp JIDs keep their address even when the digits are not a valid current phone', function (bool $realtime, string $jid, ?string $phone) {
+    config(['chat.enabled' => $realtime]);
+    $f = runtimeChat();
+    $f['thread']->delete();
+    $f['thread']->contact->delete();
+    Http::fake();
+
+    receiveRuntimeWebhook($f, runtimeWebhook($f, 'first', ['message' => ['chatid' => $jid, 'sender' => $jid]]))->assertOk();
+    app()->call([new ProcessInboundEvent(UazapiInbox::latest('id')->first()->id), 'handle']);
+    expect(UazapiInbox::latest('id')->first()->decision)->toBe('inbound_projected')
+        ->and(Contact::sole()->phone)->toBe($phone)
+        ->and(ContactChannel::sole()->external_id)->toBe($jid)
+        ->and(Thread::sole()->external_chat_id)->toBe($jid)
+        ->and(Thread::sole()->status)->toBe('bot');
+
+    receiveRuntimeWebhook($f, runtimeWebhook($f, 'second', ['message' => ['chatid' => $jid, 'sender' => $jid]]))->assertOk();
+    app()->call([new ProcessInboundEvent(UazapiInbox::latest('id')->first()->id), 'handle']);
+    expect(Contact::count())->toBe(1)->and(ContactChannel::count())->toBe(1)
+        ->and(Thread::count())->toBe(1)->and(Thread::sole()->unread_count)->toBe(2);
+    $this->actingAs($f['user'])->getJson(route('workspaces.conversations.index', $f['workspace']))
+        ->assertOk()->assertJsonCount(1, 'data');
+    Http::assertNothingSent();
+})->with([
+    [false, '5511987654321@s.whatsapp.net', '5511987654321'],
+    [true, '5511987654321@s.whatsapp.net', '5511987654321'],
+    [false, '551187654321@s.whatsapp.net', null],
+    [true, '551187654321@s.whatsapp.net', null],
+]);
+
+test('only structurally supported individual phone JIDs can create a contact', function (string $jid) {
+    $f = runtimeChat();
+    $f['thread']->delete();
+    $f['thread']->contact->delete();
+    receiveRuntimeWebhook($f, runtimeWebhook($f, 'bad-jid', ['message' => ['chatid' => $jid]]))->assertOk();
+    app()->call([new ProcessInboundEvent(UazapiInbox::sole()->id), 'handle']);
+
+    expect(app(WhatsAppJid::class)->isIndividual($jid))->toBeFalse()
+        ->and(UazapiInbox::sole()->decision)->toBe('unsupported_jid')
+        ->and(Contact::count())->toBe(0)->and(ContactChannel::count())->toBe(0)->and(Thread::count())->toBe(0);
+})->with([
+    '123@s.whatsapp.net',
+    '012345678901@s.whatsapp.net',
+    '1234567890123456@s.whatsapp.net',
+    '551187654321@g.us',
+    '551187654321@lid',
+    '551187654321:2@s.whatsapp.net',
+    '55118765432a@s.whatsapp.net',
+]);
+
+test('history uses the original Brazilian WhatsApp JID when the contact has no normalized phone', function () {
+    config(['chat.enabled' => false]);
+    $f = runtimeChat();
+    $f['thread']->delete();
+    $f['thread']->contact->delete();
+    $jid = '551187654321@s.whatsapp.net';
+    receiveRuntimeWebhook($f, runtimeWebhook($f, 'legacy-jid', ['message' => ['chatid' => $jid]]))->assertOk();
+    app()->call([new ProcessInboundEvent(UazapiInbox::sole()->id), 'handle']);
+    $thread = Thread::sole();
+    Http::fake(['*/message/find' => Http::response(['messages' => []])]);
+
+    $this->actingAs($f['user'])->getJson(route('workspaces.conversations.messages', [$f['workspace'], $thread]))
+        ->assertOk();
+    Http::assertSentCount(1);
+    Http::assertSent(fn ($request) => str_ends_with($request->url(), '/message/find') && $request['chatid'] === $jid);
+});
+
+test('a legacy WhatsApp JID is not merged into a guessed ninth-digit contact', function () {
+    $f = runtimeChat();
+    $f['thread']->delete();
+    $f['thread']->contact->delete();
+    $registered = Contact::create(['workspace_id' => $f['workspace']->id, 'phone' => '5511987654321']);
+    $jid = '551187654321@s.whatsapp.net';
+
+    receiveRuntimeWebhook($f, runtimeWebhook($f, 'legacy-separate', ['message' => ['chatid' => $jid]]))->assertOk();
+    app()->call([new ProcessInboundEvent(UazapiInbox::sole()->id), 'handle']);
+
+    expect(Contact::count())->toBe(2)
+        ->and(ContactChannel::sole()->contact_id)->not->toBe($registered->id)
+        ->and(Thread::sole()->contact_id)->toBe(ContactChannel::sole()->contact_id)
+        ->and(Thread::sole()->contact->phone)->toBeNull();
+});
 
 test('message JID takes precedence over a provider-local chat record ID', function (bool $realtime) {
     config(['chat.enabled' => $realtime]);

@@ -2,11 +2,11 @@
 
 namespace App\Services\Chat;
 
+use App\Models\Contact;
 use App\Models\ContactChannel;
 use App\Models\Thread;
 use App\Models\UazapiConnection;
 use App\Services\Contacts\ContactIdentity;
-use App\Services\Contacts\InternationalPhone;
 use App\Services\Flows\FlowExecutionManager;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -33,7 +33,7 @@ class ChatProjection
         if ($external === '' || strlen($external) > 191 || str_contains($external, '@g.us') || ($chat['wa_isGroup'] ?? false) || ($message['isGroup'] ?? false)) {
             return null;
         }
-        if ($allowCreate && ! preg_match('/^[0-9]+@s\.whatsapp\.net$/D', $external)) {
+        if ($allowCreate && ! app(WhatsAppJid::class)->isIndividual($external)) {
             return null;
         }
 
@@ -48,12 +48,10 @@ class ChatProjection
             } else {
                 $channel = ContactChannel::where('workspace_id', $connection->workspace_id)->where('type', 'whatsapp')->where('external_id', $external)->first();
                 if (! $channel) {
-                    preg_match('/^([0-9]+)@s\.whatsapp\.net$/D', $external, $matches);
-                    $phone = app(InternationalPhone::class)->normalize($matches[1]);
-                    if ($phone === null) {
-                        return null;
-                    }
-                    $contact = app(ContactIdentity::class)->locked($connection->workspace_id, $phone);
+                    $phone = app(WhatsAppJid::class)->phone($external);
+                    $contact = $phone === null
+                        ? Contact::create(['workspace_id' => $connection->workspace_id, 'phone' => null])
+                        : app(ContactIdentity::class)->locked($connection->workspace_id, $phone);
                     $channel = ContactChannel::firstOrCreate(['workspace_id' => $connection->workspace_id, 'type' => 'whatsapp', 'external_id' => $external], ['contact_id' => $contact->id]);
                 }
                 $contact = $channel->contact()->lockForUpdate()->firstOrFail();
