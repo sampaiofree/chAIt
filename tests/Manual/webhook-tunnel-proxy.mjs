@@ -1,7 +1,9 @@
+import { Buffer } from 'node:buffer';
+import { createHash } from 'node:crypto';
+import { appendFileSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
-import { appendFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
+import process from 'node:process';
 
 // Expose only the UAZAPI receiver while a temporary Cloudflare Tunnel is active.
 // Run with NODE_EXTRA_CA_CERTS pointing to Herd's local CA certificate.
@@ -16,6 +18,7 @@ function metadata(body, status) {
     try {
         const payload = JSON.parse(body.toString('utf8'));
         const message = payload.message || {};
+
         return {
             at: new Date().toISOString(),
             event_type: payload.EventType || null,
@@ -33,16 +36,20 @@ function metadata(body, status) {
 
 http.createServer((request, response) => {
     const pathname = new URL(request.url || '/', 'http://localhost').pathname;
+
     if (request.method !== 'POST' || !webhookPath.test(pathname)) {
         request.resume();
         response.writeHead(404).end();
+
         return;
     }
 
     const size = Number(request.headers['content-length']);
+
     if (Number.isFinite(size) && size > maxBodyBytes) {
         request.resume();
         response.writeHead(413).end();
+
         return;
     }
 
@@ -53,9 +60,11 @@ http.createServer((request, response) => {
         host: 'chait.test',
         'x-forwarded-proto': 'https',
     };
+
     if (request.headers['content-length']) {
         headers['content-length'] = request.headers['content-length'];
     }
+
     const upstream = https.request({
         hostname: 'chait.test',
         port: 443,
@@ -71,18 +80,28 @@ http.createServer((request, response) => {
     });
 
     upstream.on('error', () => {
-        if (!response.headersSent) response.writeHead(502);
+        if (!response.headersSent) {
+response.writeHead(502);
+}
+
         response.end();
     });
     request.on('data', (chunk) => {
         received += chunk.length;
+
         if (received > maxBodyBytes) {
             upstream.destroy();
-            if (!response.headersSent) response.writeHead(413);
+
+            if (!response.headersSent) {
+response.writeHead(413);
+}
+
             response.end();
             request.destroy();
+
             return;
         }
+
         chunks.push(chunk);
         upstream.write(chunk);
     });

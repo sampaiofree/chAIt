@@ -10,9 +10,9 @@ use App\Models\WorkspaceMembership;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Cache;
 
 function uazapiWebhookUrl(UazapiConnection $connection): string
 {

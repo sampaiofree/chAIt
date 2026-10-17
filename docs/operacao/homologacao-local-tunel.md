@@ -11,6 +11,29 @@ Este procedimento valida a integração UAZAPI e o chat em tempo real no Mac de 
 5. Inicie dois Quick Tunnels: um para `http://127.0.0.1:8877`, outro para `http://127.0.0.1:8080`. Configure `REVERB_HOST` com o host do segundo, `REVERB_PORT=443` e `REVERB_SCHEME=https`; reinicie Reverb e Horizon após alterar o `.env`.
 6. Registre na UAZAPI a URL do primeiro túnel mais o caminho da rota `webhooks.uazapi`, gerado pelo Laravel com o segredo da conexão. Nunca imprima ou compartilhe o caminho completo. Verifique que `GET /` no túnel de webhook devolve 404 e que um POST de prova no endpoint válido recebe 200 e é processado.
 
+### Inicialização reproduzível no `chait.test`
+
+Execute cada processo em um terminal próprio, a partir da raiz do projeto:
+
+```bash
+php artisan horizon
+php artisan schedule:work
+php artisan reverb:start --host=127.0.0.1 --port=8080
+NODE_EXTRA_CA_CERTS="$HOME/Library/Application Support/Herd/config/valet/CA/LaravelValetCASelfSigned.pem" node tests/Manual/webhook-tunnel-proxy.mjs
+cloudflared tunnel --url http://127.0.0.1:8877 --protocol http2 --no-autoupdate
+cloudflared tunnel --url http://127.0.0.1:8080 --protocol http2 --no-autoupdate
+```
+
+Copie apenas o **host** do túnel de Reverb para `REVERB_HOST` no `.env`, mantenha `REVERB_PORT=443` e `REVERB_SCHEME=https`, execute `php artisan config:clear` e reinicie Horizon e Reverb. O túnel do webhook fornece a origem para o comando abaixo; ele calcula o caminho assinado internamente e não o imprime:
+
+```bash
+php artisan chat:register-local-webhook https://ORIGEM-DO-WEBHOOK.trycloudflare.com
+```
+
+Use `php artisan horizon:status`, `php artisan schedule:list`, `php artisan chat:metrics` e `curl -o /dev/null -w '%{http_code}\n' https://ORIGEM-DO-WEBHOOK.trycloudflare.com/` para conferir os serviços. O `GET /` deve retornar 404. Ao reiniciar qualquer Quick Tunnel, atualize o respectivo host no `.env` ou registre novamente o webhook e reinicie os processos que leem a configuração. Não reutilize uma URL de túnel encerrado.
+
+A tela de Conversas consulta a lista no banco antes de receber o status da conexão. A importação inicial ou a reconciliação vencida segue na fila; apenas o histórico e os avatares ainda sem URL local consultam a UAZAPI. As fotos visíveis são buscadas automaticamente, e a URL obtida fica salva no perfil do contato. Um erro de imagem força uma renovação; enquanto isso, as iniciais aparecem.
+
 ## Evidência de aceite
 
 - Tempo real: um evento de conexão enviado ao webhook deve mudar a “Última confirmação” na página de conversas aberta, sem recarregar. Confirme a assinatura do canal privado e o processamento da caixa de entrada.

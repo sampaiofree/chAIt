@@ -83,7 +83,7 @@ Artisan::command('chat:register-local-webhook {origin}', function (UazapiClient 
         try {
             $uazapi->configureWebhook($connection, $origin.$path);
             $count++;
-        } catch (\Throwable) {
+        } catch (Throwable) {
             $this->error("Falha ao registrar o webhook da conexão {$connection->id}.");
 
             return 1;
