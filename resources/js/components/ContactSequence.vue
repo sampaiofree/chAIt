@@ -10,6 +10,7 @@ import {
     type SequenceSnapshot,
 } from '@/lib/sequences';
 const props = defineProps<{ workspaceId: number; contactId: number }>();
+const emit = defineEmits<{ 'dialog-open-change': [open: boolean] }>();
 const enrollment = ref<SequenceSnapshot | null>(null);
 const sequences = ref<{ id: number; name: string }[]>([]);
 const canEnroll = ref(false);
@@ -50,6 +51,7 @@ async function load() {
     }
 }
 watch(open, (value) => {
+    emit('dialog-open-change', value);
     formError.value = '';
     if (value) {
         selected.value = null;
@@ -93,6 +95,7 @@ onMounted(() => {
     timer = setInterval(() => void load(), 15000);
 });
 onBeforeUnmount(() => {
+    emit('dialog-open-change', false);
     abort.abort();
     clearInterval(timer);
 });

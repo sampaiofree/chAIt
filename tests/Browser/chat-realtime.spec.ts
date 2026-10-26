@@ -142,6 +142,17 @@ async function setup(page: Page, holdHistory = false, holdConnection = false) {
             },
         });
     });
+    await page.route(
+        '**/workspaces/*/contacts/*/sequence-enrollment',
+        (route) =>
+            route.fulfill({
+                json: {
+                    data: null,
+                    can_enroll: true,
+                    sequences: [{ id: 1, name: 'Sequência de teste' }],
+                },
+            }),
+    );
     await page.goto('/login');
     await page.getByLabel('E-mail', { exact: true }).fill('admin@example.test');
     await page.getByLabel('Senha', { exact: true }).fill('password');
@@ -189,6 +200,26 @@ async function setup(page: Page, holdHistory = false, holdConnection = false) {
         counts: () => ({ historyCalls, statusCalls, listCalls }),
         avatarCalls: () => avatarCalls,
         thread,
+        realtimeUnavailable: () =>
+            socket!.send(
+                JSON.stringify({
+                    event: 'pusher:subscription_error',
+                    channel,
+                    data: JSON.stringify({
+                        type: 'AuthError',
+                        error: 'Unavailable',
+                        status: 503,
+                    }),
+                }),
+            ),
+        realtimeRecovered: () =>
+            socket!.send(
+                JSON.stringify({
+                    event: 'pusher_internal:subscription_succeeded',
+                    channel,
+                    data: '{}',
+                }),
+            ),
         disconnect: () => {
             allowConnection = false;
             socket!.close();
@@ -284,8 +315,188 @@ test('loss of realtime is visible and does not query the provider for history', 
         page.getByText('Mensagem do histórico', { exact: true }),
     ).toBeVisible();
     state.disconnect();
-    await expect(page.getByText(/Tempo real indisponível/)).toBeVisible();
+    await expect(
+        page.getByRole('dialog', { name: 'Problema de conexão' }),
+    ).toContainText('Atualizações em tempo real indisponíveis');
     expect(state.counts().historyCalls).toBe(1);
+});
+
+const connectionModal = (page: Page) =>
+    page.getByRole('dialog', { name: 'Problema de conexão' });
+
+for (const close of ['Entendi', 'Fechar', 'Escape', 'outside']) {
+    test(`connection modal closes with ${close} and stays dismissed for the visit`, async ({
+        page,
+    }) => {
+        const state = await setup(page);
+        const search = page.getByRole('textbox', {
+            name: 'Buscar por nome ou telefone',
+        });
+        await search.focus();
+        state.realtimeUnavailable();
+        await expect(connectionModal(page)).toBeVisible();
+        await expect(
+            connectionModal(page).getByRole('button', {
+                name: 'Entendi',
+                exact: true,
+            }),
+        ).toBeFocused();
+
+        if (close === 'Escape') {
+            await page.keyboard.press('Escape');
+        } else if (close === 'outside') {
+            await page.mouse.click(10, 10);
+        } else {
+            await connectionModal(page)
+                .getByRole('button', { name: close, exact: true })
+                .click();
+        }
+
+        await expect(connectionModal(page)).toHaveCount(0);
+        await expect(search).toBeFocused();
+        state.realtimeRecovered();
+        state.emit('connection.changed', { status: 'disconnected' });
+        await expect(
+            page.getByRole('textbox', { name: 'Mensagem para o contato' }),
+        ).toBeDisabled();
+        await expect(connectionModal(page)).toHaveCount(0);
+        expect(state.counts().historyCalls).toBe(1);
+        await page.reload();
+        await expect(
+            page.getByText('Mensagem do histórico', { exact: true }),
+        ).toBeVisible();
+        state.emit('connection.changed', { status: 'disconnected' });
+        await expect(connectionModal(page)).toBeVisible();
+    });
+}
+
+test('connection modal combines failures, updates and closes on recovery', async ({
+    page,
+}) => {
+    const state = await setup(page);
+    state.emit('connection.changed', { status: 'disconnected' });
+    await expect(connectionModal(page)).toContainText('WhatsApp desconectado');
+    await expect(
+        connectionModal(page).getByRole('link', { name: 'Configurar conexão' }),
+    ).toBeVisible();
+    state.realtimeUnavailable();
+    await expect(connectionModal(page)).toContainText(
+        'Atualizações em tempo real indisponíveis',
+    );
+    state.emit('connection.changed', {
+        status: 'connected',
+        provider_available: false,
+    });
+    await expect(connectionModal(page)).toContainText('WhatsApp indisponível');
+    await expect(connectionModal(page)).not.toContainText(
+        'WhatsApp desconectado',
+    );
+    state.emit('connection.changed', {
+        status: 'connected',
+        provider_available: true,
+    });
+    await expect(
+        connectionModal(page).getByRole('link', { name: 'Configurar conexão' }),
+    ).toHaveCount(0);
+    await expect(connectionModal(page)).toBeVisible();
+    state.realtimeRecovered();
+    await expect(connectionModal(page)).toHaveCount(0);
+});
+
+for (const recover of [false, true]) {
+    test(`connection warning waits for filters and rechecks recovery (${recover})`, async ({
+        page,
+    }) => {
+        const state = await setup(page);
+        await page
+            .getByRole('button', { name: 'Filtrar conversas', exact: true })
+            .click();
+        state.emit('connection.changed', { status: 'disconnected' });
+        await expect(
+            page.getByRole('dialog', { name: 'Filtrar conversas' }),
+        ).toBeVisible();
+        await expect(connectionModal(page)).toHaveCount(0);
+
+        if (recover) {
+            state.emit('connection.changed', {
+                status: 'connected',
+                provider_available: true,
+            });
+        }
+
+        await page.keyboard.press('Escape');
+
+        if (recover) {
+            await expect(connectionModal(page)).toHaveCount(0);
+            state.emit('connection.changed', { status: 'disconnected' });
+        }
+
+        await expect(connectionModal(page)).toBeVisible();
+    });
+}
+
+for (const other of ['Finalizar atendimento', 'Adicionar à sequência']) {
+    test(`connection notice waits for ${other}`, async ({ page }) => {
+        const state = await setup(page);
+        await page
+            .getByRole('button', {
+                name: 'Abrir perfil do contato',
+                exact: true,
+            })
+            .click();
+        await page.getByRole('button', { name: other, exact: true }).click();
+        await expect(
+            page.getByRole('dialog', { name: other, exact: true }),
+        ).toBeVisible();
+        state.emit('connection.changed', { status: 'disconnected' });
+        await expect(
+            page.getByRole('textbox', {
+                name: 'Mensagem para o contato',
+                includeHidden: true,
+            }),
+        ).toBeDisabled();
+        await expect(connectionModal(page)).toHaveCount(0);
+        await page.keyboard.press('Escape');
+        await expect(connectionModal(page)).toBeVisible();
+    });
+}
+
+test('connection modal fits mobile and desktop', async ({ page }, testInfo) => {
+    const state = await setup(page);
+    state.emit('connection.changed', { status: 'disconnected' });
+
+    for (const width of [390, 1440]) {
+        await page.setViewportSize({ width, height: 844 });
+        const modal = connectionModal(page);
+        await expect(modal).toBeVisible();
+        const box = (await modal.boundingBox())!;
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(width);
+        await page.screenshot({
+            path: testInfo.outputPath(`connection-modal-${width}.png`),
+            animations: 'disabled',
+        });
+    }
+});
+
+test('initial realtime connection gets ten seconds without a warning', async ({
+    page,
+}) => {
+    const state = await setup(page);
+    await page.clock.install();
+    await page.clock.fastForward(11000);
+    await expect(connectionModal(page)).toHaveCount(0);
+    state.disconnect();
+    await page.reload();
+    await expect(
+        page.getByRole('textbox', { name: 'Buscar por nome ou telefone' }),
+    ).toBeVisible();
+    await page.clock.fastForward(9000);
+    await expect(connectionModal(page)).toHaveCount(0);
+    await page.clock.fastForward(1000);
+    await expect(connectionModal(page)).toContainText(
+        'Atualizações em tempo real indisponíveis',
+    );
 });
 
 test('filtered searches page through local conversations without importing chats', async ({

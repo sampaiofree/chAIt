@@ -1419,6 +1419,85 @@ watch(
     },
     { flush: 'sync' },
 );
+// Connection notices are shown at most once for this mounted dashboard visit.
+const connectionDialogOpen = ref(false);
+const conversationSearchInput = ref<InstanceType<typeof Input> | null>(null);
+const sequenceDialogOpen = ref(false);
+const connectionNoticeShown = ref(false);
+const realtimeInitialWaitOver = ref(false);
+let realtimeInitialTimer: ReturnType<typeof setTimeout> | undefined;
+let connectionPreviousFocus: HTMLElement | null = null;
+const realtimeWarning = computed(
+    () =>
+        realtimeEnabled &&
+        realtimeInitialWaitOver.value &&
+        !realtimeConnected.value,
+);
+const connectionNoticeMessages = computed(() => {
+    const notices: string[] = [];
+    if (connectionWarning.value) {
+        notices.push(
+            connection.value?.provider_available === false
+                ? 'WhatsApp indisponível. As conversas podem estar desatualizadas.'
+                : 'WhatsApp desconectado. As conversas locais continuam disponíveis.',
+        );
+    }
+    if (realtimeWarning.value) {
+        notices.push(
+            'Atualizações em tempo real indisponíveis. As conversas podem estar desatualizadas.',
+        );
+    }
+    return notices;
+});
+watch(realtimeConnected, (connected) => {
+    if (connected) {
+        realtimeInitialWaitOver.value = true;
+        clearTimeout(realtimeInitialTimer);
+    }
+});
+watch(
+    [
+        connectionNoticeMessages,
+        () => dialog.open,
+        filterOpen,
+        expandedImage,
+        sequenceDialogOpen,
+    ],
+    async () => {
+        if (!connectionNoticeMessages.value.length) {
+            connectionDialogOpen.value = false;
+            return;
+        }
+        // Let a queued application dialog open before deciding to show this notice.
+        await nextTick();
+        if (
+            !connectionNoticeMessages.value.length ||
+            connectionNoticeShown.value ||
+            dialog.open ||
+            filterOpen.value ||
+            expandedImage.value ||
+            sequenceDialogOpen.value
+        )
+            return;
+        connectionPreviousFocus = document.activeElement as HTMLElement | null;
+        connectionNoticeShown.value = true;
+        connectionDialogOpen.value = true;
+    },
+    { flush: 'post' },
+);
+function restoreConnectionFocus(event: Event) {
+    event.preventDefault();
+    if (
+        connectionPreviousFocus?.isConnected &&
+        connectionPreviousFocus !== document.body
+    ) {
+        connectionPreviousFocus.focus();
+    } else {
+        (
+            conversationSearchInput.value?.$el as HTMLElement | undefined
+        )?.focus();
+    }
+}
 watch(realtimeConnected, (connected) => {
     if (!connected) return;
     for (const id of visibleAvatars) {
@@ -1456,6 +1535,9 @@ onMounted(async () => {
     dateLabelTimer = window.setInterval(refreshDateLabels, 60000);
     document.addEventListener('visibilitychange', refreshDateLabels);
     if (realtimeEnabled) {
+        realtimeInitialTimer = setTimeout(() => {
+            realtimeInitialWaitOver.value = true;
+        }, 10000);
         realtime = openChatRealtime(
             page.props.chatRealtime,
             page.props.currentUser.id,
@@ -1476,6 +1558,7 @@ onMounted(async () => {
     listTimer = window.setInterval(() => void loadThreads(), 30000);
 });
 onUnmounted(() => {
+    clearTimeout(realtimeInitialTimer);
     window.clearInterval(dateLabelTimer);
     document.removeEventListener('visibilitychange', refreshDateLabels);
     window.clearInterval(statusTimer);
@@ -1503,6 +1586,7 @@ onUnmounted(() => {
             <div class="search-row">
                 <label class="search"
                     ><Search :size="16" aria-hidden="true" /><Input
+                        ref="conversationSearchInput"
                         v-model="search"
                         aria-label="Buscar por nome ou telefone"
                         placeholder="Buscar conversas"
@@ -1527,31 +1611,6 @@ onUnmounted(() => {
                     }}</span>
                 </button>
             </div>
-            <div
-                v-if="connectionWarning"
-                class="connection-warning"
-                role="status"
-            >
-                <p v-if="connection?.provider_available === false">
-                    WhatsApp indisponível. As conversas podem estar
-                    desatualizadas.
-                </p>
-                <p v-else>
-                    WhatsApp desconectado. As conversas locais continuam
-                    disponíveis.
-                </p>
-                <a v-if="isAdmin" href="/settings/whatsapp"
-                    >Configurar conexão</a
-                >
-            </div>
-            <p
-                v-if="realtimeEnabled && !realtimeConnected"
-                role="status"
-                class="notice"
-            >
-                Tempo real indisponível. Os dados podem estar desatualizados;
-                reabra a conversa após reconectar.
-            </p>
             <AppButton
                 v-if="nextCursor"
                 :disabled="loadingThreads"
@@ -2299,6 +2358,7 @@ onUnmounted(() => {
                     :key="`${workspace.id}:${selected.contact.id}`"
                     :workspace-id="workspace.id"
                     :contact-id="selected.contact.id"
+                    @dialog-open-change="sequenceDialogOpen = $event"
                 />
                 <h3>Notas internas</h3>
                 <div
@@ -2401,6 +2461,27 @@ onUnmounted(() => {
                     Limpar filtros
                 </AppButton>
                 <AppButton @click="applyFilters">Aplicar filtros</AppButton>
+            </DialogFooter>
+        </DialogContent>
+    </Dialog>
+    <Dialog v-model:open="connectionDialogOpen">
+        <DialogContent @close-auto-focus="restoreConnectionFocus">
+            <DialogHeader class="pr-8 text-left">
+                <DialogTitle>Problema de conexão</DialogTitle>
+                <DialogDescription>
+                    {{ connectionNoticeMessages.join(' ') }}
+                </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+                <a
+                    v-if="isAdmin && connectionWarning"
+                    href="/settings/whatsapp"
+                    class="self-center text-sm font-medium underline"
+                    >Configurar conexão</a
+                >
+                <AppButton @click="connectionDialogOpen = false"
+                    >Entendi</AppButton
+                >
             </DialogFooter>
         </DialogContent>
     </Dialog>
@@ -2580,23 +2661,6 @@ onUnmounted(() => {
     color: var(--primary-foreground);
     font-size: 10px;
     font-weight: 700;
-}
-.connection-warning {
-    margin: 0 12px 12px;
-    padding: 10px 12px;
-    border: 1px solid var(--warning);
-    border-radius: 8px;
-    background: var(--warning-soft);
-    color: var(--warning);
-    font-size: 12px;
-}
-.connection-warning p {
-    margin: 0 0 4px;
-}
-.connection-warning a {
-    color: inherit;
-    font-weight: 600;
-    text-decoration: underline;
 }
 .conversation-filter-fields {
     display: grid;

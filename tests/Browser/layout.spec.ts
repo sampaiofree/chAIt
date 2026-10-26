@@ -630,9 +630,14 @@ test('conversation filters apply together, clear, and discard unapplied edits', 
 }) => {
     await login(page);
     await page.setViewportSize({ width: 390, height: 844 });
+    await page
+        .getByRole('button', { name: 'Voltar para conversas', exact: true })
+        .click();
     const trigger = page.getByRole('button', { name: 'Filtrar conversas' });
     await expect(page.locator('.list-pane h1')).toHaveClass(/sr-only/);
-    await expect(page.locator('.connection-warning')).toHaveCount(0);
+    await expect(
+        page.getByRole('dialog', { name: 'Problema de conexão' }),
+    ).toHaveCount(0);
     await trigger.click();
 
     const filters = page.getByRole('dialog', { name: 'Filtrar conversas' });
@@ -770,19 +775,21 @@ test('connection warning appears only when disconnected or provider is unavailab
     page,
 }) => {
     await login(page);
-    await expect(page.locator('.connection-warning')).toHaveCount(0);
+    await expect(
+        page.getByRole('dialog', { name: 'Problema de conexão' }),
+    ).toHaveCount(0);
     await page.route('**/workspaces/*/uazapi/status', (route) =>
         route.fulfill({
             json: { data: { status: 'disconnected', phone: null } },
         }),
     );
     await page.reload();
-    await expect(page.locator('.connection-warning')).toContainText(
-        'WhatsApp desconectado',
-    );
+    await expect(
+        page.getByRole('dialog', { name: 'Problema de conexão' }),
+    ).toContainText('WhatsApp desconectado');
     await expect(
         page
-            .locator('.connection-warning')
+            .getByRole('dialog', { name: 'Problema de conexão' })
             .getByRole('link', { name: 'Configurar conexão' }),
     ).toBeVisible();
     await page.route('**/workspaces/*/uazapi/status', (route) =>
@@ -797,9 +804,9 @@ test('connection warning appears only when disconnected or provider is unavailab
         }),
     );
     await page.reload();
-    await expect(page.locator('.connection-warning')).toContainText(
-        'WhatsApp indisponível',
-    );
+    await expect(
+        page.getByRole('dialog', { name: 'Problema de conexão' }),
+    ).toContainText('WhatsApp indisponível');
 });
 
 test('message composer aligns controls and highlights the text field across layouts and themes', async ({
