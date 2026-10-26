@@ -37,6 +37,7 @@ cp -n .env.example .env
 APP_ENV=production
 APP_DEBUG=false
 APP_URL=https://seu-dominio.com
+CHAIT_PUBLIC_REGISTRATION_ENABLED=false
 
 DB_CONNECTION=pgsql
 DB_SCHEMA=public
@@ -73,6 +74,8 @@ LOG_DAILY_DAYS=7
 Preencha `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME` e `DB_PASSWORD` com os dados do servidor; configure também `REDIS_HOST`, `REDIS_PORT` e `REDIS_PASSWORD`. Defina `UAZAPI_BASE_URL` e `UAZAPI_ADMIN_TOKEN`. Ajuste `VOICE_FFMPEG_PATH` e `VOICE_FFPROBE_PATH` se os executáveis exigirem caminhos absolutos.
 
 Use esse perfil `APP_ENV=production` também na instalação isolada de homologação, com banco, filas/cache Redis e credenciais próprios, separados da produção. O Horizon atual não define um perfil `staging`; trocar somente `APP_ENV` para esse nome deixaria o processo sem os supervisores esperados.
+
+O cadastro público fica desativado por padrão (`CHAIT_PUBLIC_REGISTRATION_ENABLED=false`): as rotas GET e POST `/register` não são disponibilizadas. Administradores ainda podem adicionar usuários em **Configurações → Equipe**. Para reabrir o cadastro público, defina `CHAIT_PUBLIC_REGISTRATION_ENABLED=true` no `.env` e execute `php artisan config:clear`, `php artisan route:clear` e `php artisan optimize`, nessa ordem. Use o mesmo procedimento ao desativá-lo novamente. Confira `php artisan route:list --path=register`: com a opção desligada, nenhuma rota deve aparecer; com ela ligada, devem aparecer GET e POST.
 
 Substitua a chave e o segredo Reverb por valores aleatórios distintos, próprios desse ambiente. `REVERB_HOST` é o endereço público; `REVERB_SERVER_HOST` e `REVERB_SERVER_PORT` são o endereço interno de escuta. `REVERB_ALLOWED_ORIGINS` recebe o hostname da aplicação que abre o WebSocket, sem `https://`; vários hosts são separados por vírgula, sem espaços. Não usar `*`. O exemplo `.env.example` contém valores de desenvolvimento, incluindo broadcaster `log` e logs `debug`; substitua-os pelos valores acima.
 

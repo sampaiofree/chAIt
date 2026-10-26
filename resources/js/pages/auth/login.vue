@@ -6,6 +6,7 @@ import { Head, Link, useForm } from '@inertiajs/vue3';
 import { computed } from 'vue';
 const props = defineProps<{
     canResetPassword?: boolean;
+    canRegister?: boolean;
     status?: string;
     errors?: Record<string, string>;
 }>();
@@ -44,7 +45,7 @@ const error = computed(() => form.errors.email || form.errors.password);
             }}</AppButton
             ><Link v-if="canResetPassword" href="/forgot-password"
                 >Esqueci minha senha</Link
-            ><small
+            ><small v-if="canRegister"
                 >Não tem conta? <Link href="/register">Criar conta</Link></small
             >
         </form>

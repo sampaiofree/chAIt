@@ -144,7 +144,7 @@ return [
     */
 
     'features' => [
-        Features::registration(),
+        ...(env('CHAIT_PUBLIC_REGISTRATION_ENABLED', false) ? [Features::registration()] : []),
         Features::resetPasswords(),
         Features::emailVerification(),
         Features::twoFactorAuthentication([
