@@ -66,7 +66,6 @@ class AppServiceProvider extends ServiceProvider
                 ->letters()
                 ->numbers()
                 ->symbols()
-                ->uncompromised()
             : Password::min(6),
         );
     }

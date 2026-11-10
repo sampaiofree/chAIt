@@ -60,11 +60,11 @@ test('password change enforces the password minimum', function (string $password
     expect(Hash::check($password, $user->fresh()->password))->toBe($valid);
 })->with(['five characters' => ['abcde', false], 'six characters' => ['abcdef', true]]);
 
-test('production requires six characters, complexity and an uncompromised password', function () {
+test('production requires six characters and complexity without checking for leaked passwords', function () {
     $originalEnvironment = $this->app['env'];
     $this->app['env'] = 'production';
     $verifier = Mockery::mock(UncompromisedVerifier::class);
-    $verifier->shouldReceive('verify')->andReturnUsing(fn (array $data) => $data['value'] !== 'Bad1!x');
+    $verifier->shouldNotReceive('verify');
     $this->app->instance(UncompromisedVerifier::class, $verifier);
 
     try {
@@ -75,7 +75,7 @@ test('production requires six characters, complexity and an uncompromised passwo
             ->and($validate('ABC1!X'))->toBeFalse()
             ->and($validate('Abcd!x'))->toBeFalse()
             ->and($validate('Abcd1x'))->toBeFalse()
-            ->and($validate('Bad1!x'))->toBeFalse();
+            ->and($validate('Bad1!x'))->toBeTrue();
     } finally {
         $this->app['env'] = $originalEnvironment;
     }
