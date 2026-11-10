@@ -25,7 +25,8 @@ class WebhookDefinition
                 }
             }],
             'tag_rules' => ['present', 'array', 'list', 'max:100'],
-            'tag_rules.*' => ['required', 'array:condition,add,remove'],
+            'tag_rules.*' => ['required', 'array:condition,add,remove,flow_id'],
+            'tag_rules.*.flow_id' => ['nullable', 'integer', 'min:1'],
             'tag_rules.*.condition' => ['present', 'nullable', 'array:source_path,value'],
             'tag_rules.*.condition.source_path' => ['required_with:tag_rules.*.condition', 'array', 'list', 'min:1', 'max:32'],
             'tag_rules.*.add' => ['present', 'array', 'list', 'max:100'],
@@ -37,6 +38,7 @@ class WebhookDefinition
         $active = $data['status'] === 'active';
         $fieldIds = $workspace->contactCustomFields()->where('type', 'text')->pluck('id')->all();
         $tagIds = $workspace->tags()->pluck('id')->all();
+        $flowIds = $workspace->flows()->where('is_active', true)->whereNotNull('published_version_id')->pluck('id')->all();
         $seen = [];
         $hasPhone = false;
         $checkPath = function (array $path, string $key) use (&$errors, $fields, $active, $checkSources): ?array {
@@ -109,8 +111,11 @@ class WebhookDefinition
             if (array_intersect($rule['add'], $rule['remove'])) {
                 $errors["tag_rules.$i.remove"] = 'Uma regra não pode adicionar e remover a mesma tag.';
             }
-            if ($rule['add'] === [] && $rule['remove'] === []) {
-                $errors["tag_rules.$i.add"] = 'Selecione ao menos uma operação de tag.';
+            if ($checkSources && isset($rule['flow_id']) && ! in_array((int) $rule['flow_id'], $flowIds, true)) {
+                $errors["tag_rules.$i.flow_id"] = 'Selecione um fluxo ativo e publicado deste workspace.';
+            }
+            if ($rule['add'] === [] && $rule['remove'] === [] && empty($rule['flow_id'])) {
+                $errors["tag_rules.$i.add"] = 'Selecione ao menos uma ação de tag ou fluxo.';
             }
         }
         unset($rule);

@@ -44,7 +44,7 @@ class ExternalWebhookController extends Controller
         return [
             ...$this->summary($webhook), ...$webhook->only(['mappings', 'tag_rules', 'payload_fields', 'sample_received_at', 'capture_until']),
             'sample_payload' => $webhook->sample_payload,
-            'receipts' => $webhook->receipts()->latest('id')->limit(20)->get(['id', 'status', 'error_code', 'warnings', 'duration_ms', 'created_at']),
+            'receipts' => $webhook->receipts()->latest('id')->limit(20)->get(['id', 'status', 'error_code', 'warnings', 'flow_result', 'duration_ms', 'created_at']),
         ];
     }
 
@@ -83,7 +83,8 @@ class ExternalWebhookController extends Controller
 
         return Inertia::render('webhooks/editor', ['workspace' => $workspace->only(['id', 'name']), 'webhook' => $this->snapshot($model),
             'fields' => $workspace->contactCustomFields()->where('type', 'text')->orderBy('name')->get(['id', 'name', 'type']),
-            'tags' => $workspace->tags()->orderBy('name')->get(['id', 'name', 'color'])]);
+            'tags' => $workspace->tags()->orderBy('name')->get(['id', 'name', 'color']),
+            'flows' => $workspace->flows()->where('is_active', true)->whereNotNull('published_version_id')->orderBy('name')->get(['id', 'name'])]);
     }
 
     public function update(Request $request, Workspace $workspace, int $webhook, WebhookDefinition $definition, AuditLogService $audit): JsonResponse
@@ -149,7 +150,7 @@ class ExternalWebhookController extends Controller
 
             // Preview contains proposed field names and tag IDs, never contact values.
             return response()->json(['data' => ['status' => 'simulated', 'warnings' => $prepared['warnings'], 'native_fields' => array_keys($prepared['native']),
-                'custom_fields' => array_keys($prepared['custom']), 'tag_actions' => $prepared['tags'], 'matched_rules' => $prepared['matched']]]);
+                'custom_fields' => array_keys($prepared['custom']), 'tag_actions' => $prepared['tags'], 'matched_rules' => $prepared['matched'], 'flow_id' => $prepared['flowId']]]);
         } catch (WebhookFailure $error) {
             $receipt->update(['status' => 'error', 'error_code' => $error->errorCode, 'duration_ms' => $this->duration($start)]);
 

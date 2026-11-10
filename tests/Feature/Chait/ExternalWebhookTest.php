@@ -1,11 +1,13 @@
 <?php
 
 use App\Jobs\Chat\ProcessInboundEvent;
+use App\Jobs\ProcessFlowExecution;
 use App\Models\Contact;
 use App\Models\ContactChannel;
 use App\Models\ContactCustomFieldValue;
 use App\Models\ExternalWebhook;
 use App\Models\ExternalWebhookReceipt;
+use App\Models\FlowExecution;
 use App\Models\Thread;
 use App\Models\UazapiConnection;
 use App\Models\UazapiInbox;
@@ -14,6 +16,7 @@ use App\Models\Workspace;
 use App\Services\Contacts\InternationalPhone;
 use App\Services\ExternalWebhooks\PayloadFields;
 use App\Services\ExternalWebhooks\WebhookFailure;
+use App\Services\Flows\FlowRuntime;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -348,4 +351,89 @@ test('settings webhooks requires authentication and administrative access', func
         $user->membershipFor($workspace)->update(['role' => $role]);
         $this->actingAs($user->fresh())->get('/settings/webhooks')->assertForbidden();
     }
+});
+
+function webhookPublishedFlow(Workspace $workspace, string $name = 'Boas-vindas'): array
+{
+    $graph = ['nodes' => [['id' => 'start', 'type' => 'start', 'data' => []]], 'edges' => []];
+    $flow = $workspace->flows()->create(['name' => $name, 'graph' => $graph]);
+    $version = $flow->versions()->create(['workspace_id' => $workspace->id, 'version' => 1, 'graph' => $graph, 'published_at' => now()]);
+    $flow->update(['is_active' => true, 'published_version_id' => $version->id]);
+
+    return [$flow, $version];
+}
+
+test('webhook starts the first matching flow after applying tags and simulates without effects', function () {
+    Queue::fake();
+    [$user, $workspace, $webhook, $endpoint] = externalFixture();
+    UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    [$first] = webhookPublishedFlow($workspace);
+    [$second] = webhookPublishedFlow($workspace, 'Outro');
+    $tag = $workspace->tags()->create(['name' => 'Cliente']);
+    $rules = [
+        ['condition' => ['source_path' => ['state'], 'value' => 'no'], 'add' => [], 'remove' => [], 'flow_id' => $second->id],
+        ['condition' => null, 'add' => [$tag->id], 'remove' => [], 'flow_id' => $first->id],
+        ['condition' => null, 'add' => [], 'remove' => [], 'flow_id' => $second->id],
+    ];
+    $this->actingAs($user)->postJson("$endpoint/simulate", ['name' => 'Compras', 'mappings' => [externalMapping('phone', ['phone'])], 'tag_rules' => $rules, 'payload' => '{"phone":"5527999999999","state":"yes"}'])
+        ->assertOk()->assertJsonPath('data.flow_id', $first->id)->assertJsonPath('data.matched_rules', [1, 2]);
+    expect(Contact::where('workspace_id', $workspace->id)->count())->toBe(0)->and(FlowExecution::count())->toBe(0);
+    externalActivate($webhook, [], $rules);
+    $this->postJson(externalReceiveUrl($webhook), ['phone' => '5527999999999', 'state' => 'yes'])->assertOk();
+    $execution = FlowExecution::sole();
+    expect($execution->flow_id)->toBe($first->id)->and($execution->trigger_source)->toBe('webhook')
+        ->and($execution->contact->tags()->pluck('tags.id')->all())->toBe([$tag->id])
+        ->and($webhook->receipts()->latest('id')->first()->flow_result['status'])->toBe('started');
+    Queue::assertPushed(ProcessFlowExecution::class, fn ($job) => $job->afterCommit === true);
+});
+
+test('webhook replaces an active execution but preserves it when automation is blocked', function (string $blocker) {
+    Queue::fake();
+    [, $workspace, $webhook] = externalFixture();
+    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    [$flow, $version] = webhookPublishedFlow($workspace);
+    $contact = Contact::factory()->create(['workspace_id' => $workspace->id, 'phone' => '5527999999999']);
+    $thread = Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $contact->id, 'status' => 'bot', 'human_opened_at' => null]);
+    $old = app(FlowRuntime::class)->start($version, $contact->id, $thread->id, $connection, 'test');
+    if ($blocker === 'paused') {
+        DB::table('automation_pauses')->insert(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $contact->id, 'reason' => 'manual', 'created_at' => now(), 'updated_at' => now()]);
+    } elseif ($blocker === 'human') {
+        $thread->update(['status' => 'open', 'human_opened_at' => now()]);
+    }
+    externalActivate($webhook, [], [['condition' => null, 'add' => [], 'remove' => [], 'flow_id' => $flow->id]]);
+    $this->postJson(externalReceiveUrl($webhook), ['phone' => $contact->phone])->assertOk();
+    expect($old->fresh()->status)->toBe($blocker === 'none' ? 'interrupted' : 'running')
+        ->and($webhook->receipts()->sole()->flow_result['status'])->toBe($blocker === 'none' ? 'started' : $blocker)
+        ->and(FlowExecution::count())->toBe($blocker === 'none' ? 2 : 1);
+})->with(['none', 'paused', 'human']);
+
+test('flow rules validate workspace and availability and protect active webhook references', function () {
+    [$user, $workspace, $webhook, $endpoint] = externalFixture();
+    [$flow] = webhookPublishedFlow($workspace);
+    [$foreign] = webhookPublishedFlow(Workspace::factory()->create());
+    $base = ['name' => 'Compras', 'status' => 'test', 'mappings' => [], 'tag_rules' => [['condition' => null, 'add' => [], 'remove' => [], 'flow_id' => $foreign->id]]];
+    $this->actingAs($user)->putJson($endpoint, $base)->assertUnprocessable()->assertJsonValidationErrors('tag_rules.0.flow_id');
+    $base['tag_rules'][0]['flow_id'] = $flow->id;
+    $this->putJson($endpoint, $base)->assertOk();
+    externalActivate($webhook, [], $base['tag_rules']);
+    $this->postJson(externalReceiveUrl($webhook), ['phone' => '5527999999999'])->assertOk();
+    expect($webhook->receipts()->sole()->flow_result['status'])->toBe('connection_unavailable');
+    $this->postJson(route('workspaces.flows.deactivate', [$workspace, $flow]))->assertConflict();
+});
+
+test('webhook test mode has no flow effects and unavailable flows preserve contact updates', function () {
+    Queue::fake();
+    [, $workspace, $webhook] = externalFixture();
+    UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    [$flow] = webhookPublishedFlow($workspace);
+    externalActivate($webhook, [], [['condition' => null, 'add' => [], 'remove' => [], 'flow_id' => $flow->id]]);
+    $webhook->update(['status' => 'test']);
+    $this->postJson(externalReceiveUrl($webhook), ['phone' => '5527999999999'])->assertOk()->assertJsonPath('status', 'received');
+    expect(Contact::where('workspace_id', $workspace->id)->count())->toBe(0)->and(FlowExecution::count())->toBe(0);
+    $webhook->update(['status' => 'active']);
+    $flow->update(['is_active' => false]);
+    $this->postJson(externalReceiveUrl($webhook), ['phone' => '5527999999999'])->assertOk();
+    expect(Contact::where('workspace_id', $workspace->id)->count())->toBe(1)
+        ->and($webhook->receipts()->latest('id')->first()->flow_result['status'])->toBe('flow_unavailable')
+        ->and(FlowExecution::count())->toBe(0);
 });

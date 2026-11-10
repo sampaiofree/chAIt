@@ -32,13 +32,24 @@ type Rule = {
     expected: string;
     add: number[];
     remove: number[];
+    flowId: string;
 };
 const props = defineProps<{
     workspace: { id: number; name: string };
     webhook: WebhookSnapshot;
     fields: { id: number; name: string; type: string }[];
     tags: { id: number; name: string; color: string }[];
+    flows: { id: number; name: string }[];
 }>();
+const flowResultLabels: Record<string, string> = {
+    started: 'Fluxo iniciado',
+    paused: 'Fluxo não iniciado: automação pausada',
+    human: 'Fluxo não iniciado: atendimento humano',
+    connection_unavailable: 'Fluxo não iniciado: WhatsApp indisponível',
+    flow_unavailable: 'Fluxo não iniciado: fluxo indisponível',
+    conversation_unavailable: 'Fluxo não iniciado: conversa indisponível',
+    blocked: 'Fluxo não iniciado: automação bloqueada',
+};
 const endpoint = `/workspaces/${props.workspace.id}/webhooks/${props.webhook.id}`;
 const { dialog, confirm, finish } = useAppDialog();
 const snapshot = ref(props.webhook);
@@ -62,6 +73,7 @@ const form = reactive({
         expected: r.condition ? String(r.condition.value) : '',
         add: [...r.add],
         remove: [...r.remove],
+        flowId: r.flow_id ? String(r.flow_id) : '',
     })) as Rule[],
 });
 const saved = ref(JSON.stringify(form));
@@ -84,6 +96,7 @@ const simulation = ref<{
     custom_fields: number[];
     tag_actions: Record<string, string>;
     matched_rules: number[];
+    flow_id: number | null;
 } | null>(null);
 const fieldOpen = ref(false);
 const fieldForm = useForm({ name: '' });
@@ -141,6 +154,7 @@ function configuration() {
                       },
                 add: r.add,
                 remove: r.remove,
+                flow_id: r.flowId ? Number(r.flowId) : null,
             };
         }),
     };
@@ -239,7 +253,7 @@ function simulate() {
         });
         simulation.value = result.data;
         notice.value =
-            'Simulação concluída. Nenhum contato ou tag foi alterado.';
+            'Simulação concluída. Nenhum contato, tag ou fluxo foi alterado.';
     });
 }
 async function copy() {
@@ -266,6 +280,7 @@ function addRule() {
         expected: '',
         add: [],
         remove: [],
+        flowId: '',
     });
 }
 function moveRule(index: number, offset: number) {
@@ -510,6 +525,14 @@ onBeforeUnmount(() => {
                                 {{ Object.keys(simulation.tag_actions).length }}
                                 operações de tag.
                             </p>
+                            <p v-if="simulation.flow_id">
+                                Fluxo selecionado:
+                                {{
+                                    flows.find(
+                                        (f) => f.id === simulation?.flow_id,
+                                    )?.name || 'Fluxo indisponível'
+                                }}.
+                            </p>
                             <p
                                 v-for="warning in simulation.warnings"
                                 :key="warning.mapping"
@@ -650,7 +673,8 @@ onBeforeUnmount(() => {
                         <p>
                             As regras são executadas de cima para baixo. Uma
                             condição lê o evento atual; igualdade diferencia
-                            maiúsculas e tipos.
+                            maiúsculas e tipos. O primeiro fluxo correspondente
+                            será iniciado.
                         </p>
                         <p
                             v-if="conflicts.length"
@@ -665,7 +689,7 @@ onBeforeUnmount(() => {
                             selecioná-las aqui.
                         </p>
                         <p v-if="!form.rules.length">
-                            Nenhuma regra de tag configurada.
+                            Nenhuma regra configurada.
                         </p>
                         <article
                             v-for="(rule, index) in form.rules"
@@ -795,6 +819,40 @@ onBeforeUnmount(() => {
                                 >
                             </div>
                             <h4>ENTÃO</h4>
+                            <label
+                                >Executar fluxo<AppSelect
+                                    v-model="rule.flowId"
+                                    aria-label="Executar fluxo"
+                                >
+                                    <option value="">Nenhum fluxo</option>
+                                    <option
+                                        v-if="
+                                            rule.flowId &&
+                                            !flows.some(
+                                                (flow) =>
+                                                    String(flow.id) ===
+                                                    rule.flowId,
+                                            )
+                                        "
+                                        :value="rule.flowId"
+                                    >
+                                        Fluxo indisponível
+                                    </option>
+                                    <option
+                                        v-for="flow in flows"
+                                        :key="flow.id"
+                                        :value="String(flow.id)"
+                                    >
+                                        {{ flow.name }}
+                                    </option> </AppSelect
+                                ><span
+                                    v-if="errors[`tag_rules.${index}.flow_id`]"
+                                    class="form-error"
+                                    >{{
+                                        errors[`tag_rules.${index}.flow_id`]
+                                    }}</span
+                                ></label
+                            >
                             <div class="tag-actions">
                                 <label
                                     >Adicionar tags<AppSelect
@@ -845,10 +903,7 @@ onBeforeUnmount(() => {
                                 no celular, use o seletor do sistema.</small
                             >
                         </article>
-                        <AppButton
-                            variant="secondary"
-                            :disabled="!tags.length"
-                            @click="addRule"
+                        <AppButton variant="secondary" @click="addRule"
                             ><Plus :size="16" />Adicionar regra</AppButton
                         >
                     </section>
@@ -873,6 +928,19 @@ onBeforeUnmount(() => {
                             errorCodes[receipt.error_code] ||
                             'Falha de processamento'
                         }}
+                    </p>
+                    <p v-if="receipt.flow_result">
+                        {{
+                            flowResultLabels[receipt.flow_result.status] ||
+                            'Fluxo não iniciado'
+                        }}
+                        —
+                        {{
+                            flows.find(
+                                (flow) =>
+                                    flow.id === receipt.flow_result?.flow_id,
+                            )?.name || `Fluxo #${receipt.flow_result.flow_id}`
+                        }}.
                     </p>
                     <p v-if="receipt.warnings?.length">
                         {{ receipt.warnings.length }} campo(s) opcional(is)

@@ -66,6 +66,7 @@ class WebhookProcessor
         }
         $tags = [];
         $matched = [];
+        $flowId = null;
         foreach ($config['tag_rules'] as $i => $rule) {
             $condition = $rule['condition'];
             if ($condition !== null) {
@@ -78,6 +79,7 @@ class WebhookProcessor
                 }
             }
             $matched[] = $i;
+            $flowId ??= $rule['flow_id'] ?? null;
             foreach (['add', 'remove'] as $action) {
                 foreach ($rule[$action] as $tagId) {
                     $tags[$tagId] = $action;
@@ -85,7 +87,7 @@ class WebhookProcessor
             }
         }
 
-        return compact('phone', 'native', 'custom', 'warnings', 'tags', 'matched');
+        return compact('phone', 'native', 'custom', 'warnings', 'tags', 'matched', 'flowId');
     }
 
     /** Call inside a transaction; all CRM changes form one unit. */
@@ -115,6 +117,8 @@ class WebhookProcessor
             $changed = $changed || $affected > 0;
         }
 
-        return ['status' => $changed ? 'processed' : 'ignored', 'contact_id' => $contact->id, 'warnings' => $prepared['warnings']];
+        $flowResult = $prepared['flowId'] ? app(WebhookFlowStarter::class)->start($webhook, $contact, (int) $prepared['flowId']) : null;
+
+        return ['status' => $changed || ($flowResult['status'] ?? null) === 'started' ? 'processed' : 'ignored', 'contact_id' => $contact->id, 'warnings' => $prepared['warnings'], 'flow_result' => $flowResult];
     }
 }

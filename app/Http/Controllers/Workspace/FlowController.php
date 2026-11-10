@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Workspace;
 
 use App\Http\Controllers\Concerns\EnsuresWorkspaceAccess;
 use App\Http\Controllers\Controller;
+use App\Models\ExternalWebhook;
 use App\Models\Flow;
 use App\Models\FlowAsset;
 use App\Models\FlowFolder;
@@ -330,6 +331,9 @@ class FlowController extends Controller
             if ($referencing->isNotEmpty()) {
                 return response()->json(['message' => 'Remova as referências “Ir para Fluxo” dos fluxos ativos: '.$referencing->join(', ').'.'], 409);
             }
+            $webhooks = ExternalWebhook::where('workspace_id', $workspace->id)->where('status', 'active')->get()
+                ->filter(fn ($webhook) => collect($webhook->tag_rules)->contains(fn ($rule) => (int) ($rule['flow_id'] ?? 0) === $flow->id))->pluck('name');
+            abort_if($webhooks->isNotEmpty(), 409, 'Este fluxo é usado por webhooks ativos: '.$webhooks->join(', ').'.');
             $references = app(SequenceDefinitionService::class)->flowReferences($workspace->id, $flow->id);
             abort_if($references !== [], 409, 'Este fluxo é usado por sequências ativas ou participações vigentes: '.implode(', ', $references).'.');
             $flow->update(['is_active' => false]);

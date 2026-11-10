@@ -10,6 +10,6 @@ class ExternalWebhookReceipt extends Model
 
     protected function casts(): array
     {
-        return ['warnings' => 'array'];
+        return ['warnings' => 'array', 'flow_result' => 'array'];
     }
 }

@@ -15,11 +15,13 @@ export type WebhookRule = {
     } | null;
     add: number[];
     remove: number[];
+    flow_id?: number | null;
 };
 export type WebhookReceipt = {
     id: number;
     status: string;
     error_code: string | null;
+    flow_result: { status: string; flow_id: number } | null;
     warnings: { mapping: number; code: string }[] | null;
     duration_ms: number;
     created_at: string;

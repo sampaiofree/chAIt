@@ -313,7 +313,7 @@ Testes Pest de permissões, isolamento, contratos, simulação, captura, valores
 - `docs/integracoes/uazapi.md` — Webhook técnico de mensagens, distinto deste recurso externo.
 - `docs/planejamento/decisoes.md` — registro geral de decisões; incluir referência a este módulo quando integrar a documentação no repositório.
 
-> **Manutenção:** ao incorporar no repositório, acrescentar este documento ao `docs/README.md`. Não alterar o escopo aprovado do editor de fluxos retroativamente: a entrada por Webhook constitui um **módulo novo** e não aprova, por si só, gatilhos externos para automações.
+> **Manutenção:** ao incorporar no repositório, acrescentar este documento ao `docs/README.md`. A execução de fluxos por regras do webhook está documentada na seção “Execução de fluxo por regra”.
 
 ## 12. Histórico de versões
 
@@ -334,3 +334,9 @@ Testes Pest de permissões, isolamento, contratos, simulação, captura, valores
 Webhooks passou a ser uma aba após OpenAI na barra de Configurações, com entrada em `/settings/webhooks` para o workspace atual. O atalho lateral foi removido. Lista e editor reutilizam `SettingsLayout`; a aba Webhooks e o item Configurações ficam ativos, incluindo nas rotas por workspace. URLs externas e endpoints administrativos permanecem; Voltar respeita o workspace do Webhook. A barra revela a aba ativa no celular e quando a largura muda.
 
 Validação desta mudança: 60 testes backend aprovados, tipos/build e formatação dos arquivos alterados aprovados; cenários de Webhooks, navegação compartilhada, permissões e descarte de rascunho aprovados no navegador. A execução ampliada encontrou três falhas fora deste escopo nos testes de salvamento/permissões do editor de fluxos, confirmadas em repetição isolada (conflito de edição).
+
+### Execução de fluxo por regra
+
+Cada regra pode selecionar um fluxo ativo e publicado, com ou sem operações de tags. As tags de todas as regras correspondentes são aplicadas; o fluxo escolhido é o da primeira regra correspondente que tiver fluxo. A simulação informa o fluxo escolhido sem executá-lo. Webhooks ativos impedem a desativação de fluxos referenciados.
+
+Após salvar o contato e as tags, o recebimento ativo usa a conexão WhatsApp do workspace e a versão publicada vigente. Se necessário, cria a conversa pela identidade do chat. Uma execução em andamento é interrompida para iniciar a nova; pausa de automação ou atendimento humano impede o disparo e preserva a execução existente. Falta de conexão, fluxo ou conversa também impede o disparo, sem desfazer a atualização do contato. O histórico registra o resultado, e o job da execução é enviado após o commit. Cada recebimento é um novo disparo, sem deduplicação adicional.
