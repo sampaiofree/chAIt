@@ -51,3 +51,22 @@ test('new users can register', function () {
     $this->assertAuthenticated();
     $response->assertRedirect(route('dashboard', absolute: false));
 });
+
+test('registration enforces the six character minimum', function (string $password, bool $valid) {
+    $this->skipUnlessFortifyHas(Features::registration());
+
+    $response = $this->post(route('register.store'), [
+        'name' => 'Test User',
+        'email' => 'test@example.com',
+        'password' => $password,
+        'password_confirmation' => $password,
+    ]);
+
+    if ($valid) {
+        $response->assertSessionHasNoErrors();
+        $this->assertAuthenticated();
+    } else {
+        $response->assertSessionHasErrors('password');
+        $this->assertGuest();
+    }
+})->with(['five characters' => ['abcde', false], 'six characters' => ['abcdef', true]]);
