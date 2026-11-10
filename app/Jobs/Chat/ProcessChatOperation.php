@@ -86,7 +86,11 @@ class ProcessChatOperation implements ShouldQueue
                 }
             }
             // A send which started before a crash is never replayed. Recovery marks it uncertain.
-            $operation->update(['status' => 'running']);
+            if (! ChatOperation::whereKey($operation->id)->where('status', 'pending')->update(['status' => 'running', 'updated_at' => now()])) {
+                return;
+            }
+            $operation->status = 'running';
+            $operation->syncOriginalAttribute('status');
             if ($operation->kind === 'transport') {
                 $connection = $thread->uazapiConnection;
                 abort_unless($connection && $connection->status === 'connected', 409);

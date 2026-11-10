@@ -105,7 +105,6 @@ async function submit(method: 'PUT' | 'DELETE') {
 <style scoped>
 section {
     padding: 38px;
-    max-width: 760px;
 }
 section > small {
     color: var(--muted-foreground);

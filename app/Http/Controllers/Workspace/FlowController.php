@@ -9,11 +9,13 @@ use App\Models\Flow;
 use App\Models\FlowAsset;
 use App\Models\FlowFolder;
 use App\Models\Sequence;
+use App\Models\SequenceEnrollment;
 use App\Models\UazapiConnection;
 use App\Models\Workspace;
 use App\Services\FlowAssistant\AssistantAccess;
 use App\Services\FlowAssistant\DraftSessionService;
 use App\Services\Flows\FlowCapabilities;
+use App\Services\Flows\FlowExecutionManager;
 use App\Services\Flows\FlowGraphValidator;
 use App\Services\Flows\FlowMedia;
 use App\Services\Sequences\SequenceDefinitionService;
@@ -174,30 +176,51 @@ class FlowController extends Controller
     {
         $this->ensureCanManage($request, $workspace);
         $assets = DB::transaction(function () use ($workspace, $flow) {
+            Workspace::whereKey($workspace->id)->lockForUpdate()->firstOrFail();
             $model = $workspace->flows()->whereKey($flow)->lockForUpdate()->firstOrFail();
-            if ($model->is_active || $model->published_version_id !== null || $model->versions()->exists()
-                || DB::table('flow_executions')->where('flow_id', $model->id)->exists()) {
-                abort(409, 'Fluxos publicados ou com histórico de execução não podem ser excluídos.');
-            }
             if (DB::table('flow_trigger_settings')->where('workspace_id', $workspace->id)
                 ->where(fn ($query) => $query->where('welcome_flow_id', $model->id)->orWhere('default_flow_id', $model->id))->exists()
                 || DB::table('flow_keyword_triggers')->where('workspace_id', $workspace->id)->where('flow_id', $model->id)->exists()) {
                 abort(409, 'Remova os gatilhos que usam este fluxo antes de excluí-lo.');
             }
-            foreach ($workspace->flows()->where('id', '<>', $model->id)->get(['id', 'graph']) as $other) {
-                foreach ($other->graph['nodes'] ?? [] as $node) {
-                    if (($node['type'] ?? null) === 'jump_flow' && (int) ($node['data']['target_flow_id'] ?? 0) === $model->id) {
-                        abort(409, 'Remova as referências “Ir para Fluxo” antes de excluir este fluxo.');
+            foreach ($workspace->flows()->where('id', '<>', $model->id)->with('publishedVersion')->get() as $other) {
+                foreach ([$other->graph, $other->is_active ? $other->publishedVersion?->graph : null] as $graph) {
+                    foreach ($graph['nodes'] ?? [] as $node) {
+                        if (($node['type'] ?? null) === 'jump_flow' && (int) ($node['data']['target_flow_id'] ?? 0) === $model->id) {
+                            abort(409, 'Remova as referências “Ir para Fluxo” antes de excluir este fluxo.');
+                        }
                     }
                 }
             }
+            $webhooks = ExternalWebhook::where('workspace_id', $workspace->id)->where('status', 'active')->get()
+                ->filter(fn ($webhook) => collect($webhook->tag_rules)->contains(fn ($rule) => (int) ($rule['flow_id'] ?? 0) === $model->id))->pluck('name');
+            abort_if($webhooks->isNotEmpty(), 409, 'Este fluxo é usado por webhooks ativos: '.$webhooks->join(', ').'.');
+            $versionIds = DB::table('sequence_version_flows')->where('flow_id', $model->id)->pluck('sequence_version_id');
+            $sequenceIds = DB::table('sequence_versions')->whereIn('id', $versionIds)->pluck('sequence_id');
+            Sequence::whereIn('id', $sequenceIds)->lockForUpdate()->get();
+            $references = app(SequenceDefinitionService::class)->flowReferences($workspace->id, $model->id);
+            abort_if($references !== [], 409, 'Este fluxo é usado por sequências ativas ou participações vigentes: '.implode(', ', $references).'.');
+            $enrollmentIds = DB::table('sequence_enrollments')->whereIn('sequence_version_id', $versionIds)->pluck('id');
+            $stepIds = DB::table('sequence_steps')->whereIn('sequence_version_id', $versionIds)->pluck('id');
+            $executions = DB::table('flow_executions')->where(function ($query) use ($model, $enrollmentIds, $stepIds) {
+                $query->where('flow_id', $model->id)->orWhereIn('sequence_enrollment_id', $enrollmentIds)->orWhereIn('sequence_step_id', $stepIds);
+            });
+            abort_if((clone $executions)->whereIn('status', FlowExecutionManager::ACTIVE)->exists(), 409, 'Existem execuções em andamento vinculadas a este fluxo ou às sequências afetadas.');
+            $executionIds = (clone $executions)->pluck('id');
+            $operations = DB::table('chat_operations')->whereIn('flow_execution_id', $executionIds);
+            $lockedOperations = (clone $operations)->lockForUpdate()->get(['id', 'status']);
+            abort_if($lockedOperations->contains('status', 'running'), 409, 'Existem mensagens em processamento vinculadas a este fluxo. Tente novamente quando terminarem.');
+            (clone $operations)->where('status', 'pending')->update(['status' => 'cancelled', 'payload' => null, 'updated_at' => now()]);
             $assets = FlowAsset::where('workspace_id', $workspace->id)->where('flow_id', $model->id)->get(['disk', 'path']);
-            $references = app(SequenceDefinitionService::class)->flowReferences($workspace->id, $model->id, true);
-            abort_if($references !== [], 409, 'Este fluxo possui versões preservadas nas sequências: '.implode(', ', $references).'.');
+            $executions->delete();
+            DB::table('audit_logs')->where('workspace_id', $workspace->id)->where('auditable_type', SequenceEnrollment::class)->whereIn('auditable_id', $enrollmentIds)->delete();
+            DB::table('sequence_enrollments')->whereIn('id', $enrollmentIds)->delete();
+            DB::table('sequences')->whereIn('published_version_id', $versionIds)->update(['published_version_id' => null, 'updated_at' => now()]);
+            DB::table('sequence_versions')->whereIn('id', $versionIds)->delete();
             $model->delete();
 
             return $assets;
-        });
+        }, 3);
         foreach ($assets as $asset) {
             try {
                 Storage::disk($asset->disk)->delete($asset->path);
@@ -403,18 +426,19 @@ class FlowController extends Controller
             'keywords.*.term' => ['required', 'string', 'max:191'], 'keywords.*.operator' => ['required', 'in:exact,prefix,contains'],
             'keywords.*.flow_id' => ['required', 'integer'], 'keywords.*.interrupt_active' => ['required', 'boolean'],
         ]);
-        $publishedIds = $workspace->flows()->whereNotNull('published_version_id')->pluck('id')->map(fn ($id) => (int) $id)->all();
-        foreach (['welcome_flow_id', 'default_flow_id'] as $key) {
-            if (! empty($data[$key]) && ! in_array((int) $data[$key], $publishedIds, true)) {
-                throw ValidationException::withMessages([$key => 'Selecione um fluxo publicado deste workspace.']);
-            }
-        }
-        foreach ($data['keywords'] as $keyword) {
-            if (! in_array((int) $keyword['flow_id'], $publishedIds, true)) {
-                throw ValidationException::withMessages(['keywords' => 'Todas as palavras-chave precisam apontar para fluxos publicados deste workspace.']);
-            }
-        }
         DB::transaction(function () use ($workspace, $connection, $data) {
+            Workspace::whereKey($workspace->id)->lockForUpdate()->firstOrFail();
+            $publishedIds = $workspace->flows()->whereNotNull('published_version_id')->pluck('id')->map(fn ($id) => (int) $id)->all();
+            foreach (['welcome_flow_id', 'default_flow_id'] as $key) {
+                if (! empty($data[$key]) && ! in_array((int) $data[$key], $publishedIds, true)) {
+                    throw ValidationException::withMessages([$key => 'Selecione um fluxo publicado deste workspace.']);
+                }
+            }
+            foreach ($data['keywords'] as $keyword) {
+                if (! in_array((int) $keyword['flow_id'], $publishedIds, true)) {
+                    throw ValidationException::withMessages(['keywords' => 'Todas as palavras-chave precisam apontar para fluxos publicados deste workspace.']);
+                }
+            }
             DB::table('flow_trigger_settings')->updateOrInsert(['uazapi_connection_id' => $connection->id], [
                 'workspace_id' => $workspace->id, 'welcome_flow_id' => $data['welcome_flow_id'] ?? null,
                 'default_flow_id' => $data['default_flow_id'] ?? null, 'created_at' => now(), 'updated_at' => now(),

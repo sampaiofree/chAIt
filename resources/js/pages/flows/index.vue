@@ -336,7 +336,7 @@ async function deleteFlow(flow: FlowSummary) {
         !(await confirm(
             'Excluir o fluxo “' +
                 flow.name +
-                '”? Esta ação não pode ser desfeita.',
+                '”? As versões, execuções e o histórico de sequências vinculado serão apagados permanentemente. Esta ação não pode ser desfeita.',
             'Excluir fluxo',
         ))
     )

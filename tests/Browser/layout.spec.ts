@@ -1695,3 +1695,71 @@ for (const width of [390, 1440]) {
         expect(nativeDialogs).toEqual([]);
     });
 }
+
+test('settings use available width across sections and screen sizes', async ({
+    page,
+}) => {
+    await login(page);
+    await page.goto('/settings/webhooks');
+    await page.getByRole('button', { name: 'Criar Webhook' }).first().click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Nome do Webhook').fill('Verificação de largura');
+    await dialog.getByRole('button', { name: 'Criar Webhook' }).click();
+    await expect(page).toHaveURL(/\/webhooks\/\d+$/);
+    const editorUrl = page.url();
+    const paths = [
+        '/settings/profile',
+        '/settings/security',
+        '/settings/appearance',
+        '/settings/workspace',
+        '/settings/team',
+        '/settings/contact-data',
+        '/settings/whatsapp',
+        '/settings/openai',
+        '/settings/webhooks',
+        editorUrl,
+    ];
+
+    for (const width of [390, 1440, 1920]) {
+        await page.setViewportSize({ width, height: 900 });
+        for (const path of paths) {
+            await page.goto(path);
+            if (page.url().includes('/user/confirm-password')) {
+                await page
+                    .getByLabel('Senha', { exact: true })
+                    .fill('password');
+                await page
+                    .getByRole('button', { name: 'Confirmar', exact: true })
+                    .click();
+            }
+            const layout = page.locator('.settings-page');
+            await expect(layout).toBeVisible();
+            for (let state = 0; state < (width >= 1024 ? 2 : 1); state++) {
+                await noOverflow(page);
+                const sizes = await layout.evaluate((element) => {
+                    const section = element.querySelector(':scope > section');
+                    const card = element.querySelector('.settings-card');
+                    const style = getComputedStyle(element);
+                    return {
+                        available:
+                            element.clientWidth -
+                            parseFloat(style.paddingLeft) -
+                            parseFloat(style.paddingRight),
+                        section: section?.getBoundingClientRect().width,
+                        card: card?.getBoundingClientRect().width,
+                    };
+                });
+                expect(sizes.section).toBeCloseTo(sizes.available, 0);
+                if (sizes.card !== undefined)
+                    expect(sizes.card).toBeCloseTo(sizes.available, 0);
+                if (width >= 1024) {
+                    await page
+                        .getByRole('button', {
+                            name: 'Alternar menu principal',
+                        })
+                        .click();
+                }
+            }
+        }
+    }
+});

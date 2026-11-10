@@ -310,7 +310,6 @@ onUnmounted(() => {
 <style scoped>
 section {
     padding: 38px;
-    max-width: 820px;
 }
 section h1 {
     font-size: 24px;

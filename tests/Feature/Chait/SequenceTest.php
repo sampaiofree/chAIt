@@ -3,6 +3,8 @@
 use App\Jobs\ProcessFlowExecution;
 use App\Models\AutomationContext;
 use App\Models\Contact;
+use App\Models\ExternalWebhook;
+use App\Models\FlowAsset;
 use App\Models\FlowExecution;
 use App\Models\Sequence;
 use App\Models\SequenceEnrollment;
@@ -18,6 +20,7 @@ use App\Services\Sequences\SequenceScheduler;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 function sequenceFixture(array $steps = []): array
@@ -49,6 +52,98 @@ function sequenceEnroll(array $fixture, ?Sequence $sequence = null, ?string $key
 {
     return app(SequenceEnrollmentService::class)->enroll($fixture['thread'], $sequence ?? $fixture['sequence'], 'manual', $key ?? (string) str()->uuid(), $fixture['user'])['enrollment'];
 }
+
+test('deleting a published flow removes its history and inactive sequence versions but preserves the draft', function () {
+    $f = sequenceFixture();
+    extract($f);
+    $enrollment = sequenceEnroll($f);
+    $enrollment->update(['status' => 'completed', 'finished_at' => now()]);
+    $sequence->update(['is_active' => false]);
+    $execution = app(FlowRuntime::class)->start($version, $contact->id, $thread->id, $connection, 'test');
+    app(FlowRuntime::class)->finish($execution, 'completed');
+    Storage::fake('local');
+    Storage::disk('local')->put('flows/test.txt', 'test');
+    FlowAsset::create(['workspace_id' => $workspace->id, 'flow_id' => $flow->id, 'disk' => 'local', 'path' => 'flows/test.txt', 'original_name' => 'test.txt', 'mime_type' => 'text/plain', 'size' => 4]);
+    $draft = $sequence->draft;
+
+    $this->actingAs($user)->deleteJson(route('workspaces.flows.destroy', [$workspace, $flow]))->assertOk();
+
+    $this->assertDatabaseMissing('flows', ['id' => $flow->id]);
+    $this->assertDatabaseMissing('flow_versions', ['id' => $version->id]);
+    $this->assertDatabaseMissing('flow_executions', ['id' => $execution->id]);
+    $this->assertDatabaseMissing('sequence_enrollments', ['id' => $enrollment->id]);
+    expect($sequence->fresh()->published_version_id)->toBeNull()->and($sequence->fresh()->draft)->toBe($draft);
+    expect($sequence->versions()->count())->toBe(0);
+    Storage::disk('local')->assertMissing('flows/test.txt');
+});
+
+test('deletion blocks active sequence dependencies and executions without removing history', function () {
+    $f = sequenceFixture();
+    extract($f);
+    $url = route('workspaces.flows.destroy', [$workspace, $flow]);
+    $this->actingAs($user)->deleteJson($url)->assertStatus(409)->assertJsonPath('message', 'Este fluxo é usado por sequências ativas ou participações vigentes: Pós-venda.');
+    $enrollment = sequenceEnroll($f);
+    $sequence->update(['is_active' => false]);
+    $this->deleteJson($url)->assertStatus(409);
+    $enrollment->update(['status' => 'completed']);
+    $execution = app(FlowRuntime::class)->start($version, $contact->id, $thread->id, $connection, 'test');
+    $this->deleteJson($url)->assertStatus(409)->assertJsonPath('message', 'Existem execuções em andamento vinculadas a este fluxo ou às sequências afetadas.');
+    $this->assertDatabaseHas('flow_executions', ['id' => $execution->id]);
+    $this->assertDatabaseHas('sequence_versions', ['id' => $sequence->published_version_id]);
+});
+
+test('deletion blocks configured triggers and requires flow management permission', function () {
+    extract(sequenceFixture());
+    $sequence->update(['is_active' => false]);
+    DB::table('flow_trigger_settings')->insert(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'welcome_flow_id' => $flow->id, 'created_at' => now(), 'updated_at' => now()]);
+    $url = route('workspaces.flows.destroy', [$workspace, $flow]);
+    $this->actingAs($user)->deleteJson($url)->assertStatus(409)->assertJsonPath('message', 'Remova os gatilhos que usam este fluxo antes de excluí-lo.');
+    $agent = User::factory()->create();
+    WorkspaceMembership::where('user_id', $agent->id)->delete();
+    WorkspaceMembership::create(['workspace_id' => $workspace->id, 'user_id' => $agent->id, 'role' => 'agent', 'joined_at' => now(), 'can_manage_flows' => false]);
+    $this->actingAs($agent)->deleteJson($url)->assertForbidden();
+    $this->assertDatabaseHas('flows', ['id' => $flow->id]);
+});
+
+test('deletion blocks each active execution state', function (string $status) {
+    extract(sequenceFixture());
+    $sequence->update(['is_active' => false]);
+    $execution = app(FlowRuntime::class)->start($version, $contact->id, $thread->id, $connection, 'test');
+    $execution->update(['status' => $status]);
+    $this->actingAs($user)->deleteJson(route('workspaces.flows.destroy', [$workspace, $flow]))->assertStatus(409);
+    $this->assertDatabaseHas('flows', ['id' => $flow->id]);
+})->with(['running', 'waiting_reply', 'waiting_ai', 'waiting_menu']);
+
+test('deletion blocks published jump references and active webhooks', function () {
+    extract(sequenceFixture());
+    $sequence->update(['is_active' => false]);
+    $url = route('workspaces.flows.destroy', [$workspace, $flow]);
+    $other = $workspace->flows()->create(['name' => 'Outro', 'graph' => $version->graph, 'is_active' => true]);
+    $graph = ['nodes' => [['id' => 'jump', 'type' => 'jump_flow', 'data' => ['target_flow_id' => $flow->id]]], 'edges' => []];
+    $published = $other->versions()->create(['workspace_id' => $workspace->id, 'version' => 1, 'graph' => $graph, 'published_at' => now()]);
+    $other->update(['published_version_id' => $published->id]);
+    $this->actingAs($user)->deleteJson($url)->assertStatus(409)->assertJsonPath('message', 'Remova as referências “Ir para Fluxo” antes de excluir este fluxo.');
+    $other->update(['is_active' => false]);
+    ExternalWebhook::create(['workspace_id' => $workspace->id, 'name' => 'Compras', 'endpoint_key' => bin2hex(random_bytes(32)), 'status' => 'active', 'mappings' => [], 'tag_rules' => [['flow_id' => $flow->id]], 'payload_fields' => []]);
+    $this->deleteJson($url)->assertStatus(409)->assertJsonPath('message', 'Este fluxo é usado por webhooks ativos: Compras.');
+    $this->assertDatabaseHas('flows', ['id' => $flow->id]);
+});
+
+test('deletion waits for processing messages and cancels pending messages', function () {
+    extract(sequenceFixture());
+    $sequence->update(['is_active' => false]);
+    $execution = app(FlowRuntime::class)->start($version, $contact->id, $thread->id, $connection, 'test');
+    app(FlowRuntime::class)->finish($execution, 'completed');
+    $id = (string) str()->uuid();
+    DB::table('chat_operations')->insert(['id' => $id, 'workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id,
+        'thread_id' => $thread->id, 'flow_execution_id' => $execution->id, 'kind' => 'transport', 'status' => 'running',
+        'payload' => 'pending', 'expires_at' => now()->addHour(), 'created_at' => now(), 'updated_at' => now()]);
+    $url = route('workspaces.flows.destroy', [$workspace, $flow]);
+    $this->actingAs($user)->deleteJson($url)->assertStatus(409);
+    DB::table('chat_operations')->where('id', $id)->update(['status' => 'pending']);
+    $this->deleteJson($url)->assertOk();
+    $this->assertDatabaseHas('chat_operations', ['id' => $id, 'status' => 'cancelled', 'flow_execution_id' => null, 'payload' => null]);
+});
 
 test('sequence reentry does not reset state and replacement preserves the running flow', function () {
     $fixture = sequenceFixture();

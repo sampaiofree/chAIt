@@ -136,7 +136,6 @@ applyTheme(selected.value);
 }
 .appearance-content {
     padding: 38px;
-    max-width: 720px;
 }
 h1 {
     margin: 0 0 8px;

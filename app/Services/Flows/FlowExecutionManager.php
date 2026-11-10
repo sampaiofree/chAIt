@@ -6,6 +6,7 @@ use App\Events\AutomationContextChanged;
 use App\Jobs\ProcessFlowExecution;
 use App\Models\AutomationContext;
 use App\Models\Contact;
+use App\Models\Flow;
 use App\Models\FlowExecution;
 use App\Models\FlowVersion;
 use App\Models\Thread;
@@ -77,6 +78,8 @@ class FlowExecutionManager
 
     private function create(AutomationContext $context, FlowVersion $version, int $threadId, string $source, int $depth, array $origin): FlowExecution
     {
+        Flow::where('workspace_id', $context->workspace_id)->whereKey($version->flow_id)->lockForUpdate()->firstOrFail();
+        abort_unless(FlowVersion::whereKey($version->id)->where('flow_id', $version->flow_id)->exists(), 409, 'Esta versão do fluxo não está mais disponível.');
         $start = collect($version->graph['nodes'])->firstWhere('type', 'start');
         abort_unless($start, 422, 'O fluxo publicado não possui início.');
         $execution = FlowExecution::create([

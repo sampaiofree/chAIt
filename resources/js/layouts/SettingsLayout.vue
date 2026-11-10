@@ -9,7 +9,7 @@ defineProps<{ active: string }>();
 </template>
 <style scoped>
 .settings-page {
-    width: min(1120px, 100%);
+    width: 100%;
     margin: 0 auto;
     padding: 24px 40px 48px;
     min-width: 0;
@@ -37,7 +37,6 @@ defineProps<{ active: string }>();
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 12px;
-    max-width: 720px;
     margin-top: 24px;
 }
 .settings-page :deep(.settings-card form) {

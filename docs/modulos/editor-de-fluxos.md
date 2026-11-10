@@ -64,7 +64,7 @@ A tela anterior ao editor permite nesta entrega:
 
 - Criar, renomear, pesquisar, abrir e mover fluxos entre pastas do workspace. Pastas podem conter subpastas em qualquer profundidade. Excluir uma pasta remove suas subpastas e devolve todos os fluxos descendentes à **Área principal**.
 - Cada pasta e fluxo tem menu de três pontos com **Renomear**, **Mover para** e **Excluir**. Pastas exibem ícone e um caminho de navegação até a raiz.
-- Excluir fluxo só é permitido para rascunho nunca publicado, sem execução nem referências em gatilhos ou outros fluxos.
+- A exclusão permanente remove o fluxo, versões, execuções, arquivos e versões históricas de sequências vinculadas, incluindo suas participações e execuções. Publicações removidas de sequências desativadas deixam o rascunho preservado para revisão. Gatilhos, referências em outros fluxos, webhooks ativos, sequências ativas, participações vigentes e execuções em andamento impedem a exclusão.
 - Nomear o fluxo durante a criação e renomeá-lo posteriormente.
 - Encontrar fluxos pelo nome.
 - Diferenciar fluxos em **rascunho** dos **publicados**.

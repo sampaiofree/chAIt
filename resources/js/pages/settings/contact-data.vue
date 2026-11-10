@@ -461,7 +461,6 @@ function tabKeydown(event: KeyboardEvent) {
 }
 .content {
     width: 100%;
-    max-width: 900px;
     padding: 38px;
     min-width: 0;
 }

@@ -218,7 +218,7 @@ PUT e publicação usam revisão e retornam `409` quando outra aba alterou o ras
 
 Nome obrigatório, até 120 caracteres; até 100 etapas. Publicação exige pelo menos uma etapa completa, fuso válido e fluxos publicados/ativos do mesmo workspace. Versões de etapas e cadeias de saltos são fixadas nessa publicação. Ciclos e cadeias acima do limite do executor são recusados.
 
-Fluxos referenciados por sequência ativa ou participação vigente não podem ser desativados. Exclusão de fluxos publicados/com histórico já é bloqueada pelo módulo Fluxos; referências imutáveis de Sequências também são preservadas. Reativar sequência exige que suas dependências estejam ativas.
+Fluxos referenciados por sequência ativa ou participação vigente não podem ser desativados ou excluídos. A exclusão de um fluxo remove as versões históricas de sequências que o referenciam e seus registros; se a publicação atual de uma sequência desativada for removida, seu rascunho é preservado para revisão. Reativar sequência exige que suas dependências estejam ativas.
 
 ## 12. Critérios de aceite para desenvolvimento e QA
 
