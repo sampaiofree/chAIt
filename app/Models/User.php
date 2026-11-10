@@ -21,8 +21,15 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable
 {
+    public const SYSTEM_ADMIN_EMAIL = 'sampaio.free@gmail.com';
+
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable, TwoFactorAuthenticatable;
+
+    public function isSystemAdmin(): bool
+    {
+        return strtolower($this->email) === self::SYSTEM_ADMIN_EMAIL;
+    }
 
     protected static function booted(): void
     {

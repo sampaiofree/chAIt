@@ -209,7 +209,6 @@ async function save() {
     box-sizing: border-box;
 }
 .triggers-page {
-    max-width: 1200px;
     width: 100%;
     min-width: 0;
     margin: 0 auto;

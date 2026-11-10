@@ -730,7 +730,7 @@ async function deleteFlow(flow: FlowSummary) {
 }
 
 .flows-content {
-    width: min(1050px, 100%);
+    width: 100%;
     margin: 0 auto;
     padding: 46px 56px;
     min-width: 0;

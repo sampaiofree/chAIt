@@ -7,6 +7,7 @@ use App\Http\Controllers\Concerns\EnsuresWorkspaceAccess;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Rules\AccountEmail;
 use App\Rules\InternationalPhone;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -83,6 +84,7 @@ class TeamController extends Controller
                 }
             } else {
                 validator($data, [
+                    'email' => [new AccountEmail],
                     'name' => ['required', 'string', 'max:255'],
                     'phone' => ['bail', 'required', new InternationalPhone],
                     'password' => ['required', 'string', Password::default(), 'confirmed'],

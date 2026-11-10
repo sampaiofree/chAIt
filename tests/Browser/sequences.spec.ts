@@ -214,3 +214,49 @@ test('contact enrollment modal shares the backend service and preserves repeat e
         'A programação foi preservada',
     );
 });
+
+test('flow and automation pages use the available width', async ({ page }) => {
+    await login(page);
+    await page.goto('/workspaces/1/sequences');
+    await page
+        .getByRole('link', { name: /Pós-venda e acompanhamento/ })
+        .click();
+    await expect(page.locator('.sequence-editor')).toBeVisible();
+    const sequenceEditor = page.url();
+    const pages = [
+        { path: '/workspaces/1/flows', selector: '.flows-content' },
+        { path: '/workspaces/1/flow-triggers', selector: '.triggers-page' },
+        { path: '/workspaces/1/sequences', selector: '.sequences-page' },
+        { path: sequenceEditor, selector: '.sequence-editor' },
+    ];
+
+    for (const width of [390, 1440, 1920]) {
+        await page.setViewportSize({ width, height: 900 });
+        for (const item of pages) {
+            await page.goto(item.path);
+            const content = page.locator(item.selector);
+            await expect(content).toBeVisible();
+            for (let state = 0; state < (width >= 1024 ? 2 : 1); state++) {
+                await noOverflow(page);
+                await expect
+                    .poll(async () => {
+                        const contentWidth = await content.evaluate(
+                            (element) => element.getBoundingClientRect().width,
+                        );
+                        const availableWidth = await page
+                            .locator('.app-page')
+                            .evaluate((element) => element.clientWidth);
+                        return Math.abs(contentWidth - availableWidth);
+                    })
+                    .toBeLessThan(1);
+                if (width >= 1024) {
+                    await page
+                        .getByRole('button', {
+                            name: 'Alternar menu principal',
+                        })
+                        .click();
+                }
+            }
+        }
+    }
+});

@@ -24,14 +24,16 @@ const { expanded, mobileOpen, toggle } = useNavigation(
     page.props.sidebarOpen === true,
 );
 const title = computed(() =>
-    page.url.startsWith('/settings/') ||
-    /\/workspaces\/\d+\/webhooks(?:\/|\?|$)/.test(page.url)
-        ? 'Configurações'
-        : page.url.startsWith('/dashboard')
-          ? 'Conversas'
-          : /\/sequences(?:\/|\?|$)|\/flow-triggers/.test(page.url)
-            ? 'Automação'
-            : 'Fluxos',
+    page.url.startsWith('/admin/')
+        ? 'Administração'
+        : page.url.startsWith('/settings/') ||
+            /\/workspaces\/\d+\/webhooks(?:\/|\?|$)/.test(page.url)
+          ? 'Configurações'
+          : page.url.startsWith('/dashboard')
+            ? 'Conversas'
+            : /\/sequences(?:\/|\?|$)|\/flow-triggers/.test(page.url)
+              ? 'Automação'
+              : 'Fluxos',
 );
 watch(
     () => page.url,

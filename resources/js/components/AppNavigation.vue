@@ -9,6 +9,7 @@ import {
     ChevronsUpDown,
     Check,
     LoaderCircle,
+    ShieldCheck,
 } from '@lucide/vue';
 import AppBrand from '@/components/AppBrand.vue';
 import {
@@ -71,6 +72,16 @@ const items = computed(() => [
             page.url.startsWith('/settings/') ||
             /\/workspaces\/\d+\/webhooks(?:\/|\?|$)/.test(page.url),
     },
+    ...(page.props.isSystemAdmin
+        ? [
+              {
+                  title: 'Administração',
+                  href: '/admin/usuarios',
+                  icon: ShieldCheck,
+                  active: page.url.startsWith('/admin/'),
+              },
+          ]
+        : []),
 ]);
 function switchWorkspace(id: number) {
     if (switching.value || id === workspace.value?.id) return;

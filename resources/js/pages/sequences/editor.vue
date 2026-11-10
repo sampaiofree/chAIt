@@ -468,7 +468,6 @@ onBeforeUnmount(() => {
 <style scoped>
 .sequence-editor {
     width: 100%;
-    max-width: 1200px;
     min-width: 0;
     margin: auto;
     padding: 24px;

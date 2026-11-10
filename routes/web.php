@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Chat\ChatController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Workspace\CurrentWorkspaceController;
@@ -9,6 +10,7 @@ use App\Http\Controllers\Workspace\FlowController;
 use App\Http\Controllers\Workspace\FlowTransportController;
 use App\Http\Controllers\Workspace\SequenceController;
 use App\Http\Controllers\Workspace\UazapiChatController;
+use App\Http\Middleware\EnsureSystemAdmin;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
@@ -18,6 +20,12 @@ Route::inertia('/', 'welcome', [
 ])->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
+    Route::middleware(EnsureSystemAdmin::class)->prefix('admin/usuarios')->name('admin.users.')->group(function () {
+        Route::get('/', [AdminUserController::class, 'index'])->name('index');
+        Route::post('/', [AdminUserController::class, 'store'])->name('store');
+        Route::get('{user}/editar', [AdminUserController::class, 'edit'])->name('edit');
+        Route::patch('{user}', [AdminUserController::class, 'update'])->name('update');
+    });
     Route::post('workspaces/{workspace}/uazapi/import', [ChatController::class, 'import'])->name('workspaces.uazapi.import');
     Route::post('workspaces/{workspace}/uazapi/diagnose', [UazapiChatController::class, 'diagnose'])->name('workspaces.uazapi.diagnose');
     Route::get('workspaces/{workspace}/webhooks', [ExternalWebhookController::class, 'index'])->name('workspaces.webhooks.index');

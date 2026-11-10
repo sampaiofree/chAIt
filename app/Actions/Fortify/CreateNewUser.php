@@ -19,6 +19,9 @@ class CreateNewUser implements CreatesNewUsers
      */
     public function create(array $input): User
     {
+        if (isset($input['email']) && is_string($input['email'])) {
+            $input['email'] = strtolower(trim($input['email']));
+        }
         Validator::make($input, [
             ...$this->profileRules(),
             'password' => $this->passwordRules(),

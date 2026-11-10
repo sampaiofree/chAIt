@@ -65,6 +65,7 @@ class HandleInertiaRequests extends Middleware
             'isAdmin' => fn () => $request->user()?->currentWorkspace
                 ? $request->user()->canAccessWorkspace($request->user()->currentWorkspace, WorkspaceRole::Admin)
                 : false,
+            'isSystemAdmin' => fn () => $request->user()?->isSystemAdmin() ?? false,
             'canManageFlows' => fn () => $request->user()?->currentWorkspace
                 ? $request->user()->canManageFlows($request->user()->currentWorkspace)
                 : false,
