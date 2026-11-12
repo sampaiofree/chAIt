@@ -6,7 +6,6 @@ use App\Models\AiSession;
 use App\Models\FlowDraftSession;
 use App\Models\User;
 use App\Services\FlowAssistant\AssistantTools;
-use App\Services\FlowAssistant\DraftSessionService;
 use App\Services\Flows\AiSessionService;
 use App\Services\Flows\ContactTemplate;
 use App\Services\Flows\FlowGraphValidator;
@@ -59,7 +58,10 @@ test('template documents normalize adjacent literal parts without changing white
     $valid = app(FlowGraphValidator::class)->validate($f['graph']);
     expect($valid['nodes'][1]['data']['items'][0]['text']['parts'])->toBe([contactText(' Olá  '), contactChip()]);
     $url = '/workspaces/'.$f['workspace']->id.'/flows/'.$f['flow']->id;
-    $this->actingAs($f['user'])->putJson($url, ['name' => 'Preservar', 'revision' => 1, 'graph' => $f['graph']])->assertOk();
+    $f['flow']->update(['is_active' => false]);
+    $token = (string) str()->uuid();
+    $this->actingAs($f['user'])->postJson($url.'/edit-lock', ['token' => $token])->assertOk();
+    $this->withHeader('X-Flow-Edit-Token', $token)->putJson($url, ['name' => 'Preservar', 'revision' => 1, 'graph' => $f['graph']])->assertOk();
     expect($f['flow']->fresh()->graph['nodes'][1]['data']['items'][0]['text']['parts'][0]['text'])->toBe(' Olá  ');
 });
 
@@ -147,12 +149,6 @@ test('custom fields in drafts previews and active versions cannot be deleted but
     $f['flow']->update(['graph' => $graph]);
     $this->deleteJson($url)->assertUnprocessable();
     $f['flow']->update(['graph' => $f['graph']]);
-    app(DraftSessionService::class)->locked($f['flow'], function ($flow) use ($graph) {
-        $session = app(DraftSessionService::class)->ensure($flow);
-        $session->update(['graph' => $graph]);
-    });
-    $this->deleteJson($url)->assertUnprocessable();
-    FlowDraftSession::query()->delete();
     $f['version']->update(['graph' => $graph]);
     $this->deleteJson($url)->assertUnprocessable();
     $f['flow']->update(['published_version_id' => null, 'is_active' => false]);

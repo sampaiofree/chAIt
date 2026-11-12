@@ -3,7 +3,6 @@
 namespace App\Services\Contacts;
 
 use App\Models\ExternalWebhook;
-use App\Models\FlowDraftSession;
 use App\Models\FlowExecution;
 use App\Models\FlowVersion;
 use App\Models\SequenceEnrollment;
@@ -18,7 +17,7 @@ class ContactResourceReferences
     /** Call under the workspace row lock, also used by publishers and webhook writes. */
     public function find(Workspace $workspace, string $kind, int $id): array
     {
-        $versions = $workspace->flows()->whereNotNull('published_version_id')->pluck('published_version_id')->all();
+        $versions = $workspace->flows()->where('is_active', true)->whereNotNull('published_version_id')->pluck('published_version_id')->all();
         $versions = array_merge($versions, FlowExecution::where('workspace_id', $workspace->id)->whereIn('status', FlowExecutionManager::ACTIVE)->pluck('flow_version_id')->all());
         $dependencies = DB::table('sequence_version_flows as dependencies')
             ->join('sequence_versions as versions', 'versions.id', '=', 'dependencies.sequence_version_id')
@@ -27,18 +26,13 @@ class ContactResourceReferences
             ->where(function ($query) {
                 $query->where(fn ($active) => $active->where('sequences.is_active', true)->whereColumn('sequences.published_version_id', 'versions.id'))
                     ->orWhereExists(fn ($enrolled) => $enrolled->selectRaw('1')->from('sequence_enrollments')->whereColumn('sequence_version_id', 'versions.id')->whereNotIn('status', SequenceEnrollment::TERMINAL));
-            })->get(['dependencies.flow_version_id', 'versions.name']);
-        $versions = array_unique(array_merge($versions, $dependencies->pluck('flow_version_id')->all()));
+            })->get(['dependencies.flow_id', 'versions.name']);
+        $versions = array_unique($versions);
         $references = [];
         if ($kind === 'field') {
             foreach ($workspace->flows()->get(['id', 'name', 'graph']) as $flow) {
                 if ($this->graphUses($flow->graph, $kind, $id)) {
-                    $references[] = 'Rascunho do fluxo “'.$flow->name.'”';
-                }
-            }
-            foreach (FlowDraftSession::where('workspace_id', $workspace->id)->with('flow:id,name')->get() as $session) {
-                if ($this->graphUses($session->graph, $kind, $id)) {
-                    $references[] = 'Prévia do fluxo “'.($session->flow?->name ?? $session->flow_id).'”';
+                    $references[] = 'Fluxo “'.$flow->name.'”';
                 }
             }
         }
@@ -46,8 +40,8 @@ class ContactResourceReferences
             if (! $this->graphUses($version->graph, $kind, $id)) {
                 continue;
             }
-            $references[] = 'Fluxo “'.($version->flow?->name ?? $version->flow_id).'” (versão '.$version->version.')';
-            foreach ($dependencies->where('flow_version_id', $version->id) as $dependency) {
+            $references[] = 'Fluxo “'.($version->flow?->name ?? $version->flow_id).'”';
+            foreach ($dependencies->where('flow_id', $version->flow_id) as $dependency) {
                 $references[] = 'Sequência “'.$dependency->name.'”';
             }
         }

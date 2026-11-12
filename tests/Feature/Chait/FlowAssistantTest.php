@@ -17,6 +17,7 @@ use App\Services\FlowAssistant\DraftSessionService;
 use App\Services\FlowAssistant\FlowAssistantService;
 use App\Services\Flows\FlowCapabilities;
 use App\Services\Flows\FlowCondition;
+use App\Services\Flows\FlowEditLock;
 use App\Services\Flows\FlowMenu;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
@@ -38,11 +39,15 @@ function builderFixture(?array $availableModels = null): array
     WorkspaceOpenAiIntegration::create(['workspace_id' => $workspace->id, 'api_key' => 'sk-private-builder']);
     $tag = $workspace->tags()->create(['name' => 'Interesse']);
     $field = $workspace->contactCustomFields()->create(['name' => 'Curso', 'type' => 'text']);
+    $editToken = (string) str()->uuid();
+    app(FlowEditLock::class)->acquire($flow, $user, $editToken);
+    request()->headers->set('X-Flow-Edit-Token', $editToken);
+    test()->withHeader('X-Flow-Edit-Token', $editToken);
     Queue::fake();
     Http::preventStrayRequests();
     Http::fake(['api.openai.com/v1/models' => Http::response(['data' => array_map(fn ($id) => ['id' => $id], $availableModels ?? config('flow-assistant.models'))])]);
 
-    return compact('user', 'workspace', 'flow', 'tag', 'field');
+    return compact('user', 'workspace', 'flow', 'tag', 'field', 'editToken');
 }
 
 function builderUrl(array $f, string $path): string
@@ -155,7 +160,7 @@ test('the operational guide and complete catalog reach every model turn and tria
     expect($run->fresh()->status)->toBe('completed')->and($turn)->toBe(count($responses))
         ->and($graph['nodes'])->toHaveCount(9)->and($graph['edges'])->toHaveCount(8)
         ->and(FlowAiOperation::where('name', 'validate_flow')->sole()->result['pending'])->toBe([])
-        ->and($f['flow']->fresh()->graph['nodes'])->toHaveCount(1)
+        ->and($f['flow']->fresh()->graph['nodes'])->toHaveCount(9)
         ->and($f['flow']->fresh()->published_version_id)->toBeNull();
 
     $contact = Contact::factory()->create(['workspace_id' => $f['workspace']->id]);
@@ -216,7 +221,7 @@ test('cyclic connection batches roll back and resume connects existing triage no
     $final = FlowDraftSession::sole()->graph;
     expect($resumed->fresh()->status)->toBe('completed')->and($final['nodes'])->toBe($graph['nodes'])
         ->and($final['edges'])->toHaveCount(8)->and(FlowDraftSession::sole()->revision)->toBe(3)
-        ->and($f['flow']->fresh()->graph['nodes'])->toHaveCount(1);
+        ->and($f['flow']->fresh()->graph['nodes'])->toHaveCount(9);
 });
 
 test('database failures pause safely without exposing SQL or bindings', function () {
@@ -271,9 +276,8 @@ test('approval builds only in the temporary session and saving replaces the draf
     Http::fake(['api.openai.com/v1/responses' => Http::sequence()->push(builderResponse([builderCall('apply_flow_patch', builderPatch())]))->push(builderResponse([builderText()]))]);
     app(FlowAssistantService::class)->process($run->id);
     $session = FlowDraftSession::sole();
-    expect($session->graph['nodes'])->toHaveCount(2)->and($f['flow']->fresh()->graph['nodes'])->toHaveCount(1)->and($run->fresh()->status)->toBe('completed');
-    $this->actingAs($f['user'])->putJson(builderUrl($f, ''), ['name' => $session->name, 'graph' => $session->graph, 'revision' => 1, 'generation' => $session->generation, 'draft_revision' => $session->revision])->assertOk()->assertJsonPath('data.revision', 2);
-    expect(FlowDraftSession::count())->toBe(0)->and($f['flow']->fresh()->graph['nodes'])->toHaveCount(2)->and(FlowAiMessage::where('kind', 'operation')->sole()->status)->toBe('saved');
+    expect($session->graph['nodes'])->toHaveCount(2)->and($f['flow']->fresh()->graph['nodes'])->toHaveCount(2)->and($run->fresh()->status)->toBe('completed');
+    expect($f['flow']->fresh()->graph)->toBe($session->graph);
 });
 
 test('writing without an approved plan is rejected by the backend even if the model asks', function () {
@@ -292,7 +296,7 @@ test('atomic invalid batches roll back but retain previously confirmed batches',
     $bad['operations'][1]['source_handle'] = 'unknown';
     Http::fake(['api.openai.com/v1/responses' => Http::sequence()->push(builderResponse([builderCall('apply_flow_patch', builderPatch(), 'good')]))->push(builderResponse([builderCall('apply_flow_patch', $bad, 'bad')]))]);
     app(FlowAssistantService::class)->process($run->id);
-    expect($run->fresh()->status)->toBe('paused')->and(FlowDraftSession::sole()->graph['nodes'])->toHaveCount(2)->and(FlowAiOperation::count())->toBe(1)->and($f['flow']->fresh()->graph['nodes'])->toHaveCount(1);
+    expect($run->fresh()->status)->toBe('paused')->and(FlowDraftSession::sole()->graph['nodes'])->toHaveCount(2)->and(FlowAiOperation::count())->toBe(1)->and($f['flow']->fresh()->graph['nodes'])->toHaveCount(2);
 });
 
 test('repeated tool calls cannot duplicate nodes or change their payload', function () {
@@ -336,7 +340,7 @@ test('missing item and action IDs roll back the entire batch and preserve confir
         ->and($session->fresh()->revision)->toBe($built['revision'])
         ->and(FlowAiOperation::count())->toBe(1)
         ->and(FlowAiMessage::where('kind', 'operation')->count())->toBe(1)
-        ->and($f['flow']->fresh()->graph['nodes'])->toHaveCount(1);
+        ->and($f['flow']->fresh()->graph['nodes'])->toHaveCount(2);
 })->with([
     'missing item ID' => ['items', false],
     'null item ID' => ['items', true],
@@ -344,43 +348,42 @@ test('missing item and action IDs roll back the entire batch and preserve confir
     'null action ID' => ['actions', true],
 ]);
 
-test('manual shared sessions recover and detect conflicting edits and legacy saves', function () {
+test('automatic editor saves reject stale revisions', function () {
     $f = builderFixture();
     $graph = $f['flow']->graph;
     $graph['nodes'][0]['position']['x'] = 80;
     $data = builderRevision($f) + ['name' => 'Cursos atualizados', 'graph' => $graph];
-    $this->actingAs($f['user'])->putJson(builderUrl($f, '/draft-session'), $data)->assertOk();
-    $this->getJson(builderUrl($f, '/assistant'))->assertOk()->assertJsonPath('data.session.name', 'Cursos atualizados')->assertJsonPath('data.flow.name', 'Cursos');
-    $this->putJson(builderUrl($f, '/draft-session'), $data)->assertConflict();
-    $this->putJson(builderUrl($f, ''), ['name' => 'Cursos', 'graph' => $graph, 'revision' => 1])->assertConflict();
-    $this->postJson(builderUrl($f, '/publish'), ['revision' => 1])->assertConflict();
-    $this->deleteJson(builderUrl($f, '/draft-session'), builderRevision($f))->assertOk()->assertJsonPath('data.session', null)->assertJsonPath('data.flow.name', 'Cursos');
+    $this->actingAs($f['user'])->putJson(builderUrl($f, '/editor-state'), $data)->assertOk();
+    $this->getJson(builderUrl($f, '/assistant'))->assertOk()->assertJsonPath('data.flow.name', 'Cursos atualizados');
+    $this->putJson(builderUrl($f, '/editor-state'), $data)->assertConflict();
+    $this->postJson(builderUrl($f, '/activate'), ['revision' => 1])->assertConflict();
+    $this->deleteJson(builderUrl($f, '/draft-session'), builderRevision($f))->assertNotFound();
 });
 
-test('discard cancels active work and rejects late tool results with an invalidated generation', function () {
+test('releasing the edit lease pauses AI and rejects late tool results', function () {
     $f = builderFixture();
     $run = builderBuild($f);
     $run->update(['status' => 'running', 'started_at' => now()]);
-    $this->actingAs($f['user'])->deleteJson(builderUrl($f, '/draft-session'), builderRevision($f))->assertOk();
+    $this->actingAs($f['user'])->deleteJson(builderUrl($f, '/edit-lock'), ['token' => $f['editToken']])->assertOk();
     expect(fn () => app(AssistantTools::class)->execute($f['flow'], $run, 'late', 'apply_flow_patch', builderPatch()))->toThrow(HttpException::class);
-    expect($run->fresh()->status)->toBe('cancelled')->and(FlowDraftSession::count())->toBe(0)->and(FlowAiConversation::sole()->state)->toBe('briefing');
+    expect($run->fresh()->status)->toBe('paused');
 });
 
-test('manual editors read shared history and stop a run without permission to invoke AI', function () {
+test('manual editors may read history but cannot stop another editor’s AI run', function () {
     $f = builderFixture();
     $run = builderBuild($f);
     $agent = User::factory()->create(['current_workspace_id' => $f['workspace']->id]);
     WorkspaceMembership::create(['workspace_id' => $f['workspace']->id, 'user_id' => $agent->id, 'role' => 'agent', 'joined_at' => now(), 'can_manage_flows' => true]);
     $this->actingAs($agent)->getJson(builderUrl($f, '/assistant'))->assertOk()->assertJsonPath('data.can_use_ai', false);
     $this->postJson(builderUrl($f, '/assistant/messages'), builderRevision($f) + ['content' => 'Editar'])->assertForbidden();
-    $this->postJson(builderUrl($f, '/assistant/runs/'.$run->id.'/stop'))->assertOk();
-    expect($run->fresh()->status)->toBe('paused');
+    $this->postJson(builderUrl($f, '/assistant/runs/'.$run->id.'/stop'))->assertConflict();
+    expect($run->fresh()->status)->toBe('queued');
 });
 
 test('active AI blocks manual updates and saving and revoked permissions block worker operations', function () {
     $f = builderFixture();
     $run = builderBuild($f);
-    $this->actingAs($f['user'])->putJson(builderUrl($f, '/draft-session'), builderRevision($f) + ['name' => 'Outro', 'graph' => $f['flow']->graph])->assertConflict();
+    $this->actingAs($f['user'])->putJson(builderUrl($f, '/editor-state'), builderRevision($f) + ['name' => 'Outro', 'graph' => $f['flow']->graph])->assertConflict();
     $session = FlowDraftSession::sole();
     $this->putJson(builderUrl($f, ''), ['name' => $session->name, 'graph' => $session->graph, 'revision' => 1, 'generation' => $session->generation, 'draft_revision' => $session->revision])->assertConflict();
     $f['user']->membershipFor($f['workspace'])->update(['role' => 'agent', 'can_manage_flows' => true, 'can_use_flow_assistant' => false]);
@@ -446,7 +449,7 @@ test('manual unavailable model is never silently replaced', function () {
 test('delete and reconnect are temporary and never alter a published version', function () {
     $f = builderFixture();
     $published = $f['flow']->versions()->create(['workspace_id' => $f['workspace']->id, 'version' => 1, 'graph' => $f['flow']->graph, 'published_at' => now(), 'published_by_user_id' => $f['user']->id]);
-    $f['flow']->update(['published_version_id' => $published->id, 'is_active' => true]);
+    $f['flow']->update(['published_version_id' => $published->id, 'is_active' => false]);
     $run = builderBuild($f);
     $run->update(['status' => 'running', 'started_at' => now()]);
     $tools = app(AssistantTools::class);
@@ -521,7 +524,8 @@ test('saving commits the authoritative temporary revision and rejects a stale sa
     $graph = $f['flow']->graph;
     $graph['nodes'][0]['position']['x'] = 400;
     $session = app(DraftSessionService::class)->update($f['flow'], builderRevision($f) + ['name' => 'Prévia', 'graph' => $graph]);
-    $this->actingAs($f['user'])->putJson(builderUrl($f, ''), ['name' => 'Snapshot antigo', 'graph' => $f['flow']->graph, 'revision' => 1, 'generation' => $session->generation, 'draft_revision' => $session->revision])->assertOk()->assertJsonPath('data.name', 'Prévia')->assertJsonPath('data.graph.nodes.0.position.x', 400);
+    $this->actingAs($f['user'])->putJson(builderUrl($f, ''), ['name' => 'Snapshot antigo', 'graph' => $f['flow']->graph, 'revision' => 1, 'generation' => $session->generation, 'draft_revision' => $session->revision])->assertConflict();
+    expect($f['flow']->fresh()->name)->toBe('Prévia')->and($f['flow']->fresh()->graph['nodes'][0]['position']['x'])->toBe(400);
     $this->putJson(builderUrl($f, ''), ['name' => 'Outro', 'graph' => $graph, 'revision' => 1])->assertConflict();
 });
 
@@ -583,7 +587,7 @@ test('editor assistant builds and edits mixed conditions and connects both branc
     $session = FlowDraftSession::sole();
     $condition = collect($session->graph['nodes'])->firstWhere('type', 'condition');
     expect($condition['data']['checks'])->toBe($checks)->and($session->graph['edges'])->toHaveCount(3)
-        ->and($f['flow']->fresh()->graph['nodes'])->toHaveCount(1)
+        ->and($f['flow']->fresh()->graph['nodes'])->toHaveCount(4)
         ->and(FlowAiOperation::where('name', 'validate_flow')->sole()->result['pending'])->toBe([]);
     Http::assertSent(fn ($request) => str_contains($request->body(), 'checks') && str_contains($request->body(), 'not_has'));
     $run->update(['status' => 'running']);
@@ -628,7 +632,7 @@ test('approved assistant creates a menu and connects its dynamic options idempot
     $result = $tools->execute($f['flow'], $run, 'menu-create', 'apply_flow_patch', $args);
     expect($tools->execute($f['flow'], $run, 'menu-create', 'apply_flow_patch', $args))->toBe($result);
     $session = FlowDraftSession::sole();
-    expect($session->graph['nodes'])->toHaveCount(3)->and($session->graph['edges'])->toHaveCount(2)->and($f['flow']->fresh()->graph['nodes'])->toHaveCount(1);
+    expect($session->graph['nodes'])->toHaveCount(3)->and($session->graph['edges'])->toHaveCount(2)->and($f['flow']->fresh()->graph['nodes'])->toHaveCount(3);
     $menuId = $result['refs']['menu'];
     $options = array_reverse($data['options']);
     $options[1]['label'] = 'Comercial';
@@ -705,7 +709,7 @@ test('approved assistant can read create edit reorder change kinds and remove a 
         ['op' => 'update_node', 'node_ref' => $nodeId, 'data' => ['items' => [$items[0]]]],
     ]]);
     expect(collect(FlowDraftSession::sole()->graph['nodes'])->firstWhere('id', $nodeId)['data']['items'])->toBe([['id' => 'message', 'kind' => 'text', 'text' => 'Olá!']]);
-    expect($f['flow']->fresh()->graph['nodes'])->toHaveCount(1);
+    expect($f['flow']->fresh()->graph['nodes'])->toHaveCount(2);
 });
 
 test('content button strict tool schema exposes every configurable field without an editable reply identity', function () {

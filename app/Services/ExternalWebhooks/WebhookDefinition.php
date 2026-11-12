@@ -9,7 +9,7 @@ use Illuminate\Validation\ValidationException;
 
 class WebhookDefinition
 {
-    public function validate(Workspace $workspace, array $input, array $fields, bool $checkSources = true): array
+    public function validate(Workspace $workspace, array $input, array $fields, bool $checkSources = true, array $existingFlowIds = []): array
     {
         $input['name'] = is_string($input['name'] ?? null) ? trim($input['name']) : ($input['name'] ?? null);
         $data = Validator::make($input, [
@@ -111,7 +111,7 @@ class WebhookDefinition
             if (array_intersect($rule['add'], $rule['remove'])) {
                 $errors["tag_rules.$i.remove"] = 'Uma regra não pode adicionar e remover a mesma tag.';
             }
-            if ($checkSources && isset($rule['flow_id']) && ! in_array((int) $rule['flow_id'], $flowIds, true)) {
+            if ($checkSources && isset($rule['flow_id']) && ! in_array((int) $rule['flow_id'], $flowIds, true) && ! in_array((int) $rule['flow_id'], $existingFlowIds, true)) {
                 $errors["tag_rules.$i.flow_id"] = 'Selecione um fluxo ativo e publicado deste workspace.';
             }
             if ($rule['add'] === [] && $rule['remove'] === [] && empty($rule['flow_id'])) {

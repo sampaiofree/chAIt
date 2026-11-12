@@ -317,7 +317,7 @@ test('scheduler reconciles a terminal execution even when the notification was m
     expect($enrollment->fresh()->due_at->equalTo(now()->addMinutes(110)))->toBeTrue();
 });
 
-test('pinned flow jumps keep the stage occupied through the final destination', function () {
+test('flow jumps use the current destination and keep the sequence stage occupied', function () {
     $fixture = sequenceFixture();
     extract($fixture);
     $target = $workspace->flows()->create(['name' => 'Destino', 'graph' => $flow->graph]);
@@ -336,7 +336,7 @@ test('pinned flow jumps keep the stage occupied through the final destination', 
     app(SequenceScheduler::class)->execute($enrollment->id, $enrollment->generation);
     app(FlowRuntime::class)->run($enrollment->fresh()->current_step_execution_id);
     $destination = FlowExecution::findOrFail($enrollment->fresh()->current_step_execution_id);
-    expect($destination->flow_version_id)->toBe($targetVersion->id)->and($enrollment->fresh()->status)->toBe('running_step');
+    expect($destination->flow_version_id)->toBe($newTargetVersion->id)->and($enrollment->fresh()->status)->toBe('running_step');
     app(FlowRuntime::class)->run($destination->id);
     expect($enrollment->fresh()->status)->toBe('waiting_time')->and($enrollment->fresh()->nextStep->position)->toBe(1);
 });
@@ -363,21 +363,20 @@ test('sequence HTTP lifecycle checks revisions, enrollment permissions and visib
     $this->actingAs($agent->fresh())->postJson(route('workspaces.contacts.sequence-enroll', [$workspace, $contact]), ['sequence_id' => $sequence->id, 'idempotency_key' => (string) str()->uuid()])->assertForbidden();
 });
 
-test('deactivating blocks new enrollment but preserves existing versions and flow dependencies', function () {
+test('inactive flow steps are skipped when they become due', function () {
     $fixture = sequenceFixture();
     extract($fixture);
     $enrollment = sequenceEnroll($fixture);
-    $this->actingAs($user)->postJson(route('workspaces.flows.deactivate', [$workspace, $flow]))->assertConflict();
-    $this->postJson(route('workspaces.sequences.deactivate', [$workspace, $sequence]))->assertOk();
+    $this->actingAs($user)->postJson(route('workspaces.flows.deactivate', [$workspace, $flow]))->assertOk();
     expect($enrollment->fresh()->status)->toBe('waiting_time');
-    $this->postJson(route('workspaces.flows.deactivate', [$workspace, $flow]))->assertConflict();
-    $otherContact = Contact::factory()->create(['workspace_id' => $workspace->id]);
-    $otherThread = Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $otherContact->id, 'status' => 'bot', 'human_opened_at' => null]);
-    $this->postJson(route('workspaces.contacts.sequence-enroll', [$workspace, $otherContact]), ['sequence_id' => $sequence->id, 'idempotency_key' => (string) str()->uuid()])->assertUnprocessable();
     $this->travel(1)->minutes();
-    app(SequenceScheduler::class)->execute($enrollment->id, $enrollment->generation);
-    expect(FlowExecution::sole()->flow_version_id)->toBe($version->id);
-    $this->postJson(route('workspaces.sequences.activate', [$workspace, $sequence]))->assertOk();
+    app(SequenceScheduler::class)->execute($enrollment->id, $enrollment->fresh()->generation);
+    expect(FlowExecution::count())->toBe(0)
+        ->and($enrollment->fresh()->nextStep->position)->toBe(1)
+        ->and($enrollment->fresh()->due_at->equalTo(now()->addHours(2)))->toBeTrue();
+    $this->travel(2)->hours();
+    app(SequenceScheduler::class)->execute($enrollment->id, $enrollment->fresh()->generation);
+    expect($enrollment->fresh()->status)->toBe('completed');
 });
 
 test('operations enroll immediately and leave the current flow running until it ends', function () {
@@ -388,6 +387,7 @@ test('operations enroll immediately and leave the current flow running until it 
         ['id' => 'content', 'type' => 'content', 'data' => ['items' => [['id' => 'delay', 'kind' => 'delay', 'seconds' => 5]]]]],
         'edges' => [['source' => 'start', 'sourceHandle' => 'next', 'target' => 'operations'], ['source' => 'operations', 'sourceHandle' => 'next', 'target' => 'content']]];
     $operationVersion = $flow->versions()->create(['workspace_id' => $workspace->id, 'version' => 2, 'graph' => $graph, 'published_at' => now()]);
+    $flow->update(['published_version_id' => $operationVersion->id]);
     $execution = app(FlowRuntime::class)->start($operationVersion, $contact->id, $thread->id, $connection, 'test');
     app(FlowRuntime::class)->run($execution->id);
     $enrollment = SequenceEnrollment::sole();
@@ -414,6 +414,7 @@ test('queued sends reconcile by tracking identifier even when the provider norma
         ['id' => 'content', 'type' => 'content', 'data' => ['items' => [['id' => 'text', 'kind' => 'text', 'text' => 'Teste']]]]],
         'edges' => [['source' => 'start', 'sourceHandle' => 'next', 'target' => 'content']]];
     $messageVersion = $flow->versions()->create(['workspace_id' => $workspace->id, 'version' => 2, 'graph' => $graph, 'published_at' => now()]);
+    $flow->update(['published_version_id' => $messageVersion->id]);
     Http::fake([
         'api.uazapi.test/send/text' => Http::response(['id' => 'queued-1', 'status' => 'queued']),
         'api.uazapi.test/message/find' => fn ($request) => Http::response(['messages' => isset($request['chatid']) ? [] : [['id' => 'delivered-1', 'status' => 'Delivered', 'chatid' => 'normalized@s.whatsapp.net']]]),
@@ -487,4 +488,39 @@ test('a persisted uncertain send intent only queries the provider and never repe
     app(FlowRuntime::class)->run($execution->id);
     Http::assertNotSent(fn ($request) => str_ends_with($request->url(), '/send/text'));
     expect($execution->fresh()->status)->toBe('running')->and($execution->fresh()->context['pending_attempts'])->toBe(2);
+});
+
+test('a sequence advances when a jump target is inactive', function () {
+    $fixture = sequenceFixture();
+    extract($fixture);
+    $target = $workspace->flows()->create(['name' => 'Destino', 'graph' => $flow->graph]);
+    $targetVersion = $target->versions()->create(['workspace_id' => $workspace->id, 'version' => 1, 'graph' => $flow->graph, 'published_at' => now()]);
+    $target->update(['is_active' => true, 'published_version_id' => $targetVersion->id]);
+    $jump = ['nodes' => [['id' => 'start', 'type' => 'start', 'data' => []],
+        ['id' => 'jump', 'type' => 'jump_flow', 'data' => ['target_flow_id' => $target->id]]],
+        'edges' => [['source' => 'start', 'sourceHandle' => 'next', 'target' => 'jump']]];
+    $jumpVersion = $flow->versions()->create(['workspace_id' => $workspace->id, 'version' => 2, 'graph' => $jump, 'published_at' => now()]);
+    $flow->update(['published_version_id' => $jumpVersion->id]);
+    $enrollment = sequenceEnroll($fixture);
+    $target->update(['is_active' => false]);
+    $this->travel(1)->minutes();
+    app(SequenceScheduler::class)->execute($enrollment->id, $enrollment->generation);
+    $execution = FlowExecution::findOrFail($enrollment->fresh()->current_step_execution_id);
+    app(FlowRuntime::class)->run($execution->id);
+    expect($execution->fresh()->terminal_reason)->toBe('target_flow_inactive')
+        ->and($enrollment->fresh()->nextStep->position)->toBe(1)
+        ->and($enrollment->fresh()->due_at->equalTo(now()->addHours(2)))->toBeTrue();
+});
+
+test('inactivating an executing sequence step schedules the next wait', function () {
+    $fixture = sequenceFixture();
+    extract($fixture);
+    $enrollment = sequenceEnroll($fixture);
+    $this->travel(1)->minutes();
+    app(SequenceScheduler::class)->execute($enrollment->id, $enrollment->generation);
+    $execution = FlowExecution::findOrFail($enrollment->fresh()->current_step_execution_id);
+    $this->actingAs($user)->postJson(route('workspaces.flows.deactivate', [$workspace, $flow]))->assertOk();
+    expect($execution->fresh()->terminal_reason)->toBe('flow_deactivated')
+        ->and($enrollment->fresh()->nextStep->position)->toBe(1)
+        ->and($enrollment->fresh()->due_at->equalTo(now()->addHours(2)))->toBeTrue();
 });

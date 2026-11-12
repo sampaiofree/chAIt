@@ -59,7 +59,9 @@ class FlowInboundProcessor
                 $active = FlowExecution::query()->where('contact_id', $contact->id)->where('uazapi_connection_id', $connection->id)
                     ->whereIn('status', ['running', 'waiting_reply', 'waiting_ai', 'waiting_menu'])->orderByDesc('id')->lockForUpdate()->first();
                 $settings = DB::table('flow_trigger_settings')->where('uazapi_connection_id', $connection->id)->first();
-                $rules = DB::table('flow_keyword_triggers')->where('uazapi_connection_id', $connection->id)->orderBy('position')->get();
+                $rules = DB::table('flow_keyword_triggers')->where('uazapi_connection_id', $connection->id)
+                    ->whereIn('flow_id', Flow::where('workspace_id', $connection->workspace_id)->where('is_active', true)->select('id'))
+                    ->orderBy('position')->get();
                 $eligible = $rules->filter(function ($rule) use ($text, $active): bool {
                     if ($active && ! $rule->interrupt_active) {
                         return false;
@@ -69,6 +71,10 @@ class FlowInboundProcessor
                 })->first();
 
                 if ($eligible) {
+                    $target = Flow::where('workspace_id', $connection->workspace_id)->whereKey($eligible->flow_id)->lockForUpdate()->first();
+                    if (! $target?->is_active) {
+                        return;
+                    }
                     if ($active) {
                         $this->interrupt($active, 'Interrompido por palavra-chave.');
                     }

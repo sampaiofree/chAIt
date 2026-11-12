@@ -1,13 +1,9 @@
 <?php
 
-use App\Models\Contact;
 use App\Models\FlowAiConversation;
 use App\Models\FlowAiMessage;
 use App\Models\FlowAiRun;
 use App\Models\FlowAsset;
-use App\Models\FlowExecution;
-use App\Models\Thread;
-use App\Models\UazapiConnection;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceMembership;
@@ -15,10 +11,10 @@ use App\Models\WorkspaceOpenAiIntegration;
 use App\Services\FlowAssistant\AssistantTools;
 use App\Services\FlowAssistant\DraftSessionService;
 use App\Services\Flows\FlowCapabilities;
+use App\Services\Flows\FlowEditLock;
 use App\Services\Flows\FlowTransport;
 use App\Services\Flows\FlowTransportContract;
 use App\Services\Flows\FlowTransportGuide;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -31,6 +27,10 @@ function transportFixture(): array
         'schema_version' => 2, 'nodes' => [['id' => 'original_start', 'type' => 'start', 'position' => ['x' => 1, 'y' => 2], 'data' => ['label' => 'Início']]],
         'edges' => [], 'viewport' => ['x' => 0, 'y' => 0, 'zoom' => 1],
     ]]);
+    $editToken = (string) str()->uuid();
+    app(FlowEditLock::class)->acquire($flow, $user, $editToken);
+    request()->headers->set('X-Flow-Edit-Token', $editToken);
+    test()->withHeader('X-Flow-Edit-Token', $editToken);
     Queue::fake();
 
     return compact('user', 'workspace', 'flow');
@@ -138,6 +138,10 @@ test('transport requires flow editing but no AI permission or credential, and is
     $this->get(transportUrl($f, '/export?source=draft'))->assertForbidden();
     $this->get(transportUrl($f, '/ai-guide'))->assertForbidden();
     $membership->update(['can_manage_flows' => true]);
+    app(FlowEditLock::class)->release($f['flow'], $f['user'], request()->header('X-Flow-Edit-Token'));
+    $token = (string) str()->uuid();
+    $this->actingAs($agent->fresh())->postJson(transportUrl($f, '/edit-lock'), ['token' => $token])->assertOk()->assertJsonPath('data.acquired', true);
+    $this->withHeader('X-Flow-Edit-Token', $token);
     $this->postJson(transportUrl($f, '/import'), transportInput($f))->assertOk();
     expect($f['workspace']->tags()->first()->created_by_user_id)->toBe($agent->id);
     $other = Workspace::factory()->create();
@@ -173,7 +177,7 @@ test('transport blocks active AI and invalidates old plans and generation after 
     $run->update(['status' => 'paused']);
     $this->postJson(transportUrl($f, '/import'), $expected)->assertOk()->assertJsonPath('data.state.flow.name', 'Nome original');
     expect($conversation->fresh()->state)->toBe('briefing')->and($conversation->fresh()->approved_plan_id)->toBeNull()->and($plan->fresh()->status)->toBe('superseded')->and(FlowAiMessage::where('conversation_id', $conversation->id)->where('kind', 'session')->exists())->toBeTrue();
-    $this->putJson(transportUrl($f, '/draft-session'), $expected + ['name' => 'Tardia', 'graph' => $session->graph])->assertConflict();
+    $this->putJson(transportUrl($f, '/editor-state'), $expected + ['name' => 'Tardia', 'graph' => $session->graph])->assertConflict();
     expect(app(DraftSessionService::class)->current($f['flow']))->toBeNull();
     expect(fn () => app(AssistantTools::class)->execute($f['flow']->fresh(), $run->fresh(), 'late-call', 'apply_flow_patch', ['expected_draft_revision' => $session->revision, 'operations' => []]))->toThrow(HttpException::class);
     WorkspaceOpenAiIntegration::create(['workspace_id' => $f['workspace']->id, 'api_key' => 'sk-synthetic-transport-test']);
@@ -182,27 +186,15 @@ test('transport blocks active AI and invalidates old plans and generation after 
     expect(FlowAiRun::where('conversation_id', $conversation->id)->count())->toBe(1);
 });
 
-test('transport preserves publication and exports only the selected persisted version', function () {
+test('transport blocks import on active flows and exports their current content', function () {
     $f = transportFixture();
     $oldGraph = $f['flow']->graph;
     $version = $f['flow']->versions()->create(['workspace_id' => $f['workspace']->id, 'version' => 1, 'graph' => $oldGraph, 'published_by_user_id' => $f['user']->id, 'published_at' => now()]);
     $f['flow']->update(['published_version_id' => $version->id, 'is_active' => true]);
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $f['workspace']->id]);
-    DB::table('flow_trigger_settings')->insert(['workspace_id' => $f['workspace']->id, 'uazapi_connection_id' => $connection->id, 'welcome_flow_id' => $f['flow']->id, 'default_flow_id' => $f['flow']->id, 'created_at' => now(), 'updated_at' => now()]);
-    DB::table('flow_keyword_triggers')->insert(['workspace_id' => $f['workspace']->id, 'uazapi_connection_id' => $connection->id, 'flow_id' => $f['flow']->id, 'term' => 'oi', 'operator' => 'exact', 'position' => 0, 'created_at' => now(), 'updated_at' => now()]);
-    $contact = Contact::factory()->create(['workspace_id' => $f['workspace']->id]);
-    $thread = Thread::factory()->create(['workspace_id' => $f['workspace']->id, 'contact_id' => $contact->id, 'uazapi_connection_id' => $connection->id]);
-    $execution = FlowExecution::create(['workspace_id' => $f['workspace']->id, 'flow_id' => $f['flow']->id, 'flow_version_id' => $version->id, 'contact_id' => $contact->id, 'thread_id' => $thread->id, 'uazapi_connection_id' => $connection->id, 'status' => 'running', 'trigger_source' => 'keyword', 'current_node_id' => 'original_start', 'started_at' => now()]);
-    $this->actingAs($f['user'])->postJson(transportUrl($f, '/import'), transportInput($f))->assertOk();
-    $session = app(DraftSessionService::class)->ensure($f['flow']->fresh());
-    $session->update(['name' => 'Não salvo']);
-    $draft = $this->get(transportUrl($f, '/export?source=draft'))->assertOk()->assertHeader('Content-Type', 'application/json; charset=UTF-8')->json();
-    $published = $this->get(transportUrl($f, '/export?source=published'))->assertOk()->json();
-    expect($draft['name'])->toBe('Nome original')->and($draft['nodes'])->toHaveCount(5)->and($published['nodes'])->toHaveCount(1)
-        ->and($version->fresh()->graph)->toBe($oldGraph)->and($f['flow']->fresh()->is_active)->toBeTrue()->and($f['flow']->fresh()->published_version_id)->toBe($version->id);
-    expect(DB::table('flow_trigger_settings')->where('uazapi_connection_id', $connection->id)->value('welcome_flow_id'))->toBe($f['flow']->id)
-        ->and(DB::table('flow_keyword_triggers')->where('uazapi_connection_id', $connection->id)->value('term'))->toBe('oi')
-        ->and($execution->fresh()->status)->toBe('running')->and($execution->fresh()->flow_version_id)->toBe($version->id);
+    $this->actingAs($f['user'])->postJson(transportUrl($f, '/import'), transportInput($f))->assertConflict();
+    $export = $this->get(transportUrl($f, '/export'))->assertOk()->json();
+    expect($export['name'])->toBe('Nome original')->and($export['nodes'])->toHaveCount(1)
+        ->and($f['flow']->fresh()->is_active)->toBeTrue();
 });
 
 test('transport sharing associates only resources in the destination workspace', function () {
@@ -228,7 +220,7 @@ test('transport retains media slots, menu option identities and incomplete desti
     $graph = $f['flow']->fresh()->graph;
     expect($graph['nodes'][2]['data']['items'][0]['original_name'])->toBe('Catálogo de produtos.pdf')->and($graph['nodes'][2]['data']['items'][0])->not->toHaveKey('asset_id')
         ->and($graph['nodes'][1]['data']['options'][0]['id'])->toBe('vendas')->and($graph['edges'][1]['sourceHandle'])->toBe('option:vendas');
-    $this->postJson(transportUrl($f, '/publish'), ['revision' => 2])->assertUnprocessable();
+    $this->postJson(transportUrl($f, '/activate'), ['revision' => 2])->assertUnprocessable();
     $export = $this->get(transportUrl($f, '/export?source=draft'))->assertOk()->json();
     $this->postJson(transportUrl($f, '/import'), transportInput($f, $export))->assertOk();
     expect($f['flow']->fresh()->graph['nodes'])->toHaveCount(6);
@@ -244,7 +236,7 @@ test('transport preserves text, condition and button settings and allows termina
     expect($export['nodes'][1]['data']['items'][1]['button'])->toBe($document['nodes'][1]['data']['items'][1]['button'])->and($export['nodes'][5]['data']['checks'][1]['field_key'])->toBe('email');
     $simple = ['format' => 'chait-flow', 'schema_version' => '1.0', 'name' => 'Terminal', 'dependencies' => ['tags' => [], 'fields' => []], 'nodes' => [$document['nodes'][0], $document['nodes'][4]], 'edges' => [['source' => 'inicio', 'output' => 'next', 'target' => 'prazo']]];
     $this->postJson(transportUrl($f, '/import'), transportInput($f, $simple))->assertOk();
-    $this->postJson(transportUrl($f, '/publish'), ['revision' => 3])->assertOk();
+    $this->postJson(transportUrl($f, '/activate'), ['revision' => 3])->assertOk();
 });
 
 test('transport exports media hints without private identifiers and resets only declared AI options', function () {
@@ -302,5 +294,5 @@ test('transport guide examples are importable and guide excludes AI construction
     $schema = app(FlowTransportContract::class)->schema();
     expect($schema['properties']['nodes']['items']['oneOf'])->toHaveCount(count(FlowCapabilities::FIELDS));
     expect(json_decode(file_get_contents(base_path('docs/modulos/chait-flow.schema.json')), true))->toBe(json_decode(json_encode($schema), true));
-    $this->get(transportUrl($f, '/export?source=published'))->assertNotFound();
+    $this->get(transportUrl($f, '/export'))->assertOk();
 });

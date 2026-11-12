@@ -60,8 +60,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('assistant/plans/{plan}/approve', [FlowAssistantController::class, 'approve'])->name('assistant.approve');
         Route::post('assistant/runs/{run}/stop', [FlowAssistantController::class, 'stop'])->name('assistant.stop');
         Route::post('assistant/runs/{run}/resume', [FlowAssistantController::class, 'resume'])->name('assistant.resume');
-        Route::put('draft-session', [FlowAssistantController::class, 'updateSession'])->name('draft-session.update');
-        Route::delete('draft-session', [FlowAssistantController::class, 'discard'])->name('draft-session.discard');
+        Route::put('editor-state', [FlowAssistantController::class, 'updateSession'])->name('editor-state.update');
     });
     Route::get('workspaces/{workspace}/flows', [FlowController::class, 'index'])->name('workspaces.flows.index');
     Route::post('workspaces/{workspace}/flows', [FlowController::class, 'store'])->name('workspaces.flows.store');
@@ -74,7 +73,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::patch('workspaces/{workspace}/flows/{flow}', [FlowController::class, 'rename'])->name('workspaces.flows.rename');
     Route::put('workspaces/{workspace}/flows/{flow}', [FlowController::class, 'update'])->name('workspaces.flows.update');
     Route::delete('workspaces/{workspace}/flows/{flow}', [FlowController::class, 'destroy'])->name('workspaces.flows.destroy');
-    Route::post('workspaces/{workspace}/flows/{flow}/publish', [FlowController::class, 'publish'])->name('workspaces.flows.publish');
+    Route::post('workspaces/{workspace}/flows/{flow}/activate', [FlowController::class, 'activate'])->name('workspaces.flows.activate');
+    Route::post('workspaces/{workspace}/flows/{flow}/edit-lock', [FlowController::class, 'acquireEditLock'])->name('workspaces.flows.edit-lock.acquire');
+    Route::delete('workspaces/{workspace}/flows/{flow}/edit-lock', [FlowController::class, 'releaseEditLock'])->name('workspaces.flows.edit-lock.release');
     Route::post('workspaces/{workspace}/flows/{flow}/deactivate', [FlowController::class, 'deactivate'])->name('workspaces.flows.deactivate');
     Route::post('workspaces/{workspace}/flows/{flow}/assets', [FlowController::class, 'upload'])->name('workspaces.flows.assets');
     Route::post('workspaces/{workspace}/flow-fields', [FlowController::class, 'storeField'])->name('workspaces.flow-fields.store');

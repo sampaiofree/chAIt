@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ExternalWebhook;
 use App\Models\Flow;
 use App\Models\FlowAsset;
+use App\Models\FlowExecution;
 use App\Models\FlowFolder;
 use App\Models\Sequence;
 use App\Models\SequenceEnrollment;
@@ -15,9 +16,11 @@ use App\Models\Workspace;
 use App\Services\FlowAssistant\AssistantAccess;
 use App\Services\FlowAssistant\DraftSessionService;
 use App\Services\Flows\FlowCapabilities;
+use App\Services\Flows\FlowEditLock;
 use App\Services\Flows\FlowExecutionManager;
 use App\Services\Flows\FlowGraphValidator;
 use App\Services\Flows\FlowMedia;
+use App\Services\Flows\FlowRuntime;
 use App\Services\Sequences\SequenceDefinitionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -165,11 +168,16 @@ class FlowController extends Controller
         $this->ensureCanManage($request, $workspace);
         $data = $request->validate([
             'folder_id' => ['nullable', 'integer', 'exists:flow_folders,id,workspace_id,'.$workspace->id],
+            'revision' => ['required', 'integer', 'min:1'],
         ]);
         $flow = $workspace->flows()->findOrFail($flow);
-        $flow->update(['folder_id' => $data['folder_id'] ?? null]);
+        app(DraftSessionService::class)->locked($flow, function (Flow $locked) use ($data, $request): void {
+            app(FlowEditLock::class)->assertHeld($locked, $request->header('X-Flow-Edit-Token'), $request->user()->id);
+            abort_unless($locked->revision === (int) $data['revision'], 409, 'Este fluxo foi alterado. Atualize a lista.');
+            $locked->update(['folder_id' => $data['folder_id'] ?? null]);
+        });
 
-        return response()->json(['data' => ['folder_id' => $flow->folder_id]]);
+        return response()->json(['data' => ['folder_id' => $flow->fresh()->folder_id]]);
     }
 
     public function destroy(Request $request, Workspace $workspace, int $flow): JsonResponse
@@ -246,6 +254,7 @@ class FlowController extends Controller
                 'fields' => $workspace->contactCustomFields()->orderBy('name')->get(['id', 'name', 'type']),
                 'members' => $workspace->memberships()->whereNotNull('joined_at')->with('user:id,name,phone')->get()->map(fn ($m) => ['id' => $m->user_id, 'name' => $m->user->name, 'phone' => $m->user->phone])->values(),
                 'flows' => $workspace->flows()->where('id', '<>', $flow->id)->where('is_active', true)->whereNotNull('published_version_id')->orderBy('name')->get(['id', 'name']),
+                'inactive_flows' => $workspace->flows()->where('id', '<>', $flow->id)->where('is_active', false)->orderBy('name')->get(['id', 'name']),
                 'sequences' => Sequence::where('workspace_id', $workspace->id)->where('is_active', true)->whereNotNull('published_version_id')->orderBy('name')->get(['id', 'name']),
                 'assets' => FlowAsset::where('flow_id', $flow->id)->where('workspace_id', $workspace->id)->get()->map(fn ($asset) => [...$asset->only(['id', 'original_name', 'mime_type', 'size']), 'available' => $asset->disk === 'local' && Storage::disk($asset->disk)->exists($asset->path)]),
                 'published_version' => $flow->publishedVersion?->version,
@@ -279,10 +288,12 @@ class FlowController extends Controller
     public function rename(Request $request, Workspace $workspace, int $flow): JsonResponse
     {
         $this->ensureCanManage($request, $workspace);
-        $data = $request->validate(['name' => ['required', 'string', 'max:120']]);
+        $data = $request->validate(['name' => ['required', 'string', 'max:120'], 'revision' => ['required', 'integer', 'min:1']]);
         $flow = $workspace->flows()->findOrFail($flow);
         app(DraftSessionService::class)->locked($flow, function (Flow $locked) use ($data) {
-            abort_if(app(DraftSessionService::class)->current($locked), 409, 'Este fluxo possui uma prévia compartilhada. Renomeie no editor.');
+            app(FlowEditLock::class)->assertHeld($locked, request()->header('X-Flow-Edit-Token'), request()->user()->id);
+            abort_unless($locked->revision === (int) $data['revision'], 409, 'Este fluxo foi alterado. Atualize a lista.');
+            abort_if(app(DraftSessionService::class)->current($locked), 409, 'Renomeie este fluxo no editor.');
             $locked->update(['name' => $data['name'], 'revision' => $locked->revision + 1]);
         });
 
@@ -302,24 +313,43 @@ class FlowController extends Controller
         if (app(DraftSessionService::class)->current($flow)) {
             app(AssistantAccess::class)->check($request->user(), $flow);
         }
-        $updated = app(DraftSessionService::class)->save($flow, $data + ['actor_user_id' => $request->user()->id]);
+        app(DraftSessionService::class)->update($flow, $data + ['actor_user_id' => $request->user()->id]);
+        $updated = $flow->fresh();
 
         return response()->json(['data' => $updated]);
     }
 
-    public function publish(Request $request, Workspace $workspace, int $flowId, FlowGraphValidator $validator): JsonResponse
+    public function acquireEditLock(Request $request, Workspace $workspace, int $flowId, FlowEditLock $locks): JsonResponse
+    {
+        $this->ensureCanManage($request, $workspace);
+        $data = $request->validate(['token' => ['required', 'uuid']]);
+        $flow = $workspace->flows()->findOrFail($flowId);
+
+        return response()->json(['data' => $locks->acquire($flow, $request->user(), $data['token'])]);
+    }
+
+    public function releaseEditLock(Request $request, Workspace $workspace, int $flowId, FlowEditLock $locks): JsonResponse
+    {
+        $this->ensureCanManage($request, $workspace);
+        $data = $request->validate(['token' => ['required', 'uuid']]);
+        $locks->release($workspace->flows()->findOrFail($flowId), $request->user(), $data['token']);
+
+        return response()->json(['data' => ['released' => true]]);
+    }
+
+    public function activate(Request $request, Workspace $workspace, int $flowId, FlowGraphValidator $validator): JsonResponse
     {
         $this->ensureCanManage($request, $workspace);
         $data = $request->validate(['revision' => ['required', 'integer', 'min:1']]);
         $flow = $workspace->flows()->whereKey($flowId)->firstOrFail();
-        abort_unless($flow->revision === (int) $data['revision'], 409, 'Este fluxo foi alterado em outra aba. Recarregue antes de publicar.');
-        abort_if(app(DraftSessionService::class)->current($flow), 409, 'Salve ou descarte a prévia compartilhada antes de publicar.');
+        abort_unless($flow->revision === (int) $data['revision'], 409, 'Este fluxo foi alterado em outra aba. Recarregue antes de ativar.');
         $graph = $validator->validateForPublish($flow->graph, $workspace, $flow);
         $version = DB::transaction(function () use ($flow, $graph, $request, $data, $workspace, $validator) {
             Workspace::whereKey($workspace->id)->lockForUpdate()->firstOrFail();
             $locked = Flow::query()->whereKey($flow->id)->lockForUpdate()->firstOrFail();
-            abort_if(app(DraftSessionService::class)->current($locked), 409, 'Salve ou descarte a prévia antes de publicar.');
-            abort_unless($locked->revision === (int) $data['revision'], 409, 'Este fluxo foi alterado em outra aba. Recarregue antes de publicar.');
+            app(FlowEditLock::class)->assertHeld($locked, $request->header('X-Flow-Edit-Token'), $request->user()->id);
+            abort_if(app(DraftSessionService::class)->activeRun($locked), 409, 'Aguarde ou interrompa a IA antes de ativar.');
+            abort_unless($locked->revision === (int) $data['revision'], 409, 'Este fluxo foi alterado em outra aba. Recarregue antes de ativar.');
             $validator->validateResourceReferences($graph, $workspace);
             $versionNumber = ((int) $locked->versions()->max('version')) + 1;
             $version = $locked->versions()->create([
@@ -327,6 +357,8 @@ class FlowController extends Controller
                 'published_by_user_id' => $request->user()->id, 'published_at' => now(),
             ]);
             $locked->forceFill(['published_version_id' => $version->id, 'is_active' => true])->save();
+            DB::table('flow_draft_sessions')->where('flow_id', $locked->id)->delete();
+            DB::table('flow_edit_locks')->where('flow_id', $locked->id)->delete();
 
             return $version;
         });
@@ -338,37 +370,27 @@ class FlowController extends Controller
     {
         $this->ensureCanManage($request, $workspace);
 
-        return DB::transaction(function () use ($workspace, $flowId): JsonResponse {
-            Workspace::whereKey($workspace->id)->lockForUpdate()->firstOrFail();
-            $flow = $workspace->flows()->whereKey($flowId)->firstOrFail();
-            $referencing = $workspace->flows()->where('id', '<>', $flow->id)->where('is_active', true)->get()
-                ->filter(function (Flow $other) use ($flow): bool {
-                    foreach ($other->publishedVersion?->graph['nodes'] ?? [] as $node) {
-                        if (($node['type'] ?? '') === 'jump_flow' && (int) ($node['data']['target_flow_id'] ?? 0) === $flow->id) {
-                            return true;
-                        }
-                    }
-
-                    return false;
-                })->pluck('name')->values();
-            if ($referencing->isNotEmpty()) {
-                return response()->json(['message' => 'Remova as referências “Ir para Fluxo” dos fluxos ativos: '.$referencing->join(', ').'.'], 409);
-            }
-            $webhooks = ExternalWebhook::where('workspace_id', $workspace->id)->where('status', 'active')->get()
-                ->filter(fn ($webhook) => collect($webhook->tag_rules)->contains(fn ($rule) => (int) ($rule['flow_id'] ?? 0) === $flow->id))->pluck('name');
-            abort_if($webhooks->isNotEmpty(), 409, 'Este fluxo é usado por webhooks ativos: '.$webhooks->join(', ').'.');
-            $references = app(SequenceDefinitionService::class)->flowReferences($workspace->id, $flow->id);
-            abort_if($references !== [], 409, 'Este fluxo é usado por sequências ativas ou participações vigentes: '.implode(', ', $references).'.');
+        $executionIds = DB::transaction(function () use ($workspace, $flowId) {
+            $flow = $workspace->flows()->whereKey($flowId)->lockForUpdate()->firstOrFail();
             $flow->update(['is_active' => false]);
 
-            return response()->json(['data' => ['is_active' => false]]);
-        });
+            return FlowExecution::where('flow_id', $flow->id)->whereIn('status', FlowExecutionManager::ACTIVE)->pluck('id');
+        }, 3);
+        foreach ($executionIds as $id) {
+            $execution = FlowExecution::find($id);
+            if ($execution) {
+                app(FlowRuntime::class)->finish($execution, 'interrupted', 'Fluxo inativado.', 'flow_deactivated');
+            }
+        }
+
+        return response()->json(['data' => ['is_active' => false]]);
     }
 
     public function upload(Request $request, Workspace $workspace, int $flowId): JsonResponse
     {
         $this->ensureCanManage($request, $workspace);
         $flow = $workspace->flows()->findOrFail($flowId);
+        app(FlowEditLock::class)->assertHeld($flow, $request->header('X-Flow-Edit-Token'), $request->user()->id);
         $data = $request->validate(['file' => ['required', 'file', 'max:20480']]);
         $file = $data['file'];
         $mime = (string) $file->getMimeType();
@@ -410,7 +432,8 @@ class FlowController extends Controller
         return Inertia::render('flows/triggers', [
             'workspace' => ['id' => $workspace->id, 'name' => $workspace->name],
             'connection' => ['id' => $connection->id, 'phone' => $connection->phone, 'status' => $connection->status],
-            'flows' => $workspace->flows()->whereNotNull('published_version_id')->orderBy('name')->get(['id', 'name', 'is_active']),
+            'flows' => $workspace->flows()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'is_active']),
+            'inactive_flows' => $workspace->flows()->where('is_active', false)->orderBy('name')->get(['id', 'name']),
             'settings' => DB::table('flow_trigger_settings')->where('uazapi_connection_id', $connection->id)->first(),
             'keywords' => DB::table('flow_keyword_triggers')->where('uazapi_connection_id', $connection->id)->orderBy('position')->get(),
         ]);
@@ -428,14 +451,16 @@ class FlowController extends Controller
         ]);
         DB::transaction(function () use ($workspace, $connection, $data) {
             Workspace::whereKey($workspace->id)->lockForUpdate()->firstOrFail();
-            $publishedIds = $workspace->flows()->whereNotNull('published_version_id')->pluck('id')->map(fn ($id) => (int) $id)->all();
+            $publishedIds = $workspace->flows()->where('is_active', true)->pluck('id')->map(fn ($id) => (int) $id)->all();
+            $previous = DB::table('flow_trigger_settings')->where('uazapi_connection_id', $connection->id)->first();
+            $previousKeywords = DB::table('flow_keyword_triggers')->where('uazapi_connection_id', $connection->id)->pluck('flow_id')->map(fn ($id) => (int) $id)->all();
             foreach (['welcome_flow_id', 'default_flow_id'] as $key) {
-                if (! empty($data[$key]) && ! in_array((int) $data[$key], $publishedIds, true)) {
+                if (! empty($data[$key]) && ! in_array((int) $data[$key], $publishedIds, true) && (int) $data[$key] !== (int) ($previous->$key ?? 0)) {
                     throw ValidationException::withMessages([$key => 'Selecione um fluxo publicado deste workspace.']);
                 }
             }
             foreach ($data['keywords'] as $keyword) {
-                if (! in_array((int) $keyword['flow_id'], $publishedIds, true)) {
+                if (! in_array((int) $keyword['flow_id'], $publishedIds, true) && ! in_array((int) $keyword['flow_id'], $previousKeywords, true)) {
                     throw ValidationException::withMessages(['keywords' => 'Todas as palavras-chave precisam apontar para fluxos publicados deste workspace.']);
                 }
             }

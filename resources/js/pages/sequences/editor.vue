@@ -37,6 +37,7 @@ const props = defineProps<{
         is_active: boolean;
     };
     flows: { id: number; name: string }[];
+    inactive_flows: { id: number; name: string }[];
     timezones: string[];
     published_version: number | null;
     enrollments: (SequenceSnapshot & { contact_name?: string })[];
@@ -404,8 +405,14 @@ onBeforeUnmount(() => {
                                     )
                                 "
                                 :value="step.flow_id"
+                                disabled
                             >
-                                Fluxo indisponível — selecione outro
+                                {{
+                                    inactive_flows.find(
+                                        (f) => f.id === step.flow_id,
+                                    )?.name || 'Fluxo indisponível'
+                                }}
+                                (inativo)
                             </option>
                             <option
                                 v-for="flow in flowsFor(step)"

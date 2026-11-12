@@ -66,10 +66,9 @@ class FlowTransportController extends Controller
     public function export(Request $request, Workspace $workspace, int $flow, FlowTransport $transport): Response
     {
         $model = $this->flow($request, $workspace, $flow);
-        $data = $request->validate(['source' => ['required', 'in:draft,published']]);
-        $json = json_encode($transport->export($model, $data['source']), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        $json = json_encode($transport->export($model, 'draft'), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
 
-        return response($json."\n", 200, ['Content-Type' => 'application/json; charset=UTF-8', 'Content-Disposition' => 'attachment; filename="'.(Str::slug($model->name) ?: 'fluxo').'-'.$data['source'].'.json"', 'Cache-Control' => 'private, no-store']);
+        return response($json."\n", 200, ['Content-Type' => 'application/json; charset=UTF-8', 'Content-Disposition' => 'attachment; filename="'.(Str::slug($model->name) ?: 'fluxo').'.json"', 'Cache-Control' => 'private, no-store']);
     }
 
     public function guide(Request $request, Workspace $workspace, int $flow, FlowTransportGuide $guide): Response

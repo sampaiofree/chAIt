@@ -135,12 +135,18 @@ function onKeydown(event: KeyboardEvent) {
 onMounted(() => window.addEventListener('keydown', onKeydown));
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 
-async function request(path: string, method: string, body: object = {}) {
+async function request(
+    path: string,
+    method: string,
+    body: object = {},
+    editToken = '',
+) {
     const response = await fetch(path, {
         method,
         headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
+            'X-Flow-Edit-Token': editToken,
             'X-CSRF-TOKEN':
                 document.querySelector<HTMLMetaElement>(
                     'meta[name="csrf-token"]',
@@ -289,37 +295,29 @@ async function deleteFolder(folder: FlowFolder) {
 }
 async function renameFlow(flow: FlowSummary) {
     closeMenus();
-    const name = (await prompt('Renomear fluxo', flow.name))?.trim();
-    if (!name || name === flow.name) return;
-    try {
-        await request(
-            '/workspaces/' + props.workspace.id + '/flows/' + flow.id,
-            'PATCH',
-            { name },
-        );
-        reloadLibrary();
-    } catch (error) {
-        await alert(
-            error instanceof Error
-                ? error.message
-                : 'Não foi possível renomear o fluxo.',
-        );
-    }
+    window.location.href = `/workspaces/${props.workspace.id}/flows/${flow.id}`;
 }
 async function moveFlow(flow: FlowSummary, folderId: number | null) {
     closeMenus();
     if (flow.folder_id === folderId) return;
+    const endpoint = `/workspaces/${props.workspace.id}/flows/${flow.id}`;
+    const token = crypto.randomUUID();
+    let acquired = false;
     try {
+        const lease = await request(`${endpoint}/edit-lock`, 'POST', { token });
+        if (!lease.acquired)
+            throw new Error(
+                `${lease.editor || 'Outra pessoa'} está editando este fluxo.`,
+            );
+        acquired = true;
         await request(
-            '/workspaces/' +
-                props.workspace.id +
-                '/flows/' +
-                flow.id +
-                '/folder',
+            `${endpoint}/folder`,
             'PATCH',
             {
                 folder_id: folderId,
+                revision: flow.revision,
             },
+            token,
         );
         reloadLibrary();
     } catch (error) {
@@ -328,6 +326,11 @@ async function moveFlow(flow: FlowSummary, folderId: number | null) {
                 ? error.message
                 : 'Não foi possível mover o fluxo.',
         );
+    } finally {
+        if (acquired)
+            await request(`${endpoint}/edit-lock`, 'DELETE', { token }).catch(
+                () => {},
+            );
     }
 }
 async function deleteFlow(flow: FlowSummary) {
@@ -567,13 +570,7 @@ async function deleteFlow(flow: FlowSummary) {
                             <span class="item-info">
                                 <strong>{{ flow.name }}</strong>
                                 <small>
-                                    {{
-                                        flow.is_active
-                                            ? 'Ativo'
-                                            : flow.published_version_id
-                                              ? 'Inativo'
-                                              : 'Rascunho'
-                                    }}
+                                    {{ flow.is_active ? 'Ativo' : 'Inativo' }}
                                     <template v-if="query.trim()">
                                         ·
                                         {{
@@ -593,11 +590,7 @@ async function deleteFlow(flow: FlowSummary) {
                             </span>
                         </Link>
                         <span class="status-pill">{{
-                            flow.is_active
-                                ? 'Ativo'
-                                : flow.published_version_id
-                                  ? 'Inativo'
-                                  : 'Rascunho'
+                            flow.is_active ? 'Ativo' : 'Inativo'
                         }}</span>
                         <div class="action-wrap" @click.stop>
                             <button
@@ -627,6 +620,7 @@ async function deleteFlow(flow: FlowSummary) {
                                 <button
                                     type="button"
                                     role="menuitem"
+                                    :disabled="flow.is_active"
                                     :aria-expanded="
                                         activeDestination === 'flow:' + flow.id
                                     "

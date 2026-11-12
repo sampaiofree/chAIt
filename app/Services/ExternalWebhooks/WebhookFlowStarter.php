@@ -30,6 +30,10 @@ class WebhookFlowStarter
         $manager = app(FlowExecutionManager::class);
 
         return $manager->locked($webhook->workspace_id, $connection->id, $contact->id, function ($context) use ($manager, $connection, $contact, $flow, $flowId) {
+            $flow = Flow::where('workspace_id', $contact->workspace_id)->whereKey($flow->id)->lockForUpdate()->first();
+            if (! $flow?->is_active || ! $flow->publishedVersion) {
+                return ['status' => 'flow_unavailable', 'flow_id' => $flowId];
+            }
             $blockers = array_values(array_diff($manager->blockers($context), ['flow']));
             if ($blockers !== []) {
                 return ['status' => in_array('human', $blockers, true) ? 'human' : 'paused', 'flow_id' => $flowId];

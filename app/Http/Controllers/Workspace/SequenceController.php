@@ -8,14 +8,12 @@ use App\Http\Controllers\Controller;
 use App\Models\AutomationContext;
 use App\Models\Contact;
 use App\Models\Flow;
-use App\Models\FlowVersion;
 use App\Models\Sequence;
 use App\Models\SequenceEnrollment;
 use App\Models\Thread;
 use App\Models\UazapiConnection;
 use App\Models\Workspace;
 use App\Services\AuditLogService;
-use App\Services\Flows\FlowGraphValidator;
 use App\Services\Sequences\SequenceDefinitionService;
 use App\Services\Sequences\SequenceEnrollmentService;
 use Illuminate\Http\JsonResponse;
@@ -79,7 +77,9 @@ class SequenceController extends Controller
         $model = Sequence::where('workspace_id', $workspace->id)->findOrFail($sequence);
 
         return Inertia::render('sequences/editor', ['workspace' => ['id' => $workspace->id, 'name' => $workspace->name],
-            'sequence' => $model, 'flows' => $this->flows($workspace), 'timezones' => timezone_identifiers_list(),
+            'sequence' => $model, 'flows' => $this->flows($workspace),
+            'inactive_flows' => Flow::where('workspace_id', $workspace->id)->where('is_active', false)->orderBy('name')->get(['id', 'name']),
+            'timezones' => timezone_identifiers_list(),
             'published_version' => $model->publishedVersion?->version,
             'enrollments' => $model->enrollments()->when(! ($request->user()->canAccessWorkspace($workspace, WorkspaceRole::Admin) || $request->user()->membershipFor($workspace)->can_view_unassigned), fn ($query) => $query->whereHas('thread', fn ($thread) => $thread->where('assigned_to_user_id', $request->user()->id)))->with('version', 'nextStep.flowVersion.flow', 'contact')->latest('id')->limit(20)->get()
                 ->map(fn ($enrollment) => array_merge($this->snapshot($enrollment), ['contact_id' => $enrollment->contact_id, 'contact_name' => $enrollment->contact?->display_name ?: $enrollment->contact?->phone]))]);
@@ -122,13 +122,6 @@ class SequenceController extends Controller
             $sequence = Sequence::where('workspace_id', $workspace->id)->whereKey($id)->lockForUpdate()->firstOrFail();
             if ($active) {
                 abort_unless($sequence->published_version_id, 422, 'Publique uma versão antes de ativar.');
-                $ids = DB::table('sequence_version_flows')->where('sequence_version_id', $sequence->published_version_id)->pluck('flow_id');
-                abort_unless(Flow::where('workspace_id', $workspace->id)->whereIn('id', $ids)->where('is_active', true)->count() === $ids->count(), 409, 'Ative os fluxos referenciados antes de reativar a sequência.');
-                $versionIds = DB::table('sequence_version_flows')->where('sequence_version_id', $sequence->published_version_id)->pluck('flow_version_id');
-                foreach (FlowVersion::where('workspace_id', $workspace->id)->whereIn('id', $versionIds)->get() as $version) {
-                    $validator = app(FlowGraphValidator::class);
-                    $validator->validateResourceReferences($validator->normalize($version->graph), $workspace);
-                }
             }
             $sequence->update(['is_active' => $active]);
             app(AuditLogService::class)->record($workspace, $active ? 'sequence.activated' : 'sequence.deactivated', $request->user(), $sequence);

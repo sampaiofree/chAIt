@@ -85,7 +85,7 @@ class SequenceDefinitionService
             $data = $this->validate($workspace, $sequence->draft, true);
             $versions = [];
             foreach ($data['steps'] as $i => $step) {
-                $this->captureFlow($workspace, (int) $step['flow_id'], $versions, [], "steps.$i.flow_id");
+                $this->captureFlow($workspace, (int) $step['flow_id'], $versions, "steps.$i.flow_id");
             }
             $version = $sequence->versions()->create([
                 'workspace_id' => $workspace->id, 'version' => ((int) $sequence->versions()->max('version')) + 1,
@@ -108,25 +108,16 @@ class SequenceDefinitionService
         });
     }
 
-    private function captureFlow(Workspace $workspace, int $flowId, array &$versions, array $path, string $field): void
+    private function captureFlow(Workspace $workspace, int $flowId, array &$versions, string $field): void
     {
-        if (in_array($flowId, $path, true) || count($path) > 20) {
-            throw ValidationException::withMessages([$field => 'A cadeia de fluxos possui ciclo ou excede o limite de saltos.']);
-        }
         if (isset($versions[$flowId])) {
             return;
         }
         $flow = Flow::where('workspace_id', $workspace->id)->whereKey($flowId)->lockForUpdate()->first();
         if (! $flow?->is_active || ! $flow->published_version_id) {
-            throw ValidationException::withMessages([$field => 'Selecione um fluxo publicado e ativo deste workspace.']);
+            throw ValidationException::withMessages([$field => 'Selecione um fluxo ativo deste workspace.']);
         }
         $version = FlowVersion::where('workspace_id', $workspace->id)->where('flow_id', $flowId)->findOrFail($flow->published_version_id);
-        $path[] = $flowId;
-        foreach ($version->graph['nodes'] ?? [] as $node) {
-            if (($node['type'] ?? '') === 'jump_flow') {
-                $this->captureFlow($workspace, (int) ($node['data']['target_flow_id'] ?? 0), $versions, $path, $field);
-            }
-        }
         $versions[$flowId] = $version;
     }
 

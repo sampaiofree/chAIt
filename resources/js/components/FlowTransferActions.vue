@@ -19,8 +19,8 @@ export type FlowImportResult = {
 };
 const props = defineProps<{
     endpoint: string;
-    published: boolean;
     disabled: boolean;
+    editToken: string;
     revisions: () => {
         base_revision: number;
         generation: string | null;
@@ -38,7 +38,6 @@ const errors = ref<string[]>([]);
 const notice = ref('');
 const copied = ref(false);
 const confirming = ref(false);
-const source = ref<'draft' | 'published'>('draft');
 let validated: {
     json: string;
     base_revision: number;
@@ -53,6 +52,7 @@ async function request(path: string, body?: unknown) {
         headers: {
             Accept: 'application/json',
             'Content-Type': 'application/json',
+            'X-Flow-Edit-Token': props.editToken,
             'X-CSRF-TOKEN':
                 document.querySelector<HTMLMetaElement>(
                     'meta[name="csrf-token"]',
@@ -144,7 +144,7 @@ async function importFlow() {
         open.value = false;
         props.end();
         notice.value =
-            'Fluxo importado e rascunho salvo. Revise as configurações antes de publicar.';
+            'Fluxo importado e salvo. Revise as configurações antes de ativar.';
     } catch (error) {
         confirming.value = false;
         errors.value = (
@@ -203,11 +203,7 @@ async function download(path: string, fallback: string) {
             <DropdownMenuItem :disabled="disabled" @select="startImport"
                 ><FileUp :size="16" />Importar JSON</DropdownMenuItem
             >
-            <DropdownMenuItem
-                @select="
-                    source = 'draft';
-                    exportOpen = true;
-                "
+            <DropdownMenuItem @select="exportOpen = true"
                 ><FileDown :size="16" />Exportar JSON</DropdownMenuItem
             >
             <DropdownMenuItem
@@ -221,10 +217,10 @@ async function download(path: string, fallback: string) {
     }}</span>
     <AppFormDialog
         :open="open"
-        :title="confirming ? 'Substituir rascunho?' : 'Importar JSON'"
+        :title="confirming ? 'Substituir fluxo?' : 'Importar JSON'"
         :description="
             confirming
-                ? 'A importação substituirá todos os blocos, configurações e conexões do rascunho e da prévia compartilhada de toda a equipe. Essa ação não poderá ser desfeita. O plano anterior do assistente será invalidado. A versão publicada e os gatilhos não serão alterados.'
+                ? 'A importação substituirá os blocos, configurações e conexões deste fluxo. O plano anterior do assistente será invalidado.'
                 : 'Cole o conteúdo ou selecione um arquivo .json de até 5 MiB.'
         "
         :busy="busy"
@@ -279,18 +275,7 @@ async function download(path: string, fallback: string) {
         description="O arquivo exportado pode conter mensagens e instruções internas do fluxo. Revise o conteúdo antes de compartilhá-lo."
         :busy="busy"
     >
-        <form
-            @submit.prevent="download('/export?source=' + source, 'fluxo.json')"
-        >
-            <p>Alterações não salvas da prévia não serão incluídas.</p>
-            <label class="transfer-choice"
-                ><input v-model="source" type="radio" value="draft" />Rascunho
-                salvo</label
-            >
-            <label v-if="published" class="transfer-choice"
-                ><input v-model="source" type="radio" value="published" />Versão
-                publicada</label
-            >
+        <form @submit.prevent="download('/export', 'fluxo.json')">
             <div class="form-actions">
                 <AppButton
                     variant="secondary"

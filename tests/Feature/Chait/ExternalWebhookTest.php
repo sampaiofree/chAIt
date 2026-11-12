@@ -418,7 +418,7 @@ test('flow rules validate workspace and availability and protect active webhook 
     externalActivate($webhook, [], $base['tag_rules']);
     $this->postJson(externalReceiveUrl($webhook), ['phone' => '5527999999999'])->assertOk();
     expect($webhook->receipts()->sole()->flow_result['status'])->toBe('connection_unavailable');
-    $this->postJson(route('workspaces.flows.deactivate', [$workspace, $flow]))->assertConflict();
+    $this->postJson(route('workspaces.flows.deactivate', [$workspace, $flow]))->assertOk();
 });
 
 test('webhook test mode has no flow effects and unavailable flows preserve contact updates', function () {

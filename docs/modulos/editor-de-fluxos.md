@@ -1,5 +1,7 @@
 # Editor Visual de Fluxos e Automações
 
+> **Atualização:** as regras de edição e execução de fluxos foram substituídas pelas de [salvamento automático e ativação](fluxos-salvamento-automatico.md). Elas prevalecem sobre as referências históricas a rascunhos, prévias e publicação de fluxos neste documento.
+
 > Revisão documental em 16/10/2026, confrontada com o código; não representa nova homologação operacional.
 
 > **Especificação funcional e técnica — revisão documental de 16/10/2026**  

@@ -35,7 +35,7 @@ class AssistantOpenAiClient
         }
         $data = $response->json();
         if (! is_array($data) || ($data['status'] ?? 'completed') !== 'completed' || ! is_array($data['output'] ?? null)) {
-            throw new RuntimeException('A OpenAI retornou uma resposta incompleta. Retome a partir da prévia atual.');
+            throw new RuntimeException('A OpenAI retornou uma resposta incompleta. Retome a partir do fluxo atual.');
         }
 
         return $data['output'];

@@ -10,6 +10,7 @@ use App\Models\FlowAiRun;
 use App\Models\User;
 use App\Models\WorkspaceOpenAiIntegration;
 use App\Services\Flows\FlowCapabilities;
+use App\Services\Flows\FlowEditLock;
 use App\Services\Flows\FlowGraphValidator;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
@@ -31,7 +32,7 @@ class FlowAssistantService
         $run = $conversation ? FlowAiRun::where('conversation_id', $conversation->id)->latest('id')->first() : null;
         // Reconcile a terminated/lost worker without waiting for a new request to the model.
         if ($run && in_array($run->status, ['queued', 'running']) && ($run->started_at ?? $run->created_at)->addSeconds(210)->isPast()) {
-            $this->pause($run->id, 'A execução foi interrompida. Você pode retomar a prévia.');
+            $this->pause($run->id, 'A execução foi interrompida. Você pode retomar o fluxo.');
             $run->refresh();
         }
         $flow = $flow->fresh();
@@ -98,15 +99,16 @@ class FlowAssistantService
         } else {
             FlowAiMessage::where('conversation_id', $conversation->id)->where('kind', 'plan')->where('status', 'pending')->update(['status' => 'superseded']);
         }
-        $message = FlowAiMessage::create(['conversation_id' => $conversation->id, 'user_id' => $user->id, 'role' => 'user', 'content' => $planId ? 'Plano aprovado. Construa a prévia compartilhada.' : $this->tools->sanitize($data['content']), 'generation' => $session->generation]);
+        $message = FlowAiMessage::create(['conversation_id' => $conversation->id, 'user_id' => $user->id, 'role' => 'user', 'content' => $planId ? 'Plano aprovado. Construa o fluxo.' : $this->tools->sanitize($data['content']), 'generation' => $session->generation]);
         $conversation->update(['model' => $preference, 'state' => $purpose]);
 
-        return FlowAiRun::create(['conversation_id' => $conversation->id, 'user_id' => $user->id, 'generation' => $session->generation, 'model' => $model, 'purpose' => $purpose, 'message_id' => $message->id, 'credential_fingerprint' => hash('sha256', WorkspaceOpenAiIntegration::where('workspace_id', $flow->workspace_id)->first()?->api_key ?? '')]);
+        return FlowAiRun::create(['conversation_id' => $conversation->id, 'user_id' => $user->id, 'generation' => $session->generation, 'model' => $model, 'purpose' => $purpose, 'message_id' => $message->id, 'edit_token' => request()->header('X-Flow-Edit-Token'), 'credential_fingerprint' => hash('sha256', WorkspaceOpenAiIntegration::where('workspace_id', $flow->workspace_id)->first()?->api_key ?? '')]);
     }
 
     public function stop(Flow $flow, int $id): void
     {
         $this->drafts->locked($flow, function (Flow $flow) use ($id) {
+            app(FlowEditLock::class)->assertHeld($flow, request()->header('X-Flow-Edit-Token'), request()->user()?->id);
             $conversation = FlowAiConversation::where('flow_id', $flow->id)->firstOrFail();
             $run = FlowAiRun::where('conversation_id', $conversation->id)->findOrFail($id);
             if (in_array($run->status, ['queued', 'running'])) {
@@ -126,7 +128,7 @@ class FlowAssistantService
             $session = $this->drafts->check($flow, $data);
             abort_unless((int) FlowAiRun::where('conversation_id', $conversation->id)->latest('id')->value('id') === $previous->id && $session && $session->generation === $previous->generation && $previous->status === 'paused', 409, 'Esta execução não pode ser retomada.');
 
-            return $this->createRun($flow, $user, array_merge($data, ['content' => 'Retome o pedido anterior a partir da prévia atual. Preserve os blocos existentes e conclua somente o que falta.']), null, $preference, $model);
+            return $this->createRun($flow, $user, array_merge($data, ['content' => 'Retome o pedido anterior a partir do fluxo atual. Preserve os blocos existentes e conclua somente o que falta.']), null, $preference, $model);
         });
         ProcessFlowAssistant::dispatch($run->id)->afterCommit();
 
@@ -182,6 +184,7 @@ class FlowAssistantService
                 if ($run->status !== 'queued' || ! $session || $session->generation !== $run->generation) {
                     return false;
                 }
+                app(FlowEditLock::class)->assertHeld($flow, $run->edit_token, $run->user_id);
                 $this->access->check(User::find($run->user_id), $flow, true);
                 $run->update(['status' => 'running', 'started_at' => now()]);
 
@@ -199,7 +202,7 @@ class FlowAssistantService
                 }
                 $this->access->check(User::find($run->user_id), $flow, true);
                 if ($run->cycles + 1 > config('flow-assistant.max_cycles') || microtime(true) >= $deadline) {
-                    throw new RuntimeException('O limite técnico da execução foi atingido. Retome a partir da prévia atual.');
+                    throw new RuntimeException('O limite técnico da execução foi atingido. Retome a partir do fluxo atual.');
                 }
                 $integration = WorkspaceOpenAiIntegration::where('workspace_id', $flow->workspace_id)->first();
                 if (! $integration) {
@@ -210,11 +213,11 @@ class FlowAssistantService
                     throw new RuntimeException('A chave OpenAI mudou. Retome com a nova integração.');
                 }
                 if (strlen(json_encode($input, JSON_THROW_ON_ERROR)) > config('flow-assistant.context_characters')) {
-                    throw new RuntimeException('O contexto da execução atingiu o limite técnico. Retome a partir da prévia atual.');
+                    throw new RuntimeException('O contexto da execução atingiu o limite técnico. Retome a partir do fluxo atual.');
                 }
                 $output = $this->openai->respond($integration->api_key, $run->model, $this->instructions(), $input, $this->tools->schemas(in_array($run->purpose, ['building', 'editing'])), $deadline - microtime(true));
                 if (microtime(true) >= $deadline) {
-                    throw new RuntimeException('O tempo da execução terminou. Os lotes já aplicados permanecem na prévia.');
+                    throw new RuntimeException('O tempo da execução terminou. Os lotes já aplicados permanecem no fluxo.');
                 }
                 $this->access->check(User::find($run->user_id), $flow, true);
                 abort_unless(hash_equals($keyVersion, hash('sha256', WorkspaceOpenAiIntegration::where('workspace_id', $flow->workspace_id)->first()?->api_key ?? '')), 409, 'A chave OpenAI mudou durante a execução.');
@@ -223,6 +226,7 @@ class FlowAssistantService
                     if ($run->status !== 'running' || $this->drafts->current($flow)?->generation !== $run->generation) {
                         return false;
                     }
+                    app(FlowEditLock::class)->assertHeld($flow, $run->edit_token, $run->user_id);
                     $run->update(['cycles' => $run->cycles + 1]);
 
                     return true;
@@ -233,7 +237,7 @@ class FlowAssistantService
                 $input = array_merge($input, $output);
                 $calls = array_values(array_filter($output, fn ($item) => ($item['type'] ?? '') === 'function_call'));
                 if (count($calls) > 1) {
-                    throw new RuntimeException('A IA tentou executar ferramentas paralelas. Retome a prévia.');
+                    throw new RuntimeException('A IA tentou executar ferramentas paralelas. Retome o fluxo.');
                 }
                 if ($calls !== []) {
                     $call = $calls[0];
@@ -276,7 +280,7 @@ class FlowAssistantService
         } catch (\Throwable $error) {
             if ($error instanceof QueryException || $error instanceof \PDOException) {
                 Log::warning('Flow assistant database failure', ['run_id' => $id, 'flow_id' => $flow->id, 'sqlstate' => $error->errorInfo[0] ?? (string) $error->getCode()]);
-                $message = 'Não foi possível atualizar a prévia no banco. Os lotes confirmados foram preservados. Tente retomar.';
+                $message = 'Não foi possível atualizar o fluxo. Os lotes confirmados foram preservados. Tente retomar.';
             } else {
                 $message = $error instanceof ValidationException ? implode(' ', array_merge(...array_values($error->errors()))) : (($error instanceof RuntimeException || $error instanceof HttpException) ? $error->getMessage() : 'Falha no processamento do assistente. Os lotes confirmados foram preservados.');
             }

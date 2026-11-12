@@ -1,5 +1,7 @@
 # Campos do contato nos fluxos
 
+> **Atualização:** as regras de edição e execução de fluxos foram substituídas pelas de [salvamento automático e ativação](fluxos-salvamento-automatico.md). Elas prevalecem sobre as referências históricas a rascunhos, prévias e publicação de fluxos neste documento.
+
 > **Liberação em 17/10/2026:** por decisão do responsável, publicação e execução estão liberadas em todas as conexões, inclusive produção, sem perfis ou variáveis de homologação. A validação real em produção será feita pelo responsável; esta liberação não acrescenta evidências de homologação. Os ensaios anteriores permanecem como histórico.
 
 > O registro de implementação anterior ao ensaio com túnel é histórico; o resultado operacional está no fim desta página.

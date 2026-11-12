@@ -40,6 +40,7 @@ const props = defineProps<{
     fields: { id: number; name: string; type: string }[];
     tags: { id: number; name: string; color: string }[];
     flows: { id: number; name: string }[];
+    inactive_flows: { id: number; name: string }[];
 }>();
 const flowResultLabels: Record<string, string> = {
     started: 'Fluxo iniciado',
@@ -835,8 +836,16 @@ onBeforeUnmount(() => {
                                             )
                                         "
                                         :value="rule.flowId"
+                                        disabled
                                     >
-                                        Fluxo indisponível
+                                        {{
+                                            inactive_flows.find(
+                                                (f) =>
+                                                    String(f.id) ===
+                                                    rule.flowId,
+                                            )?.name || 'Fluxo indisponível'
+                                        }}
+                                        (inativo)
                                     </option>
                                     <option
                                         v-for="flow in flows"

@@ -1,5 +1,7 @@
 # CHAIT — Importação, exportação e compartilhamento de fluxos em JSON
 
+> **Atualização:** as regras de edição e execução de fluxos foram substituídas pelas de [salvamento automático e ativação](fluxos-salvamento-automatico.md). Elas prevalecem sobre as referências históricas a rascunhos, prévias e publicação de fluxos neste documento.
+
 > **Documento:** especificação funcional e diretrizes técnicas
 > **Data:** 15/10/2026
 > **Status:** implementado localmente; testes descritos na seção de implementação

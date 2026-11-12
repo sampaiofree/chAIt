@@ -43,6 +43,10 @@ test('workspace owner creates a flow with one start node and edits its graph', f
     $flow = Flow::query()->sole();
     expect($flow->graph['nodes'])->toHaveCount(1)->and($flow->graph['nodes'][0]['type'])->toBe('start');
 
+    $token = (string) str()->uuid();
+    $this->postJson(route('workspaces.flows.edit-lock.acquire', [$workspace, $flow]), ['token' => $token])->assertOk();
+    $this->withHeader('X-Flow-Edit-Token', $token);
+
     $this->putJson(route('workspaces.flows.update', [$workspace, $flow]), [
         'name' => 'Boas-vindas', 'graph' => validFlowGraph(), 'revision' => 1,
     ])->assertOk()->assertJsonPath('data.revision', 2)->assertJsonPath('data.graph.nodes.1.data.items.0.text', 'Olá');
@@ -89,6 +93,10 @@ test('concurrent flow updates return a conflict and preserve the winning revisio
     $owner = User::factory()->create();
     $workspace = $owner->fresh()->currentWorkspace;
     $flow = $workspace->flows()->create(['name' => 'Rascunho', 'graph' => validFlowGraph()]);
+
+    $token = (string) str()->uuid();
+    $this->actingAs($owner)->postJson(route('workspaces.flows.edit-lock.acquire', [$workspace, $flow]), ['token' => $token])->assertOk();
+    $this->withHeader('X-Flow-Edit-Token', $token);
 
     $this->actingAs($owner)->putJson(route('workspaces.flows.update', [$workspace, $flow]), ['name' => 'Primeira aba', 'graph' => validFlowGraph(), 'revision' => 1])->assertOk();
     $this->putJson(route('workspaces.flows.update', [$workspace, $flow]), ['name' => 'Segunda aba', 'graph' => validFlowGraph(), 'revision' => 1])->assertConflict();

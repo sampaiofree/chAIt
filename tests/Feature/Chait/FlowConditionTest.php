@@ -102,8 +102,11 @@ test('incomplete conditions save as drafts but cannot publish and diagnostics id
     $f = conditionFixture();
     [$flow] = conditionVersion($f, ['condition_operator' => 'all', 'checks' => []]);
     $graph = $flow->graph;
-    $this->actingAs($f['user'])->putJson("/workspaces/{$f['workspace']->id}/flows/{$flow->id}", ['name' => $flow->name, 'graph' => $graph, 'revision' => 1])->assertOk();
-    $this->postJson("/workspaces/{$f['workspace']->id}/flows/{$flow->id}/publish", ['revision' => 2])->assertUnprocessable()->assertJsonValidationErrors('graph.nodes.condition.checks');
+    $flow->update(['is_active' => false]);
+    $token = (string) str()->uuid();
+    $this->actingAs($f['user'])->postJson(route('workspaces.flows.edit-lock.acquire', [$f['workspace'], $flow]), ['token' => $token])->assertOk();
+    $this->withHeader('X-Flow-Edit-Token', $token)->putJson("/workspaces/{$f['workspace']->id}/flows/{$flow->id}", ['name' => $flow->name, 'graph' => $graph, 'revision' => 1])->assertOk();
+    $this->postJson("/workspaces/{$f['workspace']->id}/flows/{$flow->id}/activate", ['revision' => 2])->assertUnprocessable()->assertJsonValidationErrors('graph.nodes.condition.checks');
     $graph['nodes'][1]['data']['checks'] = [['kind' => 'field', 'field_key' => 'display_name', 'operator' => 'equals', 'value' => '   ']];
     $pending = app(AssistantTools::class)->validate($graph, $f['workspace'])['pending'];
     expect($pending)->toContain(['node_id' => 'condition', 'path' => 'checks.0.value', 'message' => 'Preencha a expressão com até 4.000 caracteres.']);
@@ -196,7 +199,7 @@ test('deletion blocks every existing published block reference', function (strin
     $version->update(['graph' => ['nodes' => [['id' => 'ref', 'type' => $type === 'legacy' ? 'condition' : $type, 'data' => $data]]]]);
     $path = $kind === 'field' ? 'contact-fields' : 'tags';
     $this->actingAs($f['user'])->deleteJson("/workspaces/{$f['workspace']->id}/$path/$id")->assertUnprocessable()->assertJsonValidationErrors('resource');
-    expect(app(ContactResourceReferences::class)->find($f['workspace'], $kind, $id))->toContain('Fluxo “Condição” (versão 1)');
+    expect(app(ContactResourceReferences::class)->find($f['workspace'], $kind, $id))->toContain('Fluxo “Condição”');
 })->with([['tag', 'legacy'], ['tag', 'condition'], ['field', 'condition'], ['field', 'wait_reply'], ['tag', 'operations'], ['field', 'operations'], ['tag', 'ai'], ['field', 'ai']]);
 
 test('old versions are protected by active executions and released once dependencies end', function () {
@@ -223,8 +226,8 @@ test('sequence snapshots protect old versions before an execution starts', funct
     }
     $next = $flow->versions()->create(['workspace_id' => $f['workspace']->id, 'version' => 2, 'graph' => ['nodes' => []], 'published_at' => now()]);
     $flow->update(['published_version_id' => $next->id]);
-    expect(app(ContactResourceReferences::class)->find($f['workspace'], 'tag', $f['tag']->id))->toContain('Sequência “Retorno”');
-    $this->actingAs($f['user'])->deleteJson("/workspaces/{$f['workspace']->id}/tags/{$f['tag']->id}")->assertUnprocessable();
+    expect(app(ContactResourceReferences::class)->find($f['workspace'], 'tag', $f['tag']->id))->not->toContain('Sequência “Retorno”');
+    $this->actingAs($f['user'])->delete("/workspaces/{$f['workspace']->id}/tags/{$f['tag']->id}")->assertRedirect();
 })->with([true, false]);
 
 test('active webhooks protect their field and tag references while drafts do not', function () {

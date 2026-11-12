@@ -76,10 +76,13 @@ class FlowExecutionManager
         });
     }
 
-    private function create(AutomationContext $context, FlowVersion $version, int $threadId, string $source, int $depth, array $origin): FlowExecution
+    private function create(AutomationContext $context, FlowVersion $version, int $threadId, string $source, int $depth, array $origin): ?FlowExecution
     {
-        Flow::where('workspace_id', $context->workspace_id)->whereKey($version->flow_id)->lockForUpdate()->firstOrFail();
-        abort_unless(FlowVersion::whereKey($version->id)->where('flow_id', $version->flow_id)->exists(), 409, 'Esta versão do fluxo não está mais disponível.');
+        $flow = Flow::where('workspace_id', $context->workspace_id)->whereKey($version->flow_id)->lockForUpdate()->first();
+        if (! $flow?->is_active || ! $flow->published_version_id) {
+            return null;
+        }
+        $version = FlowVersion::whereKey($flow->published_version_id)->where('flow_id', $flow->id)->firstOrFail();
         $start = collect($version->graph['nodes'])->firstWhere('type', 'start');
         abort_unless($start, 422, 'O fluxo publicado não possui início.');
         $execution = FlowExecution::create([
@@ -123,11 +126,16 @@ class FlowExecutionManager
                 return;
             }
             abort_unless($target->workspace_id === $execution->workspace_id, 404);
-            $execution->update(['status' => 'completed', 'finished_at' => now(), 'terminal_reason' => 'flow_jump']);
             $next = $this->create($context, $target, $execution->thread_id, 'flow_jump', ((int) ($execution->context['depth'] ?? 0)) + 1, [
                 'sequence_enrollment_id' => $execution->sequence_enrollment_id,
                 'sequence_step_id' => $execution->sequence_step_id, 'continued_from_id' => $execution->id,
             ]);
+            if (! $next) {
+                app(FlowRuntime::class)->finish($execution, 'interrupted', 'Fluxo de destino inativo.', 'target_flow_inactive');
+
+                return;
+            }
+            $execution->update(['status' => 'completed', 'finished_at' => now(), 'terminal_reason' => 'flow_jump']);
             if ($execution->sequence_enrollment_id) {
                 DB::table('sequence_enrollments')->where('id', $execution->sequence_enrollment_id)
                     ->where('current_step_execution_id', $execution->id)->update(['current_step_execution_id' => $next->id, 'updated_at' => now()]);

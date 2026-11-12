@@ -15,6 +15,7 @@ use App\Services\Flows\ContactTemplate;
 use App\Services\Flows\FlowCapabilities;
 use App\Services\Flows\FlowCondition;
 use App\Services\Flows\FlowContentButton;
+use App\Services\Flows\FlowEditLock;
 use App\Services\Flows\FlowGraphValidator;
 use App\Services\Flows\FlowMenu;
 use Illuminate\Support\Facades\Validator;
@@ -97,7 +98,7 @@ class AssistantTools
         $function = fn ($name, $description, $parameters) => ['type' => 'function', 'name' => $name, 'description' => $description, 'strict' => true, 'parameters' => $parameters];
         $empty = $this->object([]);
         $tools = [];
-        foreach (['get_editor_capabilities' => 'Consulte capacidades e limitações reais do editor.', 'get_current_flow' => 'Leia a prévia atual do fluxo aberto.', 'list_tags' => 'Consulte somente definições de etiquetas.', 'list_custom_fields' => 'Consulte somente definições de campos.', 'validate_flow' => 'Confira estrutura e pendências do fluxo sem publicar.'] as $name => $description) {
+        foreach (['get_editor_capabilities' => 'Consulte capacidades e limitações reais do editor.', 'get_current_flow' => 'Leia o fluxo atual do fluxo aberto.', 'list_tags' => 'Consulte somente definições de etiquetas.', 'list_custom_fields' => 'Consulte somente definições de campos.', 'validate_flow' => 'Confira estrutura e pendências do fluxo sem ativar.'] as $name => $description) {
             $tools[] = $function($name, $description, $empty);
         }
         $tools[] = $function('propose_plan', 'Registre o briefing consolidado e um plano em linguagem simples para o usuário aprovar. Não construa neste turno.', $this->object(['briefing' => ['type' => 'string', 'maxLength' => 16000], 'plan' => ['type' => 'string', 'maxLength' => 16000]]));
@@ -122,11 +123,12 @@ class AssistantTools
     {
         return $this->drafts->locked($flow, function (Flow $flow) use ($run, $callId, $name, $args) {
             $run = FlowAiRun::findOrFail($run->id);
+            app(FlowEditLock::class)->assertHeld($flow, $run->edit_token, $run->user_id);
             $this->access->check(User::find($run->user_id), $flow, true);
             abort_unless(hash_equals($run->credential_fingerprint ?? '', hash('sha256', WorkspaceOpenAiIntegration::where('workspace_id', $flow->workspace_id)->first()?->api_key ?? '')), 409, 'A chave OpenAI mudou. Retome a execução.');
             $session = $this->drafts->current($flow);
             abort_unless($session && $session->generation === $run->generation && $session->base_revision === $flow->revision && $run->status === 'running', 409, 'A execução não está mais ativa.');
-            abort_if($run->started_at && $run->started_at->addSeconds(config('flow-assistant.run_seconds'))->isPast(), 409, 'O tempo da execução terminou. Retome a prévia.');
+            abort_if($run->started_at && $run->started_at->addSeconds(config('flow-assistant.run_seconds'))->isPast(), 409, 'O tempo da execução terminou. Retome o fluxo.');
             $fingerprint = hash('sha256', json_encode([$name, $args], JSON_THROW_ON_ERROR));
             $prior = FlowAiOperation::where('run_id', $run->id)->where('call_id', $callId)->first();
             if ($prior) {
@@ -188,11 +190,11 @@ class AssistantTools
                 default => false,
             };
             if ($missing) {
-                $pending[] = ['node_id' => $node['id'], 'message' => 'Este bloco precisa de configuração manual antes de publicar.'];
+                $pending[] = ['node_id' => $node['id'], 'message' => 'Este bloco precisa de configuração manual antes de ativar.'];
             }
         }
 
-        return ['structure_valid' => true, 'pending' => $pending, 'message' => 'A publicação manual executará a validação completa, incluindo referências e integração.'];
+        return ['structure_valid' => true, 'pending' => $pending, 'message' => 'A ativação manual executará a validação completa, incluindo referências e integração.'];
     }
 
     private function plan(FlowAiRun $run, array $args): array
@@ -214,7 +216,7 @@ class AssistantTools
         abort_unless(in_array($run->purpose, ['building', 'editing']) && in_array($conversation->state, ['building', 'editing']) && $conversation->approved_plan_id !== null && FlowAiMessage::where('conversation_id', $conversation->id)->whereKey($conversation->approved_plan_id)->whereNotNull('approved_at')->whereIn('status', ['approved', 'saved', 'temporary'])->exists(), 403, 'Aprove o plano antes de construir.');
         Validator::make($args, ['expected_draft_revision' => 'required|integer', 'operations' => 'required|array|min:1|max:'.config('flow-assistant.operations_per_batch'), 'operations.*.op' => 'required|in:add_node,update_node,move_node,remove_node,connect,disconnect'])->validate();
         $session = $this->drafts->current($flow);
-        abort_unless($session->revision === $args['expected_draft_revision'], 409, 'A revisão da prévia mudou. Leia o fluxo novamente.');
+        abort_unless($session->revision === $args['expected_draft_revision'], 409, 'A revisão do fluxo mudou. Leia o fluxo novamente.');
         $graph = app(FlowGraphValidator::class)->normalize($session->graph);
         $refs = [];
         foreach (FlowAiOperation::where('run_id', $run->id)->where('name', 'apply_flow_patch')->get() as $operation) {
@@ -268,8 +270,9 @@ class AssistantTools
         }
         $graph = app(FlowGraphValidator::class)->validate($graph);
         app(ContactTemplate::class)->references($graph, $flow->workspace, $session->graph);
-        $session->update(['graph' => $graph, 'revision' => $session->revision + 1]);
-        FlowAiMessage::create(['conversation_id' => $conversation->id, 'user_id' => $run->user_id, 'role' => 'system', 'kind' => 'operation', 'content' => count($args['operations']).' alterações aplicadas na prévia compartilhada.', 'status' => 'temporary', 'generation' => $run->generation]);
+        $flow->update(['graph' => $graph, 'revision' => $flow->revision + 1]);
+        $session->update(['graph' => $graph, 'base_revision' => $flow->revision, 'revision' => $session->revision + 1]);
+        FlowAiMessage::create(['conversation_id' => $conversation->id, 'user_id' => $run->user_id, 'role' => 'system', 'kind' => 'operation', 'content' => count($args['operations']).' alterações aplicadas no fluxo.', 'status' => 'temporary', 'generation' => $run->generation]);
 
         return ['revision' => $session->revision, 'refs' => $refs, 'validation' => $this->validate($graph, $flow->workspace)];
     }

@@ -52,8 +52,8 @@ const disabled = computed(
 const statuses: Record<string, string> = {
     pending: 'Aguardando aprovação',
     approved: 'Plano aprovado',
-    temporary: 'Prévia não salva',
-    saved: 'Salvo no rascunho',
+    temporary: 'Salvo automaticamente',
+    saved: 'Salvo',
     discarded: 'Descartado',
     superseded: 'Plano substituído',
 };
@@ -148,8 +148,8 @@ onBeforeUnmount(() => {
             /></AppIconButton>
         </header>
         <p class="assistant-help">
-            Conversa e prévia compartilhadas com a equipe. Revise e salve o
-            resultado no editor.
+            As alterações no fluxo são salvas automaticamente. Revise e ative o
+            fluxo quando estiver pronto.
         </p>
         <div
             ref="history"
@@ -191,7 +191,7 @@ onBeforeUnmount(() => {
                 >
             </article>
             <p v-if="running" class="assistant-progress" role="status">
-                A IA está trabalhando na prévia. A edição manual está pausada
+                A IA está trabalhando no fluxo. A edição manual está pausada
                 para a equipe.
             </p>
         </div>

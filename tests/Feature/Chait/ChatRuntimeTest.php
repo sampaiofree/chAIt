@@ -615,6 +615,7 @@ function runtimeAi(array $f): array
     $graph = ['schema_version' => 2, 'nodes' => [['id' => 'ai', 'type' => 'ai', 'data' => $data]], 'edges' => []];
     $flow = Flow::create(['workspace_id' => $f['workspace']->id, 'name' => 'Runtime AI', 'revision' => 1, 'graph' => $graph]);
     $version = $flow->versions()->create(['workspace_id' => $f['workspace']->id, 'version' => 1, 'graph' => $graph, 'published_at' => now()]);
+    $flow->update(['is_active' => true, 'published_version_id' => $version->id]);
     $execution = FlowExecution::create(['workspace_id' => $f['workspace']->id, 'flow_id' => $flow->id, 'flow_version_id' => $version->id, 'contact_id' => $f['thread']->contact_id, 'thread_id' => $f['thread']->id, 'uazapi_connection_id' => $f['connection']->id, 'status' => 'waiting_ai', 'trigger_source' => 'test', 'current_node_id' => 'ai', 'context' => [], 'started_at' => now()]);
     $session = AiSession::create(['workspace_id' => $f['workspace']->id, 'flow_execution_id' => $execution->id, 'flow_version_id' => $version->id, 'contact_id' => $f['thread']->contact_id, 'thread_id' => $f['thread']->id, 'uazapi_connection_id' => $f['connection']->id, 'node_id' => 'ai', 'model' => 'gpt-6.1-sol', 'remote_conversation_id' => 'remote-test', 'expires_at' => now()->addHour()]);
     WorkspaceOpenAiIntegration::create(['workspace_id' => $f['workspace']->id, 'api_key' => 'fake-ai-key']);

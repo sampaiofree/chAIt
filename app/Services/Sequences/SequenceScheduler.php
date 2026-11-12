@@ -8,6 +8,7 @@ use App\Jobs\ProcessFlowExecution;
 use App\Jobs\ProcessSequenceStep;
 use App\Models\AiSession;
 use App\Models\AutomationContext;
+use App\Models\Flow;
 use App\Models\FlowExecution;
 use App\Models\SequenceEnrollment;
 use App\Models\SequenceStep;
@@ -149,7 +150,22 @@ class SequenceScheduler
                 }
                 $connection = UazapiConnection::findOrFail($context->uazapi_connection_id);
                 $step = $current->nextStep;
-                $execution = app(FlowExecutionManager::class)->start($step->flowVersion, $context->contact_id, $current->thread_id, $connection, 'sequence', origin: [
+                $flow = Flow::where('workspace_id', $context->workspace_id)->whereKey($step->flowVersion?->flow_id)->lockForUpdate()->first();
+                if (! $flow?->is_active || ! $flow->publishedVersion) {
+                    app(SequenceEnrollmentService::class)->audit($current, 'step_skipped', ['reason' => 'flow_inactive', 'step_id' => $step->id]);
+                    $next = SequenceStep::where('sequence_version_id', $current->sequence_version_id)->where('position', $step->position + 1)->first();
+                    if (! $next) {
+                        $this->terminate($context, $current, 'completed', 'flow_inactive');
+
+                        return;
+                    }
+                    $current->update(['next_step_id' => $next->id, 'current_step_execution_id' => null, 'status' => 'waiting_current_flow',
+                        'due_at' => null, 'remaining_seconds' => null, 'running_since' => null, 'generation' => $current->generation + 1]);
+                    $this->reconcileLocked($context);
+
+                    return;
+                }
+                $execution = app(FlowExecutionManager::class)->start($flow->publishedVersion, $context->contact_id, $current->thread_id, $connection, 'sequence', origin: [
                     'sequence_enrollment_id' => $current->id, 'sequence_step_id' => $step->id,
                 ]);
                 if (! $execution) {

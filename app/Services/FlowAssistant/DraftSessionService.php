@@ -9,6 +9,7 @@ use App\Models\FlowAiRun;
 use App\Models\FlowDraftSession;
 use App\Models\Workspace;
 use App\Services\Flows\ContactTemplate;
+use App\Services\Flows\FlowEditLock;
 use App\Services\Flows\FlowGraphValidator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -47,10 +48,11 @@ class DraftSessionService
 
     public function check(Flow $flow, array $data, bool $allowRunning = false): ?FlowDraftSession
     {
+        app(FlowEditLock::class)->assertHeld($flow, request()->header('X-Flow-Edit-Token'), request()->user()?->id);
         $session = $this->current($flow);
-        abort_unless((int) ($data['base_revision'] ?? $data['revision'] ?? 0) === $flow->revision, 409, 'O rascunho salvo mudou. Recarregue o estado compartilhado.');
+        abort_unless((int) ($data['base_revision'] ?? $data['revision'] ?? 0) === $flow->revision, 409, 'O fluxo mudou. Recarregue o editor.');
         if ($session) {
-            abort_unless(($data['generation'] ?? null) === $session->generation && (int) ($data['draft_revision'] ?? 0) === $session->revision && $session->base_revision === $flow->revision, 409, 'A prévia compartilhada mudou. Recarregue ou reaplique suas alterações.');
+            abort_unless(($data['generation'] ?? null) === $session->generation && (int) ($data['draft_revision'] ?? 0) === $session->revision && $session->base_revision === $flow->revision, 409, 'O fluxo mudou. Recarregue ou reaplique suas alterações.');
         } else {
             abort_if(! empty($data['generation']), 409, 'Esta sessão foi salva ou descartada pela equipe.');
         }
@@ -66,7 +68,8 @@ class DraftSessionService
         return $this->locked($flow, function (Flow $flow) use ($data, $graph) {
             $session = $this->check($flow, $data) ?? $this->ensure($flow);
             app(ContactTemplate::class)->references($graph, $flow->workspace, $session->graph);
-            $session->update(['name' => $data['name'], 'graph' => $graph, 'revision' => $session->revision + 1]);
+            $flow->update(['name' => $data['name'], 'graph' => $graph, 'revision' => $flow->revision + 1]);
+            $session->update(['name' => $data['name'], 'graph' => $graph, 'base_revision' => $flow->revision, 'revision' => $session->revision + 1]);
 
             return $session->fresh();
         });
@@ -111,7 +114,7 @@ class DraftSessionService
             FlowAiMessage::where('conversation_id', $conversation->id)->whereIn('status', ['temporary', 'approved', 'pending'])->update(['status' => 'superseded']);
             FlowAiRun::where('conversation_id', $conversation->id)->update(['provider_items' => null]);
             $conversation->update(['state' => 'briefing', 'approved_plan_id' => null]);
-            FlowAiMessage::create(['conversation_id' => $conversation->id, 'user_id' => $actorId, 'role' => 'system', 'kind' => 'session', 'content' => 'A equipe importou um fluxo JSON e substituiu o rascunho salvo e a prévia compartilhada. Uma nova construção exige um novo plano.', 'status' => 'saved', 'generation' => $session?->generation]);
+            FlowAiMessage::create(['conversation_id' => $conversation->id, 'user_id' => $actorId, 'role' => 'system', 'kind' => 'session', 'content' => 'A equipe importou um fluxo JSON. Uma nova construção exige um novo plano.', 'status' => 'saved', 'generation' => $session?->generation]);
         }
         $session?->delete();
 
@@ -130,7 +133,7 @@ class DraftSessionService
             FlowAiMessage::where('conversation_id', $conversation->id)->where('generation', $session->generation)->whereIn('status', ['temporary', 'approved', 'pending'])->update(['status' => $status]);
             $approved = $conversation->approved_plan_id !== null && FlowAiMessage::where('conversation_id', $conversation->id)->whereKey($conversation->approved_plan_id)->whereNotNull('approved_at')->whereIn('status', ['approved', 'saved', 'temporary'])->exists();
             $conversation->update(['state' => $status === 'discarded' || ! $approved ? 'briefing' : 'editing', 'approved_plan_id' => $status === 'discarded' ? null : $conversation->approved_plan_id]);
-            FlowAiMessage::create(['conversation_id' => $conversation->id, 'user_id' => $actorId, 'role' => 'system', 'kind' => 'session', 'content' => $status === 'saved' ? 'A equipe salvou a prévia no rascunho.' : 'A equipe descartou a prévia. O canvas voltou ao rascunho salvo.', 'status' => $status, 'generation' => $session->generation]);
+            FlowAiMessage::create(['conversation_id' => $conversation->id, 'user_id' => $actorId, 'role' => 'system', 'kind' => 'session', 'content' => $status === 'saved' ? 'A equipe salvou o fluxo.' : 'A edição foi encerrada.', 'status' => $status, 'generation' => $session->generation]);
         }
         $session->delete();
     }

@@ -51,7 +51,12 @@ export type AssistantMessage = {
     created_at: string;
 };
 export type AssistantState = {
-    flow: { name: string; graph: FlowGraph; revision: number };
+    flow: {
+        name: string;
+        graph: FlowGraph;
+        revision: number;
+        is_active?: boolean;
+    };
     session: {
         generation: string;
         name: string;
@@ -157,6 +162,14 @@ export function useFlowAssistant(options: {
     apply: (state: AssistantState) => void;
     initialRevision: number;
     userId: number;
+    editToken: string;
+    canEdit: () => boolean;
+    onSaved: (
+        snapshot: { name: string; graph: FlowGraph },
+        state: AssistantState,
+    ) => void;
+    onSaving: () => void;
+    onError: () => void;
 }) {
     const state = ref<AssistantState | null>(null);
     const error = ref('');
@@ -226,6 +239,7 @@ export function useFlowAssistant(options: {
             headers: {
                 Accept: 'application/json',
                 'Content-Type': 'application/json',
+                'X-Flow-Edit-Token': options.editToken,
                 'X-CSRF-TOKEN':
                     document.querySelector<HTMLMetaElement>(
                         'meta[name="csrf-token"]',
@@ -264,7 +278,7 @@ export function useFlowAssistant(options: {
         clearBackup();
     }
     function identity(value: AssistantState | null) {
-        return `${value?.flow.revision}:${value?.session?.generation}:${value?.session?.revision}`;
+        return `${value?.flow.revision}:${value?.flow.is_active}:${value?.session?.generation}:${value?.session?.revision}`;
     }
     async function refresh() {
         if (
@@ -307,7 +321,7 @@ export function useFlowAssistant(options: {
                 if (remoteChanged && (loaded.value || incoming.session)) {
                     conflict.value = true;
                     error.value =
-                        'A prévia compartilhada mudou. Suas alterações locais estão preservadas.';
+                        'A fluxo mudou. Suas alterações locais estão preservadas.';
                 }
 
                 state.value = incoming;
@@ -353,7 +367,7 @@ export function useFlowAssistant(options: {
                 ) {
                     conflict.value = true;
                     error.value =
-                        'Há alterações locais recuperadas e uma prévia mais recente da equipe. Carregue ou reaplique suas alterações.';
+                        'Há alterações locais recuperadas e um fluxo mais recente. Carregue ou reaplique suas alterações.';
                     baseline = clone(backup.baseline ?? remote);
                 } else {
                     conflict.value = false;
@@ -392,7 +406,7 @@ export function useFlowAssistant(options: {
         );
     }
     function changed() {
-        if (applying || disposed || replacing.value) {
+        if (applying || disposed || replacing.value || !options.canEdit()) {
             return;
         }
 
@@ -424,6 +438,10 @@ export function useFlowAssistant(options: {
     async function flush(): Promise<boolean> {
         clearTimeout(debounce);
 
+        if (!options.canEdit()) {
+            return false;
+        }
+
         if (replacing.value) {
             return false;
         }
@@ -449,10 +467,11 @@ export function useFlowAssistant(options: {
         const snapshot = clone(options.snapshot());
         const signature = JSON.stringify(snapshot);
         const expected = revisions();
+        options.onSaving();
         flushing = (async () => {
             try {
                 const incoming: AssistantState = await request(
-                    '/draft-session',
+                    '/editor-state',
                     'PUT',
                     { ...expected, ...snapshot },
                 );
@@ -461,6 +480,7 @@ export function useFlowAssistant(options: {
                 baseline = snapshot;
                 acknowledged = signature;
                 error.value = '';
+                options.onSaved(snapshot, incoming);
 
                 if (JSON.stringify(options.snapshot()) === signature) {
                     // Keep the current form and its defaults; only the shared revision changed.
@@ -471,10 +491,15 @@ export function useFlowAssistant(options: {
 
                 return true;
             } catch (caught) {
+                options.onError();
                 error.value =
                     caught instanceof Error
                         ? caught.message
-                        : 'Não foi possível sincronizar a prévia.';
+                        : 'Não foi possível salvar o fluxo.';
+
+                if (!conflict.value && options.canEdit() && !disposed) {
+                    debounce = setTimeout(() => void flush(), 2000);
+                }
 
                 return false;
             } finally {
@@ -559,33 +584,6 @@ export function useFlowAssistant(options: {
             busy.value = false;
         }
     }
-    async function discard() {
-        clearTimeout(debounce);
-
-        if (flushing) {
-            await flushing;
-        }
-
-        busy.value = true;
-
-        try {
-            // Fetch current revision before an explicit team-wide discard; local contents are not uploaded.
-            state.value = await request('/assistant');
-            await apply(await request('/draft-session', 'DELETE', revisions()));
-            error.value = '';
-
-            return true;
-        } catch (caught) {
-            error.value =
-                caught instanceof Error
-                    ? caught.message
-                    : 'Falha ao descartar a prévia.';
-
-            return false;
-        } finally {
-            busy.value = false;
-        }
-    }
     async function reload() {
         clearTimeout(debounce);
 
@@ -632,9 +630,6 @@ export function useFlowAssistant(options: {
         await nextTick();
 
         return flush();
-    }
-    async function saved() {
-        await reload();
     }
     async function beginReplacement(): Promise<boolean> {
         if (
@@ -717,10 +712,8 @@ export function useFlowAssistant(options: {
         action,
         loadModels,
         stop,
-        discard,
         reload,
         reapply,
-        saved,
         beginReplacement,
         acceptReplacement,
         endReplacement,

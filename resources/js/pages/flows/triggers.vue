@@ -18,6 +18,7 @@ const props = defineProps<{
     workspace: { id: number; name: string };
     connection: { id: number; phone: string | null; status: string };
     flows: FlowOption[];
+    inactive_flows: { id: number; name: string }[];
     settings: {
         welcome_flow_id: number | null;
         default_flow_id: number | null;
@@ -119,6 +120,16 @@ async function save() {
                 >Boas-vindas<AppSelect v-model="welcome">
                     <option :value="null">Desativado</option>
                     <option
+                        v-for="flow in inactive_flows.filter(
+                            (f) => f.id === welcome,
+                        )"
+                        :key="flow.id"
+                        :value="flow.id"
+                        disabled
+                    >
+                        {{ flow.name }} (inativo)
+                    </option>
+                    <option
                         v-for="flow in flows"
                         :key="flow.id"
                         :value="flow.id"
@@ -129,6 +140,16 @@ async function save() {
             ><label
                 >Resposta padrão<AppSelect v-model="fallback">
                     <option :value="null">Desativado</option>
+                    <option
+                        v-for="flow in inactive_flows.filter(
+                            (f) => f.id === fallback,
+                        )"
+                        :key="flow.id"
+                        :value="flow.id"
+                        disabled
+                    >
+                        {{ flow.name }} (inativo)
+                    </option>
                     <option
                         v-for="flow in flows"
                         :key="flow.id"
@@ -171,6 +192,16 @@ async function save() {
                     </AppSelect></label
                 ><label
                     >Fluxo<AppSelect v-model.number="rule.flow_id">
+                        <option
+                            v-for="flow in inactive_flows.filter(
+                                (f) => f.id === rule.flow_id,
+                            )"
+                            :key="flow.id"
+                            :value="flow.id"
+                            disabled
+                        >
+                            {{ flow.name }} (inativo)
+                        </option>
                         <option
                             v-for="flow in flows"
                             :key="flow.id"

@@ -84,7 +84,8 @@ class ExternalWebhookController extends Controller
         return Inertia::render('webhooks/editor', ['workspace' => $workspace->only(['id', 'name']), 'webhook' => $this->snapshot($model),
             'fields' => $workspace->contactCustomFields()->where('type', 'text')->orderBy('name')->get(['id', 'name', 'type']),
             'tags' => $workspace->tags()->orderBy('name')->get(['id', 'name', 'color']),
-            'flows' => $workspace->flows()->where('is_active', true)->whereNotNull('published_version_id')->orderBy('name')->get(['id', 'name'])]);
+            'flows' => $workspace->flows()->where('is_active', true)->whereNotNull('published_version_id')->orderBy('name')->get(['id', 'name']),
+            'inactive_flows' => $workspace->flows()->where('is_active', false)->orderBy('name')->get(['id', 'name'])]);
     }
 
     public function update(Request $request, Workspace $workspace, int $webhook, WebhookDefinition $definition, AuditLogService $audit): JsonResponse
@@ -93,7 +94,8 @@ class ExternalWebhookController extends Controller
         DB::transaction(function () use ($request, $workspace, $model, $definition, $audit): void {
             Workspace::whereKey($model->workspace_id)->lockForUpdate()->firstOrFail();
             $current = ExternalWebhook::whereKey($model->id)->lockForUpdate()->firstOrFail();
-            $data = $definition->validate($workspace, $request->all(), $current->payload_fields);
+            $existingFlowIds = collect($current->tag_rules)->pluck('flow_id')->filter()->map(fn ($id) => (int) $id)->all();
+            $data = $definition->validate($workspace, $request->all(), $current->payload_fields, true, $existingFlowIds);
             $current->update($data);
             $audit->record($workspace, 'external_webhook.updated', $request->user(), $current);
         });
@@ -144,7 +146,8 @@ class ExternalWebhookController extends Controller
         $start = microtime(true);
         try {
             $payload = $fields->parse($data['payload']);
-            $configuration = $definition->validate($workspace, [...$request->all(), 'status' => 'active'], $fields->extract($payload));
+            $existingFlowIds = collect($model->tag_rules)->pluck('flow_id')->filter()->map(fn ($id) => (int) $id)->all();
+            $configuration = $definition->validate($workspace, [...$request->all(), 'status' => 'active'], $fields->extract($payload), true, $existingFlowIds);
             $prepared = $processor->prepare($model, $payload, $configuration, true);
             $receipt->update(['status' => 'simulated', 'warnings' => $prepared['warnings'], 'duration_ms' => $this->duration($start)]);
 

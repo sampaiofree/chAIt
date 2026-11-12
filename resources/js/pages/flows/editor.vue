@@ -176,6 +176,7 @@ const props = defineProps<{
         fields: { id: number; name: string; type: string }[];
         members: { id: number; name: string; phone: string | null }[];
         flows: { id: number; name: string }[];
+        inactive_flows: { id: number; name: string }[];
         sequences?: { id: number; name: string }[];
         assets: {
             id: number;
@@ -184,7 +185,6 @@ const props = defineProps<{
             size: number;
             available?: boolean;
         }[];
-        published_version: number | null;
         is_active: boolean;
     };
     recent_executions: {
@@ -215,8 +215,72 @@ const catalog = computed(() => ({
           }
         : undefined,
 }));
-const publishedVersion = ref(props.reference.published_version);
 const flowIsActive = ref(props.reference.is_active);
+const editToken = crypto.randomUUID();
+const editLocked = ref(false);
+const editingBy = ref('');
+const canEdit = computed(() => !flowIsActive.value && editLocked.value);
+let lockTimer: ReturnType<typeof setTimeout> | undefined;
+let lockDisposed = false;
+async function renewEditLock() {
+    if (lockDisposed || flowIsActive.value) return;
+    try {
+        const response = await fetch(
+            `/workspaces/${props.workspace.id}/flows/${props.flow.id}/edit-lock`,
+            {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN':
+                        document.querySelector<HTMLMetaElement>(
+                            'meta[name="csrf-token"]',
+                        )?.content || '',
+                },
+                body: JSON.stringify({ token: editToken }),
+            },
+        );
+        const result = await response.json();
+        editLocked.value = response.ok && result.data?.acquired === true;
+        editingBy.value = result.data?.editor || '';
+    } catch {
+        editLocked.value = false;
+    }
+    if (!lockDisposed && !flowIsActive.value)
+        lockTimer = setTimeout(renewEditLock, editLocked.value ? 20000 : 5000);
+}
+function releaseEditLock() {
+    if (!editLocked.value) return;
+    editLocked.value = false;
+    void fetch(
+        `/workspaces/${props.workspace.id}/flows/${props.flow.id}/edit-lock`,
+        {
+            method: 'DELETE',
+            credentials: 'same-origin',
+            keepalive: true,
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'X-CSRF-TOKEN':
+                    document.querySelector<HTMLMetaElement>(
+                        'meta[name="csrf-token"]',
+                    )?.content || '',
+            },
+            body: JSON.stringify({ token: editToken }),
+        },
+    );
+}
+onMounted(() => {
+    void renewEditLock();
+    window.addEventListener('pagehide', releaseEditLock);
+});
+onBeforeUnmount(() => {
+    lockDisposed = true;
+    clearTimeout(lockTimer);
+    window.removeEventListener('pagehide', releaseEditLock);
+    releaseEditLock();
+});
 const flowName = ref(props.flow.name);
 const revision = ref(props.flow.revision);
 const status = ref<'saved' | 'dirty' | 'saving' | 'error' | 'conflict'>(
@@ -509,12 +573,39 @@ const assistant = useFlowAssistant({
     workspaceId: props.workspace.id,
     flowId: props.flow.id,
     initialRevision: props.flow.revision,
+    editToken,
+    canEdit: () => canEdit.value,
+    onSaving: () => {
+        status.value = 'saving';
+    },
+    onError: () => {
+        status.value = 'error';
+    },
+    onSaved: (snapshot, incoming) => {
+        revision.value = incoming.flow.revision;
+        serverGraphSnapshot = stableGraph(snapshot.graph as Graph);
+        serverFlowName = snapshot.name;
+        status.value =
+            stableGraph(makeGraph(viewport.value)) === serverGraphSnapshot &&
+            flowName.value === serverFlowName
+                ? 'saved'
+                : 'dirty';
+    },
     userId: (usePage().props.auth as { user: { id: number } }).user.id,
     snapshot: () => ({
         name: flowName.value,
         graph: makeGraph(viewport.value) as FlowGraph,
     }),
     apply: (incoming: AssistantState) => {
+        const wasActive = flowIsActive.value;
+        flowIsActive.value = incoming.flow.is_active ?? flowIsActive.value;
+        if (flowIsActive.value) {
+            assistantOpen.value = false;
+            editLocked.value = false;
+            clearTimeout(lockTimer);
+        } else if (wasActive && !editLocked.value) {
+            void renewEditLock();
+        }
         liveCatalog.value = incoming.catalog;
         if (incoming.catalog.contact_fields)
             reference.value.fields = incoming.catalog.contact_fields.custom.map(
@@ -582,20 +673,10 @@ async function sendAssistant(content: string) {
     if (await assistant.action('/assistant/messages', { content }))
         assistantWindow.value?.clearComposer();
 }
-async function discardChanges(): Promise<boolean> {
-    if (
-        !(await confirm(
-            'Descartar todas as alterações não salvas da prévia compartilhada? Isso afeta toda a equipe e interrompe a IA.',
-            'Descartar alterações',
-        ))
-    )
-        return false;
-    return assistant.discard();
-}
 async function reapplyChanges() {
     if (
         await confirm(
-            'Reaplicar suas alterações locais sobre a prévia atual? Campos alterados por você terão prioridade; alterações em outros campos serão preservadas.',
+            'Reaplicar suas alterações locais sobre a fluxo atual? Campos alterados por você terão prioridade; alterações em outros campos serão preservadas.',
             'Reaplicar alterações',
         )
     ) {
@@ -1010,7 +1091,7 @@ function aiMediaName(item: AiMedia) {
             ? `${item.original_name} — arquivo pendente`
             : 'Selecione um arquivo';
     if (!asset || asset.available === false)
-        return 'Arquivo indisponível — substitua antes de publicar';
+        return 'Arquivo indisponível — substitua antes de ativar';
     return asset.original_name;
 }
 async function uploadMedia(
@@ -1029,6 +1110,7 @@ async function uploadMedia(
                 method: 'POST',
                 headers: {
                     Accept: 'application/json',
+                    'X-Flow-Edit-Token': editToken,
                     'X-CSRF-TOKEN':
                         document.querySelector<HTMLMetaElement>(
                             'meta[name="csrf-token"]',
@@ -1108,13 +1190,7 @@ function removeSelectedEdge() {
     markDirty();
 }
 async function goBack() {
-    if (
-        (hasUnsavedChanges.value ||
-            aiRunning.value ||
-            assistantState.value?.session) &&
-        !(await discardChanges())
-    )
-        return;
+    if (canEdit.value && !(await assistant.flush())) return;
     skipBeforeUnloadConfirmation = true;
     window.location.href =
         `/workspaces/${props.workspace.id}/flows` +
@@ -1130,65 +1206,16 @@ function onMoveEnd() {
         view.zoom === viewport.value.zoom
     )
         return;
-    viewport.value = { x: view.x, y: view.y, zoom: view.zoom };
-    markDirty();
-}
-async function save() {
-    if (aiRunning.value || assistantBusy.value || !(await assistant.flush()))
-        return;
-    if (
-        (!hasUnsavedChanges.value && !assistantState.value?.session) ||
-        status.value === 'saving' ||
-        blockNameInvalid.value
-    )
-        return;
-    status.value = 'saving';
-    try {
-        const response = await fetch(
-            `/workspaces/${props.workspace.id}/flows/${props.flow.id}`,
-            {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    'X-CSRF-TOKEN':
-                        document.querySelector<HTMLMetaElement>(
-                            'meta[name="csrf-token"]',
-                        )?.content || '',
-                },
-                credentials: 'same-origin',
-                body: JSON.stringify({
-                    name: flowName.value,
-                    graph: makeGraph(viewport.value),
-                    revision: revision.value,
-                    generation: assistant.revisions().generation,
-                    draft_revision: assistant.revisions().draft_revision,
-                }),
-            },
-        );
-        const result = await response.json();
-        if (response.status === 409) {
-            status.value = 'conflict';
-            return;
-        }
-        if (!response.ok)
-            throw new Error(
-                result.message || 'Não foi possível salvar o fluxo.',
-            );
-        revision.value = result.data.revision;
-        serverGraphSnapshot = stableGraph(makeGraph());
-        serverFlowName = flowName.value;
-        status.value = 'saved';
-        await assistant.saved();
-    } catch {
-        status.value = 'error';
+    if (canEdit.value) {
+        viewport.value = { x: view.x, y: view.y, zoom: view.zoom };
+        markDirty();
     }
 }
 async function reloadLatest() {
     if (
         !(await confirm(
-            'Carregar a prévia compartilhada atual? Suas alterações locais ainda não sincronizadas serão perdidas.',
-            'Recarregar prévia',
+            'Carregar a fluxo atual? Suas alterações locais ainda não sincronizadas serão perdidas.',
+            'Recarregar fluxo',
         ))
     )
         return;
@@ -1198,24 +1225,27 @@ async function reloadLatest() {
         await alert(
             error instanceof Error
                 ? error.message
-                : 'Falha ao carregar a prévia.',
+                : 'Falha ao carregar o fluxo.',
         );
     }
 }
 async function publish() {
-    if (aiRunning.value || assistantBusy.value) return;
-    if (hasUnsavedChanges.value || assistantState.value?.session) {
-        await alert('Salve o rascunho antes de publicar.');
+    if (
+        !canEdit.value ||
+        aiRunning.value ||
+        assistantBusy.value ||
+        !(await assistant.flush())
+    )
         return;
-    }
     try {
         const response = await fetch(
-            `/workspaces/${props.workspace.id}/flows/${props.flow.id}/publish`,
+            `/workspaces/${props.workspace.id}/flows/${props.flow.id}/activate`,
             {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     Accept: 'application/json',
+                    'X-Flow-Edit-Token': editToken,
                     'X-CSRF-TOKEN':
                         document.querySelector<HTMLMetaElement>(
                             'meta[name="csrf-token"]',
@@ -1246,19 +1276,15 @@ async function publish() {
                     .flat()
                     .join(' ') ||
                     result.message ||
-                    'Não foi possível publicar.',
+                    'Não foi possível ativar.',
             );
-        publishedVersion.value = result.data.version;
         flowIsActive.value = true;
-        await alert(
-            `Fluxo publicado na versão ${result.data.version}.`,
-            'Fluxo publicado',
-        );
+        editLocked.value = false;
+        clearTimeout(lockTimer);
+        assistantOpen.value = false;
     } catch (error) {
         await alert(
-            error instanceof Error
-                ? error.message
-                : 'Não foi possível publicar.',
+            error instanceof Error ? error.message : 'Não foi possível ativar.',
         );
     }
 }
@@ -1266,8 +1292,8 @@ async function deactivate() {
     if (
         !flowIsActive.value ||
         !(await confirm(
-            'Desativar este fluxo? Novos gatilhos deixarão de iniciá-lo.',
-            'Desativar fluxo',
+            'Inativar este fluxo? As execuções em andamento serão encerradas.',
+            'Inativar fluxo',
         ))
     )
         return;
@@ -1288,47 +1314,37 @@ async function deactivate() {
         );
         const result = await response.json();
         if (!response.ok)
-            throw new Error(result.message || 'Não foi possível desativar.');
+            throw new Error(result.message || 'Não foi possível inativar.');
         flowIsActive.value = false;
+        void renewEditLock();
     } catch (error) {
         await alert(
             error instanceof Error
                 ? error.message
-                : 'Não foi possível desativar.',
+                : 'Não foi possível inativar.',
         );
     }
 }
 function onBeforeUnload(event: BeforeUnloadEvent) {
-    assistant.changed();
     if (
         !skipBeforeUnloadConfirmation &&
-        (hasUnsavedChanges.value ||
-            status.value === 'saving' ||
-            aiRunning.value ||
-            !!assistantState.value?.session)
+        (hasUnsavedChanges.value || status.value === 'saving')
     ) {
         event.preventDefault();
         event.returnValue = '';
     }
 }
 let approvedNavigation = false;
-let navigationPromptOpen = false;
 const stopNavigationGuard = router.on('before', (event) => {
     if (
         approvedNavigation ||
-        (!hasUnsavedChanges.value &&
-            status.value !== 'saving' &&
-            !aiRunning.value &&
-            !assistantState.value?.session)
+        (!hasUnsavedChanges.value && status.value !== 'saving')
     )
         return;
     event.preventDefault();
-    if (navigationPromptOpen) return;
-    navigationPromptOpen = true;
     const visit = event.detail.visit;
-    void discardChanges().then((accepted) => {
-        navigationPromptOpen = false;
-        if (!accepted) return;
+    void assistant.flush().then((saved) => {
+        if (!saved) return;
         approvedNavigation = true;
         router.visit(visit.url, {
             method: visit.method,
@@ -1366,16 +1382,14 @@ onBeforeUnmount(() =>
             <div class="flow-title">
                 <Input
                     v-model="flowName"
-                    :disabled="
-                        aiRunning || assistantBusy || status === 'saving'
-                    "
+                    :disabled="!canEdit || aiRunning || assistantBusy"
                     aria-label="Nome do fluxo"
                     @input="markDirty"
                 /><small>{{
                     status === 'saved'
                         ? 'Todas as alterações salvas'
                         : status === 'dirty'
-                          ? 'Alterações não salvas · prévia compartilhada'
+                          ? 'Alterações aguardando salvamento'
                           : status === 'saving'
                             ? 'Salvando…'
                             : status === 'conflict'
@@ -1386,8 +1400,9 @@ onBeforeUnmount(() =>
             <div class="top-actions">
                 <FlowTransferActions
                     :endpoint="`/workspaces/${props.workspace.id}/flows/${props.flow.id}`"
-                    :published="!!publishedVersion"
+                    :edit-token="editToken"
                     :disabled="
+                        !canEdit ||
                         aiRunning ||
                         assistantBusy ||
                         assistantConflict ||
@@ -1401,54 +1416,34 @@ onBeforeUnmount(() =>
                 />
                 <AppButton
                     variant="secondary"
+                    :disabled="!canEdit"
                     @click="assistantOpen = !assistantOpen"
                     ><Bot :size="16" />Assistente IA</AppButton
                 >
-                <AppButton
-                    v-if="hasUnsavedChanges || assistantState?.session"
-                    variant="secondary"
-                    :disabled="assistantBusy || status === 'saving'"
-                    @click="discardChanges"
-                    >Descartar alterações</AppButton
+                <span
+                    v-if="!flowIsActive && !editLocked"
+                    class="published-pill"
+                    >{{
+                        editingBy
+                            ? `${editingBy} está editando`
+                            : 'Aguardando edição'
+                    }}</span
                 >
-
-                <AppButton
-                    v-if="status === 'conflict'"
-                    variant="secondary"
-                    @click="reloadLatest"
-                >
-                    Recarregar versão atual</AppButton
-                ><AppButton
-                    :disabled="
-                        aiRunning ||
-                        assistantBusy ||
-                        assistantConflict ||
-                        (!hasUnsavedChanges && !assistantState?.session) ||
-                        status === 'saving' ||
-                        blockNameInvalid
-                    "
-                    @click="save"
-                    variant="primary"
-                >
-                    {{ status === 'saving' ? 'Salvando…' : 'Salvar' }}
-                </AppButton>
                 <span class="published-pill">{{
-                    flowIsActive
-                        ? `Publicado · v${publishedVersion}`
-                        : publishedVersion
-                          ? `Inativo · v${publishedVersion}`
-                          : 'Rascunho'
+                    flowIsActive ? 'Ativo' : 'Inativo'
                 }}</span>
                 <AppButton
                     v-if="flowIsActive"
                     variant="secondary"
                     @click="deactivate"
                 >
-                    Desativar
+                    Inativar
                 </AppButton>
                 <AppButton
+                    v-else
                     class="publish-button"
                     :disabled="
+                        !canEdit ||
                         aiRunning ||
                         assistantBusy ||
                         status === 'saving' ||
@@ -1458,14 +1453,14 @@ onBeforeUnmount(() =>
                     @click="publish"
                     variant="primary"
                 >
-                    {{ publishedVersion ? 'Publicar nova versão' : 'Publicar' }}
+                    Ativar
                 </AppButton>
             </div>
         </header>
         <section class="editor-workspace">
             <aside
                 class="settings-panel"
-                :inert="aiRunning || assistantBusy || status === 'saving'"
+                :inert="!canEdit || aiRunning || assistantBusy"
             >
                 <template v-if="selected"
                     ><FlowBlockHeader
@@ -2033,8 +2028,8 @@ onBeforeUnmount(() =>
                             class="condition-empty"
                         >
                             Adicione uma verificação para configurar a condição.
-                            Você pode salvar o rascunho enquanto ela estiver
-                            incompleta.
+                            Você pode manter o fluxo inativo enquanto ela
+                            estiver incompleta.
                         </p>
                         <p
                             v-if="selectedConditionErrors.checks"
@@ -2301,7 +2296,19 @@ onBeforeUnmount(() =>
                                 @change="markDirty"
                             >
                                 <option :value="null">
-                                    Selecione um fluxo publicado
+                                    Selecione um fluxo ativo
+                                </option>
+                                <option
+                                    v-for="flow in reference.inactive_flows.filter(
+                                        (f) =>
+                                            f.id ===
+                                            selected?.data.target_flow_id,
+                                    )"
+                                    :key="flow.id"
+                                    :value="flow.id"
+                                    disabled
+                                >
+                                    {{ flow.name }} (inativo)
                                 </option>
                                 <option
                                     v-for="flow in reference.flows"
@@ -2639,15 +2646,9 @@ onBeforeUnmount(() =>
             </aside>
             <section class="flow-canvas">
                 <VueFlow
-                    :nodes-draggable="
-                        !aiRunning && !assistantBusy && status !== 'saving'
-                    "
-                    :nodes-connectable="
-                        !aiRunning && !assistantBusy && status !== 'saving'
-                    "
-                    :elements-selectable="
-                        !aiRunning && !assistantBusy && status !== 'saving'
-                    "
+                    :nodes-draggable="canEdit && !aiRunning && !assistantBusy"
+                    :nodes-connectable="canEdit && !aiRunning && !assistantBusy"
+                    :elements-selectable="true"
                     v-model:nodes="nodes"
                     v-model:edges="edges"
                     class="canvas-flow"
@@ -2663,7 +2664,7 @@ onBeforeUnmount(() =>
                     ><template #node-flowNode="{ id, data }"
                         ><FlowNode
                             :catalog="catalog"
-                            :inert="aiRunning || assistantBusy"
+                            :inert="!canEdit || aiRunning || assistantBusy"
                             :id="id"
                             :data="data"
                             :reference="reference"
@@ -2674,7 +2675,7 @@ onBeforeUnmount(() =>
                 /></VueFlow>
                 <div class="canvas-top">
                     <AppButton
-                        :disabled="aiRunning || assistantBusy"
+                        :disabled="!canEdit || aiRunning || assistantBusy"
                         v-if="selectedEdgeId"
                         variant="secondary"
                         @click="removeSelectedEdge"
@@ -2686,7 +2687,11 @@ onBeforeUnmount(() =>
                         @click="fitView({ padding: 0.2, duration: 250 })"
                     >
                         Ajustar visualização</AppButton
-                    ><AppButton @click="toggleGlobalMenu" variant="primary">
+                    ><AppButton
+                        :disabled="!canEdit || aiRunning || assistantBusy"
+                        @click="toggleGlobalMenu"
+                        variant="primary"
+                    >
                         <Plus :size="16" />Adicionar bloco
                     </AppButton>
                     <div v-if="menu.open" class="block-menu">
@@ -2705,8 +2710,10 @@ onBeforeUnmount(() =>
                 <div class="canvas-caption">
                     {{
                         flowIsActive
-                            ? 'Versão publicada em execução · edição do rascunho'
-                            : 'Rascunho'
+                            ? 'Ativo · somente consulta'
+                            : canEdit
+                              ? 'Inativo · edição'
+                              : 'Inativo · somente consulta'
                     }}
                 </div>
             </section>
@@ -2719,7 +2726,7 @@ onBeforeUnmount(() =>
     >
         <span>{{
             assistantConflict
-                ? 'A prévia compartilhada mudou. Suas alterações locais estão preservadas.'
+                ? 'A fluxo mudou. Suas alterações locais estão preservadas.'
                 : assistantError ||
                   'A IA está trabalhando. A edição manual está pausada.'
         }}</span>
@@ -2727,7 +2734,7 @@ onBeforeUnmount(() =>
             v-if="assistantConflict"
             variant="secondary"
             @click="reloadLatest"
-            >Carregar prévia atual</AppButton
+            >Carregar fluxo atual</AppButton
         >
         <AppButton
             v-if="assistantConflict"

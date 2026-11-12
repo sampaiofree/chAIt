@@ -83,15 +83,18 @@ test('AI draft can be saved but publishing requires a valid key and model', func
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
     $flow = $workspace->flows()->create(['name' => 'IA', 'graph' => aiGraph(['ai_prompt' => ''])]);
-    $this->actingAs($user)->putJson(route('workspaces.flows.update', [$workspace, $flow]), [
+    $token = (string) str()->uuid();
+    $this->actingAs($user)->postJson(route('workspaces.flows.edit-lock.acquire', [$workspace, $flow]), ['token' => $token])->assertOk();
+    $this->withHeader('X-Flow-Edit-Token', $token);
+    $this->putJson(route('workspaces.flows.update', [$workspace, $flow]), [
         'name' => 'IA', 'graph' => aiGraph(['ai_prompt' => '']), 'revision' => 1,
     ])->assertOk();
-    $this->postJson(route('workspaces.flows.publish', [$workspace, $flow]), ['revision' => 2])->assertUnprocessable();
+    $this->postJson(route('workspaces.flows.activate', [$workspace, $flow]), ['revision' => 2])->assertUnprocessable();
     $flow->update(['graph' => aiGraph(), 'revision' => 3]);
-    $this->postJson(route('workspaces.flows.publish', [$workspace, $flow]), ['revision' => 3])->assertUnprocessable();
+    $this->postJson(route('workspaces.flows.activate', [$workspace, $flow]), ['revision' => 3])->assertUnprocessable();
     WorkspaceOpenAiIntegration::create(['workspace_id' => $workspace->id, 'api_key' => 'sk-test']);
     Http::fake(['api.openai.com/*' => Http::response(['id' => 'gpt-6.1-sol'])]);
-    $this->postJson(route('workspaces.flows.publish', [$workspace, $flow]), ['revision' => 3])->assertOk();
+    $this->postJson(route('workspaces.flows.activate', [$workspace, $flow]), ['revision' => 3])->assertOk();
 });
 
 test('AI opening waits in the node and a tool continues the published flow once', function () {

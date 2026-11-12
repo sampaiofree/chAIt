@@ -12,7 +12,6 @@ use App\Models\FlowAsset;
 use App\Models\FlowExecution;
 use App\Models\FlowVersion;
 use App\Models\Sequence;
-use App\Models\SequenceEnrollment;
 use App\Models\Thread;
 use App\Models\ThreadAssignment;
 use App\Models\UazapiConnection;
@@ -301,14 +300,9 @@ class FlowRuntime
                     return;
                 }
                 $target = Flow::query()->where('workspace_id', $execution->workspace_id)->whereKey($data['target_flow_id'])->first();
-                $version = $target?->publishedVersion;
-                if ($execution->sequence_enrollment_id) {
-                    $sequenceVersionId = SequenceEnrollment::whereKey($execution->sequence_enrollment_id)->value('sequence_version_id');
-                    $pinned = DB::table('sequence_version_flows')->where('sequence_version_id', $sequenceVersionId)->where('flow_id', $data['target_flow_id'])->value('flow_version_id');
-                    $version = $pinned ? FlowVersion::find($pinned) : null;
-                }
+                $version = $target?->is_active ? $target->publishedVersion : null;
                 if (! $target || ! $version) {
-                    $this->finish($execution, 'failed', 'O fluxo de destino não possui versão publicada.');
+                    $this->finish($execution, 'interrupted', 'Fluxo de destino inativo.', 'target_flow_inactive');
 
                     return;
                 }
@@ -391,6 +385,9 @@ class FlowRuntime
 
     public function isPaused(FlowExecution $execution): bool
     {
+        if (! Flow::whereKey($execution->flow_id)->where('is_active', true)->exists()) {
+            return true;
+        }
         DB::table('automation_pauses')->where('uazapi_connection_id', $execution->uazapi_connection_id)->where('contact_id', $execution->contact_id)
             ->whereNull('released_at')->whereNotNull('expires_at')->where('expires_at', '<=', now())->update(['released_at' => now(), 'updated_at' => now()]);
         $manual = DB::table('automation_pauses')->where('uazapi_connection_id', $execution->uazapi_connection_id)->where('contact_id', $execution->contact_id)
