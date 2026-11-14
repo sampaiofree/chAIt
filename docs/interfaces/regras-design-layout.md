@@ -55,7 +55,7 @@ Reutilizar a escala de títulos dos layouts existentes. Ajuda e metadados podem 
 
 ## 4. Navegação e composição das páginas
 
-O menu principal pertence ao layout compartilhado. Conversas, Fluxos, editor, gatilhos e Configurações mantêm a mesma navegação e sua posição.
+O menu principal pertence ao layout compartilhado. No celular, conversa e perfil usam seus próprios cabeçalhos com Voltar; o menu fica acessível ao retornar à lista. Conversas, Fluxos, editor, gatilhos e Configurações mantêm a mesma navegação e sua posição.
 
 | Elemento                        | Regra                                                                            |
 | ------------------------------- | -------------------------------------------------------------------------------- |

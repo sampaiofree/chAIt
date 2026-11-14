@@ -44,6 +44,7 @@ createInertiaApp({
         createApp({ render: () => h(App, props) })
             .use(plugin)
             .mount(el);
+        document.getElementById('app-startup')?.remove();
     },
     progress: { color: '#16a34a' },
 });

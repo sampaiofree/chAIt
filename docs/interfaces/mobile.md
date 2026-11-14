@@ -9,6 +9,8 @@
 
 Desktop e celular usam a mesma aplicação Vue 3 + Inertia e o mesmo backend Laravel. Abaixo de 1024 px, lista, conversa e perfil ocupam visualizações separadas. A lista é a entrada do atendimento; escolher uma conversa abre o chat. O ícone à direita do cabeçalho abre o perfil, cujo botão Voltar devolve à conversa. Voltar do chat mostra a lista.
 
+Na lista o cabeçalho compartilhado dá acesso ao menu; ao abrir conversa ou perfil no celular, o cabeçalho da própria tela ocupa seu lugar e Voltar retorna à lista ou conversa.
+
 O menu compartilhado abre em drawer de 280 px, limitado a 88% da janela. A troca de workspace fica no rodapé desse menu, junto ao usuário; não há seletor de workspace no cabeçalho atual da lista. O estado do drawer é independente da preferência desktop.
 
 ## 2. Ações e dados observados

@@ -289,3 +289,15 @@ textarea {
     gap: var(--form-button-gap);
     flex-wrap: wrap;
 }
+
+@media (max-width: 1023px) {
+    input,
+    select,
+    textarea {
+        font-size: 16px;
+    }
+    .app-form-dialog {
+        padding: 20px 16px;
+        max-height: calc(100dvh - 32px);
+    }
+}

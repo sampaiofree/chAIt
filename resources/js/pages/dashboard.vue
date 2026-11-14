@@ -134,6 +134,14 @@ const liveMessages = new Map<number, Message[]>();
 const liveStatuses = new Map<string, string>();
 const nextCursor = ref<string | null>(null);
 const loadingThreads = ref(false);
+const threadsReady = ref(false);
+const threadsError = ref(false);
+const showThreadSkeleton = ref(false);
+let threadSkeletonTimer: ReturnType<typeof setTimeout> | undefined;
+const historyLoading = ref(false);
+const historyError = ref(false);
+const showSkeleton = ref(false);
+let skeletonTimer: ReturnType<typeof setTimeout> | undefined;
 let searchGeneration = 0;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 let listAbort: AbortController | undefined;
@@ -390,7 +398,14 @@ async function loadThreads(append = false) {
     const previousId = selected.value?.id;
     listAbort?.abort();
     listAbort = new AbortController();
+    const request = listAbort;
     loadingThreads.value = true;
+    threadsError.value = false;
+    clearTimeout(threadSkeletonTimer);
+    if (!threadsReady.value)
+        threadSkeletonTimer = setTimeout(() => {
+            showThreadSkeleton.value = true;
+        }, 150);
     try {
         const query = params();
         if (append && nextCursor.value) query.set('cursor', nextCursor.value);
@@ -406,6 +421,7 @@ async function loadThreads(append = false) {
                 combined.map((item: Thread) => [item.id, item]),
             ).values(),
         );
+        threadsReady.value = true;
         nextCursor.value = result.next_cursor;
         if (selected.value)
             selected.value =
@@ -414,7 +430,7 @@ async function loadThreads(append = false) {
                     ? result.selected_thread
                     : selected.value);
         if (!selected.value && result.selected_thread)
-            choose(result.selected_thread);
+            choose(result.selected_thread, false);
         else if (
             !realtimeEnabled &&
             selected.value?.id === previousId &&
@@ -422,9 +438,13 @@ async function loadThreads(append = false) {
         )
             await loadHistory();
     } catch {
-        /* Keep existing local data; no provider polling fallback. */
+        if (!request.signal.aborted) threadsError.value = true;
     } finally {
-        loadingThreads.value = false;
+        if (listAbort === request) {
+            loadingThreads.value = false;
+            clearTimeout(threadSkeletonTimer);
+            showThreadSkeleton.value = false;
+        }
     }
 }
 async function loadHistory() {
@@ -433,6 +453,17 @@ async function loadHistory() {
     const target = selected.value;
     const workspaceId = workspace.value.id;
     const shouldFollow = renderedThreadId !== target.id || isAtLatest.value;
+    const initial = renderedThreadId !== target.id;
+    historyError.value = false;
+    if (initial) {
+        historyLoading.value = true;
+        historyError.value = false;
+        showSkeleton.value = false;
+        clearTimeout(skeletonTimer);
+        skeletonTimer = setTimeout(() => {
+            showSkeleton.value = true;
+        }, 150);
+    }
     try {
         const history = await api(
             `${root()}/conversations/${target.id}/messages`,
@@ -583,15 +614,19 @@ async function loadHistory() {
             workspace.value.id === workspaceId &&
             generation === historyGeneration
         ) {
-            messages.value = pendingMedia.value.filter(
-                (message) => message.thread_id === target.id,
-            );
-            historyLimited.value = true;
+            if (initial)
+                messages.value = pendingMedia.value.filter(
+                    (message) => message.thread_id === target.id,
+                );
+            historyError.value = true;
+            historyLimited.value = false;
             historyNextOffset.value = null;
             historyReadVersion.value = null;
         }
     }
     if (selected.value?.id === target.id && generation === historyGeneration) {
+        historyLoading.value = false;
+        clearTimeout(skeletonTimer);
         contactForm.display_name = target.contact.display_name ?? '';
         contactForm.email = target.contact.email ?? '';
         contactForm.cpf = target.contact.cpf ?? '';
@@ -1149,14 +1184,15 @@ function onListScroll(event: Event) {
     if (element.scrollHeight - element.scrollTop - element.clientHeight < 120)
         void loadMoreChats();
 }
-function choose(thread: Thread) {
+function choose(thread: Thread, openMobile = true) {
+    renderedThreadId = null;
     selected.value = thread;
     historyNextOffset.value = null;
-    if (realtimeEnabled) {
-        messages.value = [];
-        liveMessages.delete(thread.id);
-    }
-    mobilePane.value = 'chat';
+    messages.value = pendingMedia.value.filter(
+        (message) => message.thread_id === thread.id,
+    );
+    if (realtimeEnabled) liveMessages.delete(thread.id);
+    if (openMobile) mobilePane.value = 'chat';
     isAtLatest.value = true;
     hasNewMessages.value = false;
     historyReadVersion.value = null;
@@ -1529,6 +1565,7 @@ watch(
     },
 );
 watch(mobilePane, (pane) => {
+    document.body.classList.toggle('mobile-chat-detail', pane !== 'list');
     if (pane === 'chat') void nextTick().then(updateLatestPosition);
 });
 onMounted(async () => {
@@ -1558,6 +1595,9 @@ onMounted(async () => {
     listTimer = window.setInterval(() => void loadThreads(), 30000);
 });
 onUnmounted(() => {
+    document.body.classList.remove('mobile-chat-detail');
+    clearTimeout(skeletonTimer);
+    clearTimeout(threadSkeletonTimer);
     clearTimeout(realtimeInitialTimer);
     window.clearInterval(dateLabelTimer);
     document.removeEventListener('visibilitychange', refreshDateLabels);
@@ -1667,7 +1707,23 @@ onUnmounted(() => {
                         ></span
                     >
                 </button>
-                <p v-if="connectionLoaded && !threads.length" class="empty">
+                <div v-if="threadsError" class="empty" role="alert">
+                    Não foi possível carregar as conversas.
+                    <button type="button" @click="loadThreads()">
+                        Tentar novamente
+                    </button>
+                </div>
+                <div
+                    v-else-if="loadingThreads && !threadsReady"
+                    class="skeleton-list"
+                    role="status"
+                    aria-label="Carregando conversas"
+                >
+                    <template v-if="showThreadSkeleton"
+                        ><span v-for="n in 5" :key="n"></span
+                    ></template>
+                </div>
+                <p v-else-if="threadsReady && !threads.length" class="empty">
                     {{
                         activeFilterCount || search
                             ? 'Nenhuma conversa encontrada.'
@@ -1756,7 +1812,27 @@ onUnmounted(() => {
                                 : 'Carregar mensagens anteriores'
                         }}</AppButton
                     >
-                    <div v-if="historyLimited" class="history-warning">
+                    <div
+                        v-if="historyLoading"
+                        class="skeleton-messages"
+                        role="status"
+                        aria-label="Carregando mensagens"
+                    >
+                        <template v-if="showSkeleton"
+                            ><span v-for="n in 4" :key="n"></span
+                        ></template>
+                    </div>
+                    <div
+                        v-else-if="historyError"
+                        class="history-warning"
+                        role="alert"
+                    >
+                        Não foi possível carregar as mensagens.
+                        <button type="button" @click="loadHistory()">
+                            Tentar novamente
+                        </button>
+                    </div>
+                    <div v-else-if="historyLimited" class="history-warning">
                         A UAZAPI não disponibilizou este histórico. Mensagens
                         antigas podem ter expirado ou não terem sido
                         sincronizadas pelo aparelho.
@@ -2406,7 +2482,7 @@ onUnmounted(() => {
     </main>
     <Dialog :open="filterOpen" @update:open="filterOpen = $event">
         <DialogContent
-            class="max-h-[calc(100dvh-2rem)] w-[min(380px,calc(100vw-2rem))] overflow-y-auto p-5"
+            class="conversation-filter-dialog max-h-[calc(100dvh-2rem)] w-[min(380px,calc(100vw-2rem))] overflow-y-auto p-5"
         >
             <DialogHeader class="text-left">
                 <DialogTitle>Filtrar conversas</DialogTitle>
@@ -3702,5 +3778,75 @@ onUnmounted(() => {
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 100%;
+}
+</style>
+
+<style>
+@media (max-width: 1023px) {
+    body.mobile-chat-detail .app-topbar {
+        display: none;
+    }
+    .conversation-filter-dialog {
+        top: auto !important;
+        bottom: 0;
+        left: 0 !important;
+        transform: none !important;
+        width: 100% !important;
+        max-width: none !important;
+        max-height: 90dvh;
+        border-radius: 16px 16px 0 0;
+        padding-bottom: max(20px, env(safe-area-inset-bottom));
+    }
+    .chat-heading .back,
+    .profile-heading .back {
+        min-width: 44px;
+        min-height: 44px;
+    }
+}
+.skeleton-list,
+.skeleton-messages {
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+}
+.skeleton-list span,
+.skeleton-messages span {
+    display: block;
+    height: 54px;
+    border-radius: 10px;
+    background: var(--muted);
+}
+.skeleton-messages span {
+    height: 38px;
+    width: 65%;
+}
+.skeleton-messages span:nth-child(even) {
+    justify-self: end;
+}
+@media (prefers-reduced-motion: no-preference) {
+    @media (max-width: 1023px) {
+        .chat-pane:not(.mobile-hidden),
+        .list-pane:not(.mobile-hidden),
+        .profile-pane.profile-mobile-open {
+            animation: pane-enter 160ms ease-out;
+        }
+    }
+    .skeleton-list span,
+    .skeleton-messages span {
+        animation: skeleton-pulse 1.2s ease-in-out infinite alternate;
+    }
+}
+@keyframes pane-enter {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+@keyframes skeleton-pulse {
+    to {
+        opacity: 0.45;
+    }
 }
 </style>

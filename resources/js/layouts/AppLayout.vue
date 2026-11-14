@@ -43,16 +43,30 @@ watch(
 );
 const media = window.matchMedia('(min-width: 1024px)');
 const isMobile = ref(!media.matches);
+const viewportHeight = ref(window.visualViewport?.height ?? window.innerHeight);
+function updateViewport() {
+    viewportHeight.value = window.visualViewport?.height ?? window.innerHeight;
+}
+window.visualViewport?.addEventListener('resize', updateViewport);
+window.addEventListener('resize', updateViewport);
 function closeMobile() {
     isMobile.value = !media.matches;
     if (media.matches) mobileOpen.value = false;
 }
 media.addEventListener('change', closeMobile);
-onBeforeUnmount(() => media.removeEventListener('change', closeMobile));
+onBeforeUnmount(() => {
+    media.removeEventListener('change', closeMobile);
+    window.visualViewport?.removeEventListener('resize', updateViewport);
+    window.removeEventListener('resize', updateViewport);
+});
 </script>
 <template>
     <TooltipProvider :delay-duration="250">
-        <div class="app-layout" :class="{ 'sidebar-expanded': expanded }">
+        <div
+            class="app-layout"
+            :class="{ 'sidebar-expanded': expanded }"
+            :style="isMobile ? { height: `${viewportHeight}px` } : undefined"
+        >
             <aside class="desktop-navigation">
                 <AppNavigation :compact="!expanded" />
             </aside>
