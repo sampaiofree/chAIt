@@ -70,7 +70,8 @@ test('user can delete their account', function () {
         ->assertRedirect(route('home'));
 
     $this->assertGuest();
-    expect($user->fresh())->toBeNull();
+    expect($user->fresh()->access_blocked_at)->not->toBeNull();
+    $this->assertDatabaseHas('account_deletion_requests', ['user_id' => $user->id]);
 });
 
 test('correct password must be provided to delete account', function () {

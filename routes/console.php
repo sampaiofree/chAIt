@@ -11,6 +11,7 @@ use App\Services\Sequences\SequenceScheduler;
 use App\Services\Uazapi\UazapiClient;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
@@ -116,3 +117,5 @@ Artisan::command('chat:register-local-webhook {origin}', function (UazapiClient 
 Schedule::command('chat:recover')->everyMinute()->withoutOverlapping();
 Schedule::command('chat:prune')->everyMinute()->withoutOverlapping();
 Schedule::command('horizon:snapshot')->everyFiveMinutes()->withoutOverlapping();
+
+Schedule::call(fn () => DB::table('pending_registrations')->where('created_at', '<', now()->subDay())->delete())->daily()->name('prune-pending-registrations');

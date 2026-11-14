@@ -5,6 +5,7 @@ namespace App\Services\Chat;
 use App\Enums\WorkspaceRole;
 use App\Events\ChatUpdate;
 use App\Models\Thread;
+use App\Models\User;
 use App\Models\WorkspaceMembership;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -93,6 +94,9 @@ class ChatPublisher
 
     public function emit(int $userId, array $payload): void
     {
+        if (User::whereKey($userId)->whereNotNull('access_blocked_at')->exists()) {
+            return;
+        }
         if (config('broadcasting.default') === 'log') {
             Log::error('Chat realtime requires a non-logging broadcaster.');
 

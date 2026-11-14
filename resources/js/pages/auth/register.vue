@@ -8,6 +8,7 @@ const form = useForm({
     email: '',
     password: '',
     password_confirmation: '',
+    terms: false,
 });
 </script>
 <template>
@@ -39,8 +40,24 @@ const form = useForm({
                     type="password"
                     required
             /></label>
-            <div v-if="form.errors.email || form.errors.password" class="error">
-                {{ form.errors.email || form.errors.password }}
+            <label
+                ><input v-model="form.terms" type="checkbox" required /> Aceito
+                os <a href="/termos">termos de uso</a> e li a
+                <a href="/privacidade">política de privacidade</a>.</label
+            >
+            <div
+                v-if="
+                    form.errors.email ||
+                    form.errors.password ||
+                    form.errors.terms
+                "
+                class="error"
+            >
+                {{
+                    form.errors.email ||
+                    form.errors.password ||
+                    form.errors.terms
+                }}
             </div>
             <AppButton type="submit" :disabled="form.processing"
                 >Criar conta</AppButton

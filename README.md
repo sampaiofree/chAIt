@@ -44,3 +44,11 @@ Para os testes de navegador, configure `.env.testing`, instale o Chromium com `n
 ## Sequências
 
 Módulo de programação sequencial de fluxos com versões imutáveis, inscrição pelo contato/Operações, pausa de saldo e reserva exclusiva. [Especificação e validação](docs/modulos/sequencias.md); operação do scheduler em [Deploy](docs/operacao/deploy.md).
+
+## Cadastro público e solicitações de exclusão
+
+Habilite `CHAIT_PUBLIC_REGISTRATION_ENABLED=true` e configure `MAIL_MAILER`, host, credenciais, remetente e `APP_URL` no ambiente. O transporte `log` não entrega e-mails. Execute as migrações e mantenha o scheduler ativo para remover pré-cadastros expirados. A administração consulta pedidos em `/admin/exclusoes`; a página pública é `/exclusao-de-conta`.
+
+Configure `LEGAL_ENTITY_NAME`, `LEGAL_TAX_ID` (opcional), `SUPPORT_EMAIL` e `PRIVACY_EMAIL`. As páginas legais devem ser revisadas antes da publicação. Após alterar o ambiente, atualize o cache de configuração conforme o procedimento de deploy.
+
+Antes de enviar às lojas, falta implementar e operacionalizar a exclusão definitiva de contas e dados, incluindo dados de provedores, retenção, prazo e confirmação. Também é necessário validar os aplicativos, permissões, políticas e declarações de privacidade das lojas, credenciais de revisão, materiais de publicação e regras de cobrança. O pedido atual bloqueia o acesso e preserva os dados para análise.

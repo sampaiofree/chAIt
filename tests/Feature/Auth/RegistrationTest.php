@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Support\Facades\Mail;
 use Laravel\Fortify\Features;
 
 test('public registration routes and links are unavailable when disabled', function () {
@@ -41,30 +42,34 @@ test('registration screen can be rendered', function () {
 test('new users can register', function () {
     $this->skipUnlessFortifyHas(Features::registration());
 
+    Mail::fake();
     $response = $this->post(route('register.store'), [
         'name' => 'Test User',
         'email' => 'test@example.com',
         'password' => 'password',
         'password_confirmation' => 'password',
+        'terms' => true,
     ]);
 
-    $this->assertAuthenticated();
-    $response->assertRedirect(route('dashboard', absolute: false));
+    $this->assertGuest();
+    $response->assertRedirect('/register/confirm');
 });
 
 test('registration enforces the six character minimum', function (string $password, bool $valid) {
     $this->skipUnlessFortifyHas(Features::registration());
 
+    Mail::fake();
     $response = $this->post(route('register.store'), [
         'name' => 'Test User',
         'email' => 'test@example.com',
         'password' => $password,
         'password_confirmation' => $password,
+        'terms' => true,
     ]);
 
     if ($valid) {
         $response->assertSessionHasNoErrors();
-        $this->assertAuthenticated();
+        $this->assertGuest();
     } else {
         $response->assertSessionHasErrors('password');
         $this->assertGuest();

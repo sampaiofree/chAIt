@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Admin\UserController as AdminUserController;
+use App\Http\Controllers\Auth\AccountDeletionController;
+use App\Http\Controllers\Auth\PublicRegistrationController;
 use App\Http\Controllers\Chat\ChatController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Workspace\CurrentWorkspaceController;
@@ -11,9 +13,35 @@ use App\Http\Controllers\Workspace\FlowTransportController;
 use App\Http\Controllers\Workspace\SequenceController;
 use App\Http\Controllers\Workspace\UazapiChatController;
 use App\Http\Middleware\EnsureSystemAdmin;
+use App\Models\User;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
 use Laravel\Fortify\Features;
+
+Route::get('/register', function () {
+    abort_unless(Features::enabled(Features::registration()), 404);
+
+    return Inertia::render('auth/register');
+})->name('register');
+Route::post('/register', [PublicRegistrationController::class, 'start'])->middleware('throttle:5,60')->name('register.store');
+Route::get('/register/confirm', [PublicRegistrationController::class, 'show']);
+Route::post('/register/confirm', [PublicRegistrationController::class, 'confirm'])->middleware('throttle:10,1');
+Route::post('/register/resend', [PublicRegistrationController::class, 'resend'])->middleware('throttle:5,60');
+Route::get('/exclusao-de-conta', [AccountDeletionController::class, 'show']);
+Route::post('/exclusao-de-conta', [AccountDeletionController::class, 'start'])->middleware('throttle:5,60');
+Route::post('/exclusao-de-conta/confirmar', [AccountDeletionController::class, 'confirm'])->middleware('throttle:10,1');
+foreach (['privacidade', 'termos', 'suporte'] as $page) {
+    Route::get('/'.$page, fn () => Inertia::render('legal', ['section' => $page, 'legal' => config('legal')]));
+}
+Route::middleware(['auth', EnsureSystemAdmin::class])->get('/admin/exclusoes', function () {
+    return Inertia::render('admin/deletion-requests', ['requests' => DB::table('account_deletion_requests')->join('users', 'users.id', '=', 'account_deletion_requests.user_id')->select('users.id', 'users.name', 'users.email', 'account_deletion_requests.created_at', 'account_deletion_requests.origin')->latest('account_deletion_requests.created_at')->get()->map(function ($item) {
+        $item->workspaces = User::find($item->id)->workspaces()->pluck('name');
+
+        return $item;
+    })]);
+});
 
 Route::inertia('/', 'welcome', [
     'canRegister' => Features::enabled(Features::registration()),

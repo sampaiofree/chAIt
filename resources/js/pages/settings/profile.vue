@@ -14,6 +14,7 @@ const csrfToken =
     document
         .querySelector('meta[name="csrf-token"]')
         ?.getAttribute('content') || '';
+const deletion = useForm({ password: '' });
 function save() {
     if (form.processing) return;
     form.patch('/settings/profile', { preserveScroll: true });
@@ -112,6 +113,32 @@ function save() {
                     </div>
                 </form>
             </div>
+            <section class="settings-card">
+                <h2>Solicitar exclusão da conta</h2>
+                <p>
+                    Seu acesso será bloqueado e o pedido será analisado pela
+                    administração.
+                </p>
+                <form @submit.prevent="deletion.delete('/settings/profile')">
+                    <label
+                        >Senha
+                        <Input
+                            v-model="deletion.password"
+                            type="password"
+                            required
+                    /></label>
+                    <p v-if="deletion.errors.password">
+                        {{ deletion.errors.password }}
+                    </p>
+                    <AppButton type="submit" :disabled="deletion.processing"
+                        >Solicitar exclusão</AppButton
+                    >
+                </form>
+            </section>
+            <p>
+                <a href="/privacidade">Privacidade</a> ·
+                <a href="/termos">Termos</a> · <a href="/suporte">Suporte</a>
+            </p>
             <form class="logout-form" method="post" action="/logout">
                 <input
                     type="hidden"

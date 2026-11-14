@@ -48,6 +48,11 @@ const error = computed(() => form.errors.email || form.errors.password);
             ><small v-if="canRegister"
                 >Não tem conta? <Link href="/register">Criar conta</Link></small
             >
+            <small
+                ><a href="/privacidade">Privacidade</a> ·
+                <a href="/termos">Termos</a> · <a href="/suporte">Suporte</a> ·
+                <a href="/exclusao-de-conta">Solicitar exclusão</a></small
+            >
         </form>
     </main>
 </template>

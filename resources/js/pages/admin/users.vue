@@ -48,6 +48,7 @@ const editUrl = (id: number) =>
     <main class="admin-page">
         <header class="page-header">
             <div>
+                <a href="/admin/exclusoes">Solicitações de exclusão</a>
                 <h1>Usuários</h1>
                 <p>Consulte e gerencie as contas da plataforma.</p>
             </div>
