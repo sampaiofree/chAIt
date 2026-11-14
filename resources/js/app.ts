@@ -54,7 +54,10 @@ createInertiaApp({
 
         const component = (await page()).default;
 
-        if (name !== 'welcome' && !name.startsWith('auth/')) {
+        if (
+            !['welcome', 'support', 'legal'].includes(name) &&
+            !name.startsWith('auth/')
+        ) {
             component.layout = AppLayout;
         }
 

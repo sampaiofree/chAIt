@@ -32,7 +32,8 @@ Route::post('/register/resend', [PublicRegistrationController::class, 'resend'])
 Route::get('/exclusao-de-conta', [AccountDeletionController::class, 'show']);
 Route::post('/exclusao-de-conta', [AccountDeletionController::class, 'start'])->middleware('throttle:5,60');
 Route::post('/exclusao-de-conta/confirmar', [AccountDeletionController::class, 'confirm'])->middleware('throttle:10,1');
-foreach (['privacidade', 'termos', 'suporte'] as $page) {
+Route::inertia('/suporte', 'support')->name('support');
+foreach (['privacidade', 'termos'] as $page) {
     Route::get('/'.$page, fn () => Inertia::render('legal', ['section' => $page, 'legal' => config('legal')]));
 }
 Route::middleware(['auth', EnsureSystemAdmin::class])->get('/admin/exclusoes', function () {

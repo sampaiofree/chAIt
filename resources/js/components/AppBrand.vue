@@ -47,7 +47,7 @@ defineProps<{ compact?: boolean }>();
     inset: 0;
     filter: brightness(0) invert(1);
 }
-:global(.dark) .dark-lettering {
+:global(html.dark .app-brand .dark-lettering) {
     display: block !important;
 }
 .dark-lettering-start {

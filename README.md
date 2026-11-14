@@ -49,6 +49,8 @@ Módulo de programação sequencial de fluxos com versões imutáveis, inscriç�
 
 Habilite `CHAIT_PUBLIC_REGISTRATION_ENABLED=true` e configure `MAIL_MAILER`, host, credenciais, remetente e `APP_URL` no ambiente. O transporte `log` não entrega e-mails. Execute as migrações e mantenha o scheduler ativo para remover pré-cadastros expirados. A administração consulta pedidos em `/admin/exclusoes`; a página pública é `/exclusao-de-conta`.
 
-Configure `LEGAL_ENTITY_NAME`, `LEGAL_TAX_ID` (opcional), `SUPPORT_EMAIL` e `PRIVACY_EMAIL`. As páginas legais devem ser revisadas antes da publicação. Após alterar o ambiente, atualize o cache de configuração conforme o procedimento de deploy.
+As páginas `/privacidade` e `/termos` são públicas, sem autenticação ou menu lateral, inclusive para usuários conectados. A política descreve os dados tratados, finalidades, integrações, IA, armazenamento no navegador, segurança, retenção e direitos dos titulares, com navegação por seções e link para solicitação de exclusão.
+
+Configure `LEGAL_ENTITY_NAME`, `LEGAL_TAX_ID` (opcional), `SUPPORT_EMAIL` e `PRIVACY_EMAIL`. Enquanto os dados obrigatórios não forem preenchidos, as páginas exibem um aviso de documento em revisão. Revise o texto antes da publicação; confirme também fornecedores, condições de transferência e prazos de retenção da operação. Ao revisar a política, atualize a data de versão em `resources/js/pages/legal.vue`. Após alterar o ambiente, atualize o cache de configuração conforme o procedimento de deploy.
 
 Antes de enviar às lojas, falta implementar e operacionalizar a exclusão definitiva de contas e dados, incluindo dados de provedores, retenção, prazo e confirmação. Também é necessário validar os aplicativos, permissões, políticas e declarações de privacidade das lojas, credenciais de revisão, materiais de publicação e regras de cobrança. O pedido atual bloqueia o acesso e preserva os dados para análise.
