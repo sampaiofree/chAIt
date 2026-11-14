@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { cacheGet, cachePut, clearChatCache } from '@/lib/chatCache';
 import {
     mergeChatMessages,
     nextMessageStatus,
@@ -393,6 +394,13 @@ function params() {
     if (selected.value) q.set('thread_id', `${selected.value.id}`);
     return q;
 }
+const cacheKey = (suffix: string) =>
+    `${page.props.chatCacheContext}:${workspace.value.id}:${suffix}`;
+function listCacheKey() {
+    const query = params();
+    query.delete('thread_id');
+    return cacheKey(`list:${query.toString()}`);
+}
 async function loadThreads(append = false) {
     const generation = searchGeneration;
     const previousId = selected.value?.id;
@@ -406,13 +414,40 @@ async function loadThreads(append = false) {
         threadSkeletonTimer = setTimeout(() => {
             showThreadSkeleton.value = true;
         }, 150);
+    const key = listCacheKey();
+    let completed = false;
+    if (!append)
+        void cacheGet<{ data: Thread[]; next_cursor: string | null }>(key).then(
+            (cached) => {
+                if (
+                    !cached ||
+                    completed ||
+                    request.signal.aborted ||
+                    generation !== searchGeneration
+                )
+                    return;
+                threads.value = cached.data;
+                nextCursor.value = cached.next_cursor;
+                threadsReady.value = true;
+                clearTimeout(threadSkeletonTimer);
+                showThreadSkeleton.value = false;
+                if (!selected.value && cached.data[0])
+                    choose(cached.data[0], false);
+            },
+        );
     try {
         const query = params();
         if (append && nextCursor.value) query.set('cursor', nextCursor.value);
         const result = await api(`${root()}/conversations?${query}`, {
             signal: listAbort.signal,
         });
+        completed = true;
         if (generation !== searchGeneration) return;
+        if (!append)
+            void cachePut(key, {
+                data: result.data,
+                next_cursor: result.next_cursor,
+            });
         const combined = append
             ? [...threads.value, ...result.data]
             : result.data;
@@ -464,6 +499,31 @@ async function loadHistory() {
             showSkeleton.value = true;
         }, 150);
     }
+    const key = cacheKey(`history:${target.id}`);
+    let completed = false;
+    void cacheGet<{ data: Message[]; next_offset: number | null }>(key).then(
+        async (cached) => {
+            if (
+                !cached ||
+                completed ||
+                generation !== historyGeneration ||
+                selected.value?.id !== target.id ||
+                workspace.value.id !== workspaceId
+            )
+                return;
+            messages.value = mergeChatMessages(cached.data, messages.value);
+            renderedThreadId = target.id;
+            historyNextOffset.value = cached.next_offset;
+            historyLoading.value = false;
+            clearTimeout(skeletonTimer);
+            await nextTick();
+            if (
+                selected.value?.id === target.id &&
+                generation === historyGeneration
+            )
+                scrollToLatest();
+        },
+    );
     try {
         const history = await api(
             `${root()}/conversations/${target.id}/messages`,
@@ -473,6 +533,16 @@ async function loadHistory() {
             generation !== historyGeneration
         )
             return;
+        completed = true;
+        void cachePut(key, {
+            data: (history.data as Message[])
+                .slice(-100)
+                .map(
+                    ({ media_url, object_url, media_loading, ...message }) =>
+                        message,
+                ),
+            next_offset: history.next_offset ?? null,
+        });
         const pendingForThread = pendingMedia.value.filter(
             (message: any) =>
                 message.thread_id === target.id && message.track_id,
@@ -608,19 +678,27 @@ async function loadHistory() {
         );
         if (shouldFollow) scrollToLatest();
         else updateLatestPosition();
-    } catch {
+    } catch (error: any) {
+        if ([401, 403, 404].includes(error?.status)) {
+            completed = true;
+            void clearChatCache();
+            if (selected.value?.id === target.id) {
+                messages.value = [];
+                renderedThreadId = null;
+            }
+        }
         if (
             selected.value?.id === target.id &&
             workspace.value.id === workspaceId &&
             generation === historyGeneration
         ) {
-            if (initial)
+            if (initial && renderedThreadId !== target.id)
                 messages.value = pendingMedia.value.filter(
                     (message) => message.thread_id === target.id,
                 );
             historyError.value = true;
             historyLimited.value = false;
-            historyNextOffset.value = null;
+            if (renderedThreadId !== target.id) historyNextOffset.value = null;
             historyReadVersion.value = null;
         }
     }
@@ -1061,6 +1139,9 @@ function previewText(thread: Thread) {
 function receiveChat(event: ChatUpdate) {
     if (event.workspace_id !== workspace.value.id) return;
     if (event.type === 'access.changed') {
+        historyGeneration++;
+        searchGeneration++;
+        void clearChatCache();
         threads.value = [];
         selected.value = null;
         messages.value = [];
@@ -1081,6 +1162,8 @@ function receiveChat(event: ChatUpdate) {
         return;
     }
     if (event.type === 'conversation.removed') {
+        historyGeneration++;
+        void clearChatCache();
         threads.value = threads.value.filter(
             (thread) => thread.id !== event.data.id,
         );
@@ -1122,11 +1205,38 @@ function receiveChat(event: ChatUpdate) {
                 (Date.parse(b.last_message_at || '') || 0) -
                     (Date.parse(a.last_message_at || '') || 0) || b.id - a.id,
         );
+        void cachePut(listCacheKey(), {
+            data: threads.value,
+            next_cursor: nextCursor.value,
+        });
         if (selected.value?.id === incoming.id) {
             selected.value = { ...selected.value, ...incoming };
             historyReadVersion.value = incoming.unread_version;
         }
         return;
+    }
+    if (
+        event.type === 'message.received' &&
+        event.thread_id !== selected.value?.id &&
+        event.thread_id
+    ) {
+        const key = cacheKey(`history:${event.thread_id}`);
+        void cacheGet<{ data: Message[]; next_offset: number | null }>(
+            key,
+        ).then((cached) => {
+            if (cached)
+                void cachePut(key, {
+                    ...cached,
+                    data: mergeChatMessages(cached.data, [
+                        {
+                            ...event.data,
+                            media_url: null,
+                            object_url: undefined,
+                            media_loading: false,
+                        } as Message,
+                    ]).slice(-100),
+                });
+        });
     }
     if (
         event.type === 'message.received' &&
@@ -1148,6 +1258,14 @@ function receiveChat(event: ChatUpdate) {
                     message.status === 'failed' ? 'failed' : 'sent';
             existing.media_url ||= localUrl;
         } else messages.value.push(message);
+        const persisted = messages.value
+            .filter((item) => !item.object_url && !item.sending_status)
+            .slice(-100)
+            .map(({ media_url, object_url, media_loading, ...item }) => item);
+        void cachePut(cacheKey(`history:${event.thread_id}`), {
+            data: persisted,
+            next_offset: historyNextOffset.value,
+        });
         if (message.track_id && (!existing?.object_url || message.media_url))
             releasePending(message.track_id);
         if (isAtLatest.value) void nextTick().then(scrollToLatest);
@@ -3788,12 +3906,21 @@ onUnmounted(() => {
     }
     .conversation-filter-dialog {
         top: auto !important;
-        bottom: 0;
+        bottom: max(
+            0px,
+            calc(
+                100dvh - var(--visible-viewport-top, 0px) -
+                    var(--visible-viewport-height, 100dvh)
+            )
+        ) !important;
         left: 0 !important;
         transform: none !important;
         width: 100% !important;
         max-width: none !important;
-        max-height: 90dvh;
+        max-height: calc(
+            var(--visible-viewport-height, 100dvh) -
+                max(16px, env(safe-area-inset-top))
+        ) !important;
         border-radius: 16px 16px 0 0;
         padding-bottom: max(20px, env(safe-area-inset-bottom));
     }

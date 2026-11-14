@@ -152,13 +152,13 @@ function submit() {
 }
 .form-fields {
     display: grid;
-    gap: 14px;
+    gap: var(--form-field-gap);
     border: 0;
     padding: 0;
 }
 .form-field {
     display: grid;
-    gap: 5px;
+    gap: var(--form-label-gap);
 }
 .form-field label {
     font-size: 14px;
@@ -176,6 +176,7 @@ function submit() {
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
-    gap: 8px;
+    gap: var(--form-button-gap);
+    margin-top: calc(var(--form-actions-space) - var(--form-field-gap));
 }
 </style>

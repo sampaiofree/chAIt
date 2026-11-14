@@ -1485,6 +1485,7 @@ async function expectFieldSpacing(page: Page) {
 
     const footer = await page
         .locator('.settings-card .form-actions')
+        .first()
         .boundingBox();
     expect(footer!.y - measurements.at(-1)!.bottom).toBeCloseTo(24, 0);
     await noOverflow(page);
@@ -1762,4 +1763,49 @@ test('settings use available width across sections and screen sizes', async ({
             }
         }
     }
+});
+
+test('mobile dialogs and deletion action stay within the visible area', async ({
+    page,
+}) => {
+    await page.setViewportSize({ width: 390, height: 700 });
+    await login(page);
+    await page.goto('/settings/profile');
+    const deletion = page
+        .locator('.settings-card')
+        .filter({ hasText: 'Solicitar exclusão da conta' });
+    const password = deletion.getByLabel('Senha', { exact: true });
+    const action = deletion.getByRole('button', { name: 'Solicitar exclusão' });
+    const inputBox = await password.boundingBox();
+    const actionBox = await action.boundingBox();
+    expect(actionBox!.y - (inputBox!.y + inputBox!.height)).toBeCloseTo(24, 0);
+    await page.goto('/settings/team');
+    await page
+        .getByRole('button', { name: 'Adicionar usuário', exact: true })
+        .click();
+    const dialog = page.getByRole('dialog', { name: 'Adicionar usuário' });
+    await page.evaluate(() => {
+        document.documentElement.style.setProperty(
+            '--visible-viewport-height',
+            '380px',
+        );
+        document.documentElement.style.setProperty(
+            '--visible-viewport-top',
+            '40px',
+        );
+    });
+    await dialog.evaluate(async (element) => {
+        await Promise.all(
+            element.getAnimations().map((animation) => animation.finished),
+        );
+    });
+    const bounds = await dialog.boundingBox();
+    expect(bounds!.y).toBeGreaterThanOrEqual(55);
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(405);
+    const footer = dialog.locator('.form-actions');
+    await footer.scrollIntoViewIfNeeded();
+    await expect(
+        footer.getByRole('button', { name: 'Cancelar' }),
+    ).toBeInViewport();
+    await footer.getByRole('button', { name: 'Cancelar' }).click();
 });

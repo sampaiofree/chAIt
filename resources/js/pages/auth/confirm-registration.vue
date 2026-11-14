@@ -39,7 +39,17 @@ const page = usePage<any>();
 }
 form {
     display: grid;
-    gap: 12px;
+    gap: var(--form-field-gap);
+}
+form label {
+    display: grid;
+    gap: var(--form-label-gap);
+}
+form > button {
+    margin-top: calc(var(--form-actions-space) - var(--form-field-gap));
+}
+form > p {
+    margin: 0;
 }
 input,
 button {

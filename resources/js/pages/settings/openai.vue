@@ -120,7 +120,7 @@ p {
 }
 article {
     display: grid;
-    gap: 18px;
+    gap: var(--form-field-gap);
     margin-top: 24px;
     padding: 24px;
     border: 1px solid var(--border);
@@ -134,6 +134,7 @@ label {
 }
 
 .actions {
+    margin-top: calc(var(--form-actions-space) - var(--form-field-gap));
     display: flex;
     gap: var(--form-button-gap);
     flex-wrap: wrap;

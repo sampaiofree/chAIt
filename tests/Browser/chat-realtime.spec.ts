@@ -567,3 +567,44 @@ test('conversation events respect the selected contact tags', async ({
         page.getByText('<script>literal preview</script>', { exact: true }),
     ).toHaveCount(0);
 });
+
+test('cached list and history appear after reload while the network is pending', async ({
+    page,
+}) => {
+    await setup(page);
+    await expect(
+        page.getByText('Mensagem do histórico', { exact: true }),
+    ).toBeVisible();
+    await expect
+        .poll(() =>
+            page.evaluate(async () => {
+                const db = await new Promise<IDBDatabase>((resolve, reject) => {
+                    const request = indexedDB.open('chait-chat-cache');
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+                return await new Promise<number>((resolve) => {
+                    const request = db
+                        .transaction('entries')
+                        .objectStore('entries')
+                        .count();
+                    request.onsuccess = () => resolve(request.result);
+                });
+            }),
+        )
+        .toBeGreaterThanOrEqual(2);
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    await page.route('**/workspaces/*/conversations**', async (route) => {
+        await gate;
+        await route.fallback();
+    });
+    await page.reload();
+    await expect(page.getByText('Contato em tempo real').first()).toBeVisible();
+    await expect(
+        page.getByText('Mensagem do histórico', { exact: true }),
+    ).toBeVisible();
+    release();
+});

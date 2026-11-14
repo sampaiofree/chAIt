@@ -120,19 +120,23 @@ function save() {
                     administração.
                 </p>
                 <form @submit.prevent="deletion.delete('/settings/profile')">
-                    <label
-                        >Senha
-                        <Input
-                            v-model="deletion.password"
-                            type="password"
-                            required
-                    /></label>
-                    <p v-if="deletion.errors.password">
-                        {{ deletion.errors.password }}
-                    </p>
-                    <AppButton type="submit" :disabled="deletion.processing"
-                        >Solicitar exclusão</AppButton
-                    >
+                    <div class="deletion-field">
+                        <label
+                            >Senha
+                            <Input
+                                v-model="deletion.password"
+                                type="password"
+                                required
+                        /></label>
+                        <p v-if="deletion.errors.password" class="form-error">
+                            {{ deletion.errors.password }}
+                        </p>
+                    </div>
+                    <div class="form-actions">
+                        <AppButton type="submit" :disabled="deletion.processing"
+                            >Solicitar exclusão</AppButton
+                        >
+                    </div>
                 </form>
             </section>
             <p>
@@ -152,6 +156,14 @@ function save() {
     >
 </template>
 <style scoped>
+.deletion-field,
+.deletion-field label {
+    display: grid;
+    gap: var(--form-label-gap);
+}
+.deletion-field p {
+    margin: 0;
+}
 .logout-form {
     margin-top: 24px;
 }

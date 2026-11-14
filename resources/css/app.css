@@ -301,3 +301,61 @@ textarea {
         max-height: calc(100dvh - 32px);
     }
 }
+
+/* Portaled dialogs need the visual viewport, including the on-screen keyboard. */
+@media (max-width: 1023px) {
+    [data-slot='dialog-content']:not(.conversation-filter-dialog),
+    [data-slot='alert-dialog-content'] {
+        top: calc(
+            var(--visible-viewport-top, 0px) +
+                (
+                    var(--visible-viewport-height, 100dvh) +
+                        max(16px, env(safe-area-inset-top)) -
+                        max(16px, env(safe-area-inset-bottom))
+                ) /
+                2
+        ) !important;
+        max-height: calc(
+            var(--visible-viewport-height, 100dvh) -
+                max(16px, env(safe-area-inset-top)) -
+                max(16px, env(safe-area-inset-bottom))
+        ) !important;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+    [data-slot='sheet-content'] {
+        max-height: var(--visible-viewport-height, 100dvh);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+    [data-slot='sheet-content'][data-side='left'],
+    [data-slot='sheet-content'][data-side='right'] {
+        top: var(--visible-viewport-top, 0px);
+        bottom: auto;
+        height: var(--visible-viewport-height, 100dvh);
+    }
+    [data-slot='sheet-content'][data-side='bottom'] {
+        bottom: max(
+            0px,
+            calc(
+                100dvh - var(--visible-viewport-top, 0px) -
+                    var(--visible-viewport-height, 100dvh)
+            )
+        );
+    }
+    [data-slot='sheet-content'][data-side='top'] {
+        top: var(--visible-viewport-top, 0px);
+    }
+    [data-slot='dialog-scroll-overlay'] {
+        top: var(--visible-viewport-top, 0px);
+        bottom: auto;
+        height: var(--visible-viewport-height, 100dvh);
+        align-items: safe center;
+        padding: max(16px, env(safe-area-inset-top)) 16px
+            max(16px, env(safe-area-inset-bottom));
+    }
+    [data-slot='dialog-scroll-content'] {
+        max-width: 100%;
+        margin-block: 0;
+    }
+}

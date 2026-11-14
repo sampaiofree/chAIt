@@ -31,6 +31,12 @@
             html.dark {
                 background-color: #09090b;
             }
+            .startup-brand { position: relative; display: block; width: 180px; max-width: 80vw; line-height: 0; }
+            .startup-brand img { display: block; width: 100%; height: auto; }
+            .startup-brand-light { display: none !important; position: absolute; inset: 0; filter: brightness(0) invert(1); }
+            html.dark .startup-brand-light { display: block !important; }
+            .startup-brand-start { clip-path: inset(0 38% 0 36%); }
+            .startup-brand-end { clip-path: inset(0 0 0 84%); }
         </style>
 
         <link rel="icon" href="/brand/symbol.png" type="image/png">
@@ -46,7 +52,11 @@
     </head>
     <body class="font-sans antialiased">
         <div id="app-startup" role="status" style="position:fixed;inset:0;display:grid;place-content:center;text-align:center;background:inherit;z-index:1000">
-            <img src="/brand/logo.png" alt="chAIt" style="width:180px;max-width:80vw;background:white;border-radius:8px"><span>Carregando…</span>
+            <span class="startup-brand" role="img" aria-label="chAIt">
+                <img src="/brand/logo.png" alt="">
+                <img class="startup-brand-light startup-brand-start" src="/brand/logo.png" alt="" aria-hidden="true">
+                <img class="startup-brand-light startup-brand-end" src="/brand/logo.png" alt="" aria-hidden="true">
+            </span><span>Carregando…</span>
             <button id="app-startup-retry" type="button" hidden onclick="location.reload()">Recarregar</button>
         </div>
         <script>setTimeout(function(){var b=document.getElementById('app-startup-retry');if(b)b.hidden=false},10000);</script>

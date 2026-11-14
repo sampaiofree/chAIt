@@ -224,6 +224,7 @@ onUnmounted(() => {
                 </div>
                 <AppButton
                     v-if="realtimeEnabled"
+                    class="connection-check"
                     :disabled="busy"
                     @click="refresh(true)"
                     >Verificar conexão</AppButton
@@ -356,6 +357,9 @@ section > p {
 }
 .status-dot.online {
     background: var(--success);
+}
+.connection-check {
+    margin-top: 12px;
 }
 .details {
     display: grid;
