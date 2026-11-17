@@ -37,6 +37,11 @@ class TeamController extends Controller
                 'email' => $membership->user->email,
                 'role' => $membership->role,
                 'can_view_unassigned' => $membership->can_view_unassigned,
+                'can_view_leads' => (bool) $membership->can_view_leads,
+                'can_edit_leads' => (bool) $membership->can_edit_leads,
+                'can_create_tags' => (bool) $membership->can_create_tags,
+                'can_create_contact_fields' => (bool) $membership->can_create_contact_fields,
+
                 'can_manage_flows' => $membership->can_manage_flows,
                 'can_use_flow_assistant' => $membership->can_use_flow_assistant,
             ])->values(),
@@ -48,6 +53,11 @@ class TeamController extends Controller
         $this->ensureWorkspaceAccess($request->user(), $workspace, WorkspaceRole::Admin);
         $data = $request->validate([
             'can_view_unassigned' => ['sometimes', 'boolean'],
+            'can_view_leads' => ['sometimes', 'boolean'],
+            'can_edit_leads' => ['sometimes', 'boolean'],
+            'can_create_tags' => ['sometimes', 'boolean'],
+            'can_create_contact_fields' => ['sometimes', 'boolean'],
+
             'can_manage_flows' => ['sometimes', 'boolean'],
             'can_use_flow_assistant' => ['sometimes', 'boolean'],
         ]);
@@ -66,6 +76,11 @@ class TeamController extends Controller
         $data = $request->validate([
             'email' => ['required', 'string', 'email', 'max:255'],
             'can_view_unassigned' => ['required', 'boolean'],
+            'can_view_leads' => ['sometimes', 'boolean'],
+            'can_edit_leads' => ['sometimes', 'boolean'],
+            'can_create_tags' => ['sometimes', 'boolean'],
+            'can_create_contact_fields' => ['sometimes', 'boolean'],
+
             'can_manage_flows' => ['required', 'boolean'],
             'can_use_flow_assistant' => ['sometimes', 'boolean'],
         ]);
@@ -109,6 +124,11 @@ class TeamController extends Controller
                 'joined_at' => now(),
                 'last_seen_at' => now(),
                 'can_view_unassigned' => $data['can_view_unassigned'],
+                'can_view_leads' => $data['can_view_leads'] ?? false,
+                'can_edit_leads' => $data['can_edit_leads'] ?? false,
+                'can_create_tags' => $data['can_create_tags'] ?? false,
+                'can_create_contact_fields' => $data['can_create_contact_fields'] ?? false,
+
                 'can_manage_flows' => $data['can_manage_flows'],
                 'can_use_flow_assistant' => $data['can_use_flow_assistant'] ?? false,
             ]);

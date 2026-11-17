@@ -4,7 +4,7 @@
 > **Documento sugerido no repositório:** `docs/modulos/leads.md`  
 > **Versão:** 0.1  
 > **Data do briefing:** 2026-10-14
-> **Estado em 17/10/2026:** não implementado. A comparação com `routes/`, `resources/js/pages/` e `AppNavigation.vue` não encontrou módulo, rotas ou entrada de navegação para Leads; este documento continua sendo briefing funcional, não evidência de implementação.
+> **Estado em 17/11/2026:** listagem, ficha, cadastro manual e permissões implementados sobre `contacts`. Filtros oferecem E/OU e inclusão adicional de contatos sem etiqueta. Campos personalizados reutilizam o tipo texto atualmente implementado. Leads independe da conexão; Conversas exige confirmação da UAZAPI com cache de 15 segundos.
 > **Stack do produto:** Laravel no backend; Vue 3 + Inertia.js na aplicação web  
 > **Relacionado:** `docs/modulos/chat-multiatendimento.md`, `docs/interfaces/chat.md`, `docs/modulos/editor-de-fluxos.md` e `docs/planejamento/decisoes.md`.
 

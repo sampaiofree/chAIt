@@ -2,6 +2,7 @@ import type { FlowCatalog } from '@/composables/useFlowAssistant';
 
 export type MenuOption = { id: string; label: string };
 export type FlowMenuData = {
+    ai_outputs?: { id: string; label: string; instruction: string }[];
     menu_format?: 'numeric' | 'button' | 'list';
     question?: string;
     options?: MenuOption[];
@@ -17,6 +18,16 @@ export function flowOutputs(
     type: string,
     data: FlowMenuData,
 ) {
+    if (type === 'ai' && data.ai_outputs !== undefined) {
+        return [
+            ...data.ai_outputs.map((output) => ({
+                id: `ai_exit:${output.id}`,
+                label: output.label || 'Saída sem nome',
+            })),
+            { id: 'continue', label: 'Continuar' },
+        ];
+    }
+
     const definition = catalog.nodes.find((node) => node.type === type);
     const dynamic = definition?.dynamic_outputs;
 

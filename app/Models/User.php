@@ -144,4 +144,9 @@ class User extends Authenticatable
         return $this->canManageFlows($workspace) && $membership !== null
             && (WorkspaceRole::from($membership->role)->atLeast(WorkspaceRole::Admin) || $membership->can_use_flow_assistant);
     }
+
+    public function hasLeadPermission(Workspace $workspace, string $permission): bool
+    {
+        return $this->canAccessWorkspace($workspace) && ($this->canAccessWorkspace($workspace, WorkspaceRole::Admin) || (bool) $this->membershipFor($workspace)?->getAttribute($permission));
+    }
 }

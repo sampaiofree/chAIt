@@ -10,6 +10,8 @@ type Event = {
     node_id: string | null;
     created_at: string;
     metadata: {
+        output?: string;
+        output_label?: string;
         item_id?: string;
         field?: string;
         reason?: string;
@@ -22,6 +24,10 @@ const busy = ref(false);
 const error = ref('');
 const before = ref<number | null>(null);
 const labels: Record<string, string> = {
+    ai_exit: 'Saída do bloco IA',
+    tool: 'Saída escolhida pela IA',
+    inactivity: 'Prazo de inatividade atingido',
+    message_limit: 'Limite de mensagens atingido',
     send_failed: 'Envio ignorado',
     send_unknown: 'Resultado desconhecido',
     message_confirmed: 'Envio confirmado',
@@ -79,6 +85,10 @@ async function load(reset = false) {
                 ><template v-if="event.metadata.field">
                     · Campo: {{ event.metadata.field }}</template
                 >
+            </p>
+            <p v-if="event.metadata.output">
+                Saída:
+                {{ event.metadata.output_label || event.metadata.output }}
             </p>
             <p v-if="event.metadata.reason">
                 {{ labels[event.metadata.reason] || event.metadata.reason }}

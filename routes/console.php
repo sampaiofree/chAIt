@@ -6,6 +6,7 @@ use App\Models\ExternalWebhookReceipt;
 use App\Models\FlowExecution;
 use App\Models\UazapiConnection;
 use App\Services\Chat\ChatMaintenance;
+use App\Services\Flows\FlowAssetCleanup;
 use App\Services\Flows\FlowMenuRuntime;
 use App\Services\Sequences\SequenceScheduler;
 use App\Services\Uazapi\UazapiClient;
@@ -119,3 +120,9 @@ Schedule::command('chat:prune')->everyMinute()->withoutOverlapping();
 Schedule::command('horizon:snapshot')->everyFiveMinutes()->withoutOverlapping();
 
 Schedule::call(fn () => DB::table('pending_registrations')->where('created_at', '<', now()->subDay())->delete())->daily()->name('prune-pending-registrations');
+
+Artisan::command('flows:cleanup-assets', function () {
+    app(FlowAssetCleanup::class)->run();
+    $this->info('Pendências restantes: '.DB::table('flow_asset_deletions')->count());
+});
+Schedule::command('flows:cleanup-assets')->everyMinute()->withoutOverlapping();

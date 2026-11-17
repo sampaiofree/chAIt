@@ -123,6 +123,7 @@ class FlowTransport
             $data = $this->internalData($node['data'], $resources, 'nodes.'.$index.'.data');
             if ($node['type'] === 'ai') {
                 $defaults = FlowCapabilities::aiDefaults();
+                unset($defaults['ai_outputs']);
                 $legacyGrouping = ! array_key_exists('ai_grouping_seconds', $data);
                 $data += $defaults;
                 if ($legacyGrouping) {
@@ -150,7 +151,7 @@ class FlowTransport
             $edges[] = ['id' => (string) Str::uuid(), 'source' => $ids[$edge['source']], 'target' => $ids[$edge['target']], 'sourceHandle' => $edge['output'], 'targetHandle' => 'input'];
         }
         try {
-            $graph = $this->validator->validate(['schema_version' => 2, 'nodes' => $nodes, 'edges' => $edges, 'viewport' => ['x' => 0, 'y' => 0, 'zoom' => 1]]);
+            $graph = app(FlowAiOutputs::class)->convert($this->validator->validate(['schema_version' => 2, 'nodes' => $nodes, 'edges' => $edges, 'viewport' => ['x' => 0, 'y' => 0, 'zoom' => 1]]));
         } catch (ValidationException $error) {
             $errors = [];
             foreach ($error->errors() as $path => $messages) {

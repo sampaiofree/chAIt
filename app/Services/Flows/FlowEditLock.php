@@ -4,6 +4,7 @@ namespace App\Services\Flows;
 
 use App\Models\Flow;
 use App\Models\User;
+use App\Services\FlowAssistant\DraftSessionService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -27,7 +28,17 @@ class FlowEditLock
                 'user_id' => $user->id, 'token' => $token, 'expires_at' => now()->addSeconds(60), 'updated_at' => now(), 'created_at' => now(),
             ]);
 
-            return ['acquired' => true, 'editor' => $user->name];
+            $converted = false;
+            $draft = app(DraftSessionService::class)->current($flow);
+            $graph = $draft?->graph ?? $flow->graph;
+            if (collect($graph['nodes'])->contains(fn ($n) => $n['type'] === 'ai' && ! array_key_exists('ai_outputs', $n['data']))) {
+                $graph = app(FlowAiOutputs::class)->convert($graph);
+                $flow->update(['graph' => $graph, 'revision' => $flow->revision + 1]);
+                $draft?->update(['graph' => $graph, 'base_revision' => $flow->revision, 'revision' => $draft->revision + 1]);
+                $converted = true;
+            }
+
+            return ['converted' => $converted, 'graph' => $converted ? $graph : null, 'revision' => $flow->revision, 'acquired' => true, 'editor' => $user->name];
         }, 3);
     }
 

@@ -16,6 +16,7 @@ use App\Services\Flows\AiInboundMessage;
 use App\Services\Flows\AiInitialContext;
 use App\Services\Flows\AiSessionService;
 use App\Services\Flows\AiTurnBudget;
+use App\Services\Flows\FlowAiOutputs;
 use App\Services\Flows\FlowAutomationControl;
 use App\Services\Flows\FlowGraphValidator;
 use App\Services\Flows\FlowInboundProcessor;
@@ -88,9 +89,9 @@ test('AI draft can be saved but publishing requires a valid key and model', func
     $this->actingAs($user)->postJson(route('workspaces.flows.edit-lock.acquire', [$workspace, $flow]), ['token' => $token])->assertOk();
     $this->withHeader('X-Flow-Edit-Token', $token);
     $this->putJson(route('workspaces.flows.update', [$workspace, $flow]), [
-        'name' => 'IA', 'graph' => aiGraph(['ai_prompt' => '']), 'revision' => 1,
+        'name' => 'IA', 'graph' => aiGraph(['ai_prompt' => '', 'ai_outputs' => []]), 'revision' => 2,
     ])->assertOk();
-    $this->postJson(route('workspaces.flows.activate', [$workspace, $flow]), ['revision' => 2])->assertUnprocessable();
+    $this->postJson(route('workspaces.flows.activate', [$workspace, $flow]), ['revision' => 3])->assertUnprocessable();
     $flow->update(['graph' => aiGraph(), 'revision' => 3]);
     $this->postJson(route('workspaces.flows.activate', [$workspace, $flow]), ['revision' => 3])->assertUnprocessable();
     WorkspaceOpenAiIntegration::create(['workspace_id' => $workspace->id, 'api_key' => 'sk-test']);
@@ -915,4 +916,95 @@ test('initial context preserves normal opening when there is no captured message
     expect($service->input($session, $template, 'test', new AiTurnBudget))->toBeNull();
     expect($service->input($session, '', 'test', new AiTurnBudget))->toBeNull();
     expect($service->input($session, 'Contexto literal', 'test', new AiTurnBudget))->toBe([['type' => 'input_text', 'text' => 'Contexto literal']]);
+});
+
+test('custom AI outputs finish without implicitly opening human support', function () {
+    Queue::fake();
+    $f = aiFixture(['ai_outputs' => [['id' => 'human', 'label' => 'Atendimento humano', 'instruction' => 'Quando solicitado.']]]);
+    Http::fake([
+        'api.openai.com/v1/conversations' => Http::response(['id' => 'custom-conv']),
+        'api.openai.com/v1/responses' => Http::response(['output' => [['type' => 'function_call', 'call_id' => 'exit', 'name' => 'concluir_bloco_ia', 'arguments' => json_encode(['saida' => 'human', 'mensagem_final' => null])]]]),
+    ]);
+    $execution = app(FlowRuntime::class)->start($f['version'], $f['contact']->id, $f['thread']->id, $f['connection'], 'test');
+    app(FlowRuntime::class)->run($execution->id);
+    app(AiSessionService::class)->process(AiSession::sole()->id, null);
+    expect($execution->fresh()->status)->toBe('completed')->and($f['thread']->fresh()->human_opened_at)->toBeNull();
+});
+
+test('new AI failures and inactivity use continue without human support', function (string $event) {
+    Queue::fake();
+    $f = aiFixture(['ai_outputs' => []]);
+    $execution = app(FlowRuntime::class)->start($f['version'], $f['contact']->id, $f['thread']->id, $f['connection'], 'test');
+    app(FlowRuntime::class)->run($execution->id);
+    $session = AiSession::sole();
+    if ($event === 'inactivity') {
+        $session->update(['expires_at' => now()->subSecond()]);
+        app(AiSessionService::class)->expire($session->id);
+    } else {
+        app(AiSessionService::class)->fail($session, 'test failure');
+    }
+    expect($execution->fresh()->status)->toBe('completed')->and($session->fresh()->end_reason)->toBe($event === 'inactivity' ? 'inactivity' : 'test failure')
+        ->and($f['thread']->fresh()->human_opened_at)->toBeNull();
+})->with(['failure', 'inactivity']);
+
+test('AI output conversion preserves destinations and is idempotent', function () {
+    $graph = aiGraph();
+    $graph['nodes'][] = ['id' => 'end', 'type' => 'operations', 'position' => ['x' => 0, 'y' => 500], 'data' => ['label' => 'End', 'actions' => []]];
+    $graph['edges'][] = ['id' => 'old-exit', 'source' => 'ai', 'sourceHandle' => 'continue', 'target' => 'end', 'targetHandle' => 'input'];
+    $converter = app(FlowAiOutputs::class);
+    $converted = $converter->convert($graph);
+    expect($converter->convert($converted))->toBe($converted)
+        ->and(collect($converted['edges'])->firstWhere('sourceHandle', 'ai_exit:finished')['target'])->toBe('end')
+        ->and(collect($converted['edges'])->firstWhere('sourceHandle', 'continue')['target'])->toBe('end')
+        ->and(count($converted['nodes']))->toBe(4);
+});
+
+test('optional final AI message waits for reconciliation and transitions once', function () {
+    Queue::fake();
+    $f = aiFixture(['ai_outputs' => [['id' => 'done', 'label' => 'Concluído', 'instruction' => 'Quando terminar.']]]);
+    Http::fake([
+        'api.openai.com/v1/conversations' => Http::response(['id' => 'final-conv']),
+        'api.openai.com/v1/responses' => Http::response(['output' => [['type' => 'function_call', 'call_id' => 'exit-final', 'name' => 'concluir_bloco_ia', 'arguments' => json_encode(['saida' => 'done', 'mensagem_final' => 'Até logo!'])]]]),
+        'api.uazapi.test/send/text' => Http::response(['status' => 'queued']),
+        'api.uazapi.test/message/find' => Http::response(['messages' => [['id' => 'confirmed', 'status' => 'sent']]]),
+    ]);
+    $execution = app(FlowRuntime::class)->start($f['version'], $f['contact']->id, $f['thread']->id, $f['connection'], 'test');
+    app(FlowRuntime::class)->run($execution->id);
+    $session = AiSession::sole();
+    app(AiSessionService::class)->process($session->id, null);
+    expect($session->fresh()->status)->toBe('active')->and($execution->fresh()->context['ai_pending_send']['exit_handle'])->toBe('ai_exit:done');
+    app(AiSessionService::class)->reconcileSend($session->id);
+    app(AiSessionService::class)->reconcileSend($session->id);
+    expect($session->fresh()->status)->toBe('completed')->and($execution->fresh()->status)->toBe('completed');
+    Http::assertSentCount(4);
+});
+
+test('new AI omits the conclusion tool when there are no custom outputs', function () {
+    Queue::fake();
+    $f = aiFixture(['ai_outputs' => []]);
+    Http::fake([
+        'api.openai.com/v1/conversations' => Http::response(['id' => 'no-exits']),
+        'api.openai.com/v1/responses' => Http::response(['output' => [['type' => 'message', 'content' => [['type' => 'output_text', 'text' => 'Olá!']]]]]),
+        'api.uazapi.test/send/text' => Http::response(['id' => 'opening', 'status' => 'sent']),
+    ]);
+    $execution = app(FlowRuntime::class)->start($f['version'], $f['contact']->id, $f['thread']->id, $f['connection'], 'test');
+    app(FlowRuntime::class)->run($execution->id);
+    app(AiSessionService::class)->process(AiSession::sole()->id, null);
+    Http::assertSent(fn ($request) => str_ends_with($request->url(), '/responses') && ! in_array('concluir_bloco_ia', array_column($request['tools'], 'name'), true));
+    expect(AiSession::sole()->status)->toBe('active');
+});
+
+test('failed final messages follow continue instead of the chosen output', function () {
+    Queue::fake();
+    $f = aiFixture(['ai_outputs' => [['id' => 'done', 'label' => 'Concluído', 'instruction' => 'Quando terminar.']]]);
+    Http::fake([
+        'api.openai.com/v1/conversations' => Http::response(['id' => 'final-failed']),
+        'api.openai.com/v1/responses' => Http::response(['output' => [['type' => 'function_call', 'call_id' => 'final', 'name' => 'concluir_bloco_ia', 'arguments' => json_encode(['saida' => 'done', 'mensagem_final' => 'Até logo!'])]]]),
+        'api.uazapi.test/send/text' => Http::response(['error' => 'rejected'], 400),
+    ]);
+    $execution = app(FlowRuntime::class)->start($f['version'], $f['contact']->id, $f['thread']->id, $f['connection'], 'test');
+    app(FlowRuntime::class)->run($execution->id);
+    app(AiSessionService::class)->process(AiSession::sole()->id, null);
+    expect(AiSession::sole()->end_reason)->toBe('transport_rejected')->and($execution->fresh()->status)->toBe('completed');
+    expect(DB::table('flow_events')->where('flow_execution_id', $execution->id)->where('event_type', 'ai_exit')->count())->toBe(1);
 });

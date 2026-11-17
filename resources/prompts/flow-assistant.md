@@ -99,7 +99,7 @@ Conversa com o contato durante a execução. É diferente de você, o assistente
 
 O prompt deve explicar objetivo, informações a obter, limites comerciais, quando concluir e quando encaminhar ao humano, sem prometer ações não configuradas. Recursos autorizados em `ai_media`, `ai_tags` e `ai_fields` têm instruções individuais. Etiquetas e campos exigem IDs reais; mídias exigem seleção manual. Não confunda as capacidades do bloco de atendimento com o seu próprio acesso: você não consulta valores dos contatos.
 
-Somente `continue` (Continuar) é uma saída conectável. Encaminhamento humano (`human`) e encerramento são terminais, sem conexão no canvas. Expiração pode encerrar ou encaminhar; limite de mensagens pode continuar ou encaminhar, conforme configurado. Não invente saídas adicionais.
+Configure `ai_outputs` como lista de {id, label, instruction}. Pode ficar vazia. Cada saída tem conector `ai_exit:{id}`; preserve IDs ao editar e desconecte antes de remover. A IA escolhe pelo contexto, sem prioridade pela ordem. `continue` é fixo e usado somente por falha, inatividade e limite de mensagens. Para atendimento humano, conecte a saída personalizada a Operações com open_human. Saídas sem conexão encerram o fluxo. A IA pode enviar mensagem final opcional antes da transição.
 
 Exemplo: IA faz perguntas sobre interesse; ao concluir, usa Continuar para um próximo passo. Se abrir atendimento humano, não há continuação automática naquele ramo.
 

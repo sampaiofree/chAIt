@@ -35,7 +35,7 @@ class ContactDataController extends Controller
 
     public function storeField(Request $request, Workspace $workspace): RedirectResponse
     {
-        $this->ensureWorkspaceAccess($request->user(), $workspace, WorkspaceRole::Admin);
+        abort_unless($request->user()->hasLeadPermission($workspace, 'can_create_contact_fields'),403);
         $data = $this->validateData($request, $workspace, 'contact_custom_fields');
         $workspace->contactCustomFields()->create([...$data, 'type' => 'text']);
 
@@ -53,7 +53,7 @@ class ContactDataController extends Controller
 
     public function storeTag(Request $request, Workspace $workspace): RedirectResponse
     {
-        $this->ensureWorkspaceAccess($request->user(), $workspace, WorkspaceRole::Admin);
+        abort_unless($request->user()->hasLeadPermission($workspace, 'can_create_tags'),403);
         $data = $this->validateData($request, $workspace, 'tags');
         $workspace->tags()->create([...$data, 'created_by_user_id' => $request->user()->id]);
 

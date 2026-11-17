@@ -3,6 +3,7 @@ import { Link, router, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import {
     MessagesSquare,
+    UsersRound,
     Workflow,
     Timer,
     Settings,
@@ -40,6 +41,16 @@ const workspace = computed(
 const workspaceInitial = (name?: string) =>
     name?.trim().charAt(0).toUpperCase() || '?';
 const items = computed(() => [
+    ...(page.props.canViewLeads && workspace.value
+        ? [
+              {
+                  title: 'Leads',
+                  href: `/workspaces/${workspace.value.id}/leads`,
+                  icon: UsersRound,
+                  active: /\/leads(?:\/|\?|$)/.test(page.url),
+              },
+          ]
+        : []),
     {
         title: 'Conversas',
         href: '/dashboard',

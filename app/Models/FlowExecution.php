@@ -2,12 +2,23 @@
 
 namespace App\Models;
 
+use App\Services\Flows\FlowAssetCleanup;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
 
 class FlowExecution extends Model
 {
     protected $guarded = [];
+
+    protected static function booted(): void
+    {
+        static::updated(function (self $execution) {
+            if ($execution->wasChanged('status')) {
+                DB::afterCommit(fn () => app(FlowAssetCleanup::class)->run($execution->flow_id));
+            }
+        });
+    }
 
     protected function casts(): array
     {

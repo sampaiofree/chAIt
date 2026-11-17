@@ -345,10 +345,13 @@ async function deleteFlow(flow: FlowSummary) {
     )
         return;
     try {
-        await request(
+        const result = await request(
             '/workspaces/' + props.workspace.id + '/flows/' + flow.id,
             'DELETE',
         );
+        if (result.meta?.media_cleanup_pending) {
+            await alert('Alteração concluída; exclusão de arquivos pendente de conclusão automática.');
+        }
         reloadLibrary();
     } catch (error) {
         await alert(

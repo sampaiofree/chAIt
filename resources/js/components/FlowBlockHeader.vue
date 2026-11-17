@@ -11,7 +11,12 @@ import { Pencil } from '@lucide/vue';
 import AppIconButton from '@/components/AppIconButton.vue';
 import { Input } from '@/components/ui/input';
 
-const props = defineProps<{ blockId: string; kind: string; name: string }>();
+const props = defineProps<{
+    blockId: string;
+    nodeType: string;
+    kind: string;
+    name: string;
+}>();
 const emit = defineEmits<{
     'update:name': [value: string];
     'validity-change': [invalid: boolean];
@@ -110,7 +115,11 @@ function cancel() {
 }
 </script>
 <template>
-    <header ref="headingElement" class="block-header">
+    <header
+        ref="headingElement"
+        class="block-header"
+        :data-flow-type="nodeType"
+    >
         <div class="block-heading">
             <small>{{ kind }}</small>
             <div class="block-title">
@@ -155,8 +164,11 @@ function cancel() {
     display: flex;
     align-items: flex-start;
     gap: 8px;
-    padding-bottom: 16px;
+    padding: 12px;
+    border-top: 4px solid var(--flow-type-color);
     border-bottom: 1px solid var(--border);
+    border-radius: var(--radius) var(--radius) 0 0;
+    background: var(--flow-type-soft);
     margin-bottom: 20px;
 }
 .block-heading {
@@ -164,7 +176,7 @@ function cancel() {
     min-width: 0;
 }
 .block-heading > small {
-    color: var(--muted-foreground);
+    color: var(--flow-type-text);
     font-size: 11px;
     font-weight: 500;
 }

@@ -54,6 +54,7 @@ import {
 } from '@vue-flow/core';
 import {
     computed,
+    nextTick,
     onBeforeUnmount,
     onMounted,
     ref,
@@ -130,6 +131,7 @@ type FlowData = FlowMenuData & {
     target_flow_id?: number | null;
     actions?: FlowAction[];
     ai_initial_context?: ContactTemplate;
+    ai_outputs?: { id: string; label: string; instruction: string }[];
     ai_prompt?: ContactTemplate;
     ai_model?: 'gpt-6-luna' | 'gpt-6.1-sol' | 'gpt-6-astra';
     ai_grouping_seconds?: number;
@@ -221,6 +223,7 @@ const flowIsActive = ref(props.reference.is_active);
 const editToken = crypto.randomUUID();
 const editLocked = ref(false);
 const editingBy = ref('');
+const editLockError = ref('');
 const canEdit = computed(() => !flowIsActive.value && editLocked.value);
 let lockTimer: ReturnType<typeof setTimeout> | undefined;
 let lockDisposed = false;
@@ -246,6 +249,21 @@ async function renewEditLock() {
         const result = await response.json();
         editLocked.value = response.ok && result.data?.acquired === true;
         editingBy.value = result.data?.editor || '';
+        editLockError.value =
+            response.status === 422
+                ? Object.values(result.errors || {})
+                      .flat()
+                      .join(' ') || result.message
+                : '';
+        if (editLocked.value && result.data?.converted) {
+            revision.value = result.data.revision;
+            hydrate(result.data.graph as Graph);
+            serverGraphSnapshot = stableGraph(makeGraph(viewport.value));
+            await alert(
+                'Blocos IA convertidos: falhas, inatividade e limite de mensagens agora usam Continuar. Atendimento humano usa Operações.',
+                'Saídas da IA atualizadas',
+            );
+        }
     } catch {
         editLocked.value = false;
     }
@@ -362,6 +380,67 @@ function buttonFieldErrors(index: number): Record<string, string> {
                 messages.join(' ');
     }
     return errors;
+}
+function aiDestination(handle: string) {
+    const edge = edges.value.find(
+        (e) => e.source === selected.value?.id && e.sourceHandle === handle,
+    );
+    const target = nodes.value.find((n) => n.id === edge?.target);
+    return target ? `Segue para: ${target.data.label}` : 'Encerra o fluxo';
+}
+function addAiOutput() {
+    if (!selected.value) return;
+    selected.value.data.ai_outputs ??= [];
+    selected.value.data.ai_outputs.push({
+        id: crypto.randomUUID(),
+        label: '',
+        instruction: '',
+    });
+    markDirty();
+    void nextTick(() => {
+        const paths = document.querySelectorAll<HTMLDetailsElement>('.ai-path');
+        const path = paths.item(paths.length - 1);
+        if (path) {
+            path.open = true;
+            path.querySelector<HTMLInputElement>('input')?.focus();
+        }
+    });
+}
+function moveAiOutput(index: number, offset: number) {
+    const outputs = selected.value?.data.ai_outputs;
+    if (!outputs || index + offset < 0 || index + offset >= outputs.length)
+        return;
+    [outputs[index], outputs[index + offset]] = [
+        outputs[index + offset],
+        outputs[index],
+    ];
+    markDirty();
+}
+async function removeAiOutput(index: number) {
+    const node = selected.value;
+    const output = node?.data.ai_outputs?.[index];
+    if (!node || !output) return;
+    const handle = `ai_exit:${output.id}`;
+    if (
+        edges.value.some(
+            (e) => e.source === node.id && e.sourceHandle === handle,
+        ) &&
+        !(await confirm(
+            'A conexão será removida. O bloco de destino será preservado.',
+            'Remover saída conectada?',
+        ))
+    )
+        return;
+    if (aiRunning.value || assistantBusy.value) return;
+    const current = nodes.value.find((n) => n.id === node.id);
+    if (!current?.data.ai_outputs) return;
+    current.data.ai_outputs = current.data.ai_outputs.filter(
+        (o) => o.id !== output.id,
+    );
+    edges.value = edges.value.filter(
+        (e) => !(e.source === node.id && e.sourceHandle === handle),
+    );
+    markDirty();
 }
 async function removeMenuOption(index: number) {
     const node = selected.value;
@@ -873,7 +952,9 @@ function addNode(type: FlowKind) {
         ...(type === 'jump_flow' ? { target_flow_id: null } : {}),
         ...(type === 'ai'
             ? {
-                  ...props.catalog.defaults?.ai,
+                  ...JSON.parse(
+                      JSON.stringify(props.catalog.defaults?.ai || {}),
+                  ),
                   ai_media: [],
                   ai_tags: [],
                   ai_fields: [],
@@ -1426,9 +1507,10 @@ onBeforeUnmount(() =>
                     v-if="!flowIsActive && !editLocked"
                     class="published-pill"
                     >{{
-                        editingBy
+                        editLockError ||
+                        (editingBy
                             ? `${editingBy} está editando`
-                            : 'Aguardando edição'
+                            : 'Aguardando edição')
                     }}</span
                 >
                 <span class="published-pill">{{
@@ -1468,6 +1550,7 @@ onBeforeUnmount(() =>
                     ><FlowBlockHeader
                         :key="selected.id"
                         :block-id="selected.id"
+                        :node-type="selected.data.nodeType"
                         :kind="kindLabels[selected.data.nodeType]"
                         :name="selected.data.label"
                         @update:name="
@@ -1680,293 +1763,441 @@ onBeforeUnmount(() =>
                         class="block-config"
                     >
                         <h2>Conversa com IA</h2>
-                        <label class="field-label"
-                            >Instruções da IA
-                            <ContactTemplateInput
-                                :workspace-id="workspace.id"
-                                :fields="catalog.contact_fields"
-                                v-model="selected.data.ai_prompt"
-                                aria-label="Instruções da IA"
-                                rows="9"
-                                maxlength="8000"
-                                placeholder="Descreva o papel, as informações disponíveis e quando concluir ou encaminhar."
-                                @input="markDirty"
-                            />
-                        </label>
-                        <label class="field-label"
-                            >Contexto inicial (opcional)
-                            <ContactTemplateInput
-                                :workspace-id="workspace.id"
-                                :fields="catalog.contact_fields"
-                                v-model="selected.data.ai_initial_context"
-                                initial-context
-                                aria-label="Contexto inicial"
-                                rows="4"
-                                maxlength="8000"
-                                placeholder="Insira Última mensagem para contextualizar a abertura da IA."
-                                @input="markDirty"
-                            />
-                            <small
-                                >Enviado uma vez ao entrar no bloco. Última
-                                mensagem aceita texto e mídias
-                                suportadas.</small
-                            >
-                        </label>
-                        <label class="field-label"
-                            >Modelo OpenAI
-                            <AppSelect
-                                v-model="selected.data.ai_model"
-                                @change="markDirty"
-                            >
-                                <option value="gpt-6-luna">GPT-6 Luna</option>
-                                <option value="gpt-6.1-sol">GPT-6.1 Sol</option>
-                                <option value="gpt-6-astra">GPT-6 Astra</option>
-                            </AppSelect>
-                        </label>
-                        <label class="field-label"
-                            >Inatividade (segundos, 300 a 604800)
-                            <Input
-                                v-model.number="
-                                    selected.data.ai_inactivity_seconds
-                                "
-                                type="number"
-                                min="300"
-                                max="604800"
-                                @input="markDirty"
-                            />
-                        </label>
-                        <label class="field-label"
-                            >Ao expirar
-                            <AppSelect
-                                v-model="selected.data.ai_expiry_action"
-                                @change="markDirty"
-                            >
-                                <option value="end">
-                                    Encerrar fluxo atual
-                                </option>
-                                <option value="human">
-                                    Abrir atendimento humanizado
-                                </option>
-                            </AppSelect>
-                        </label>
-                        <label class="field-label"
-                            >Máximo de mensagens do lead (vazio = sem limite)
-                            <Input
-                                v-model.number="selected.data.ai_max_messages"
-                                type="number"
-                                min="1"
-                                max="200"
-                                @input="markDirty"
-                            />
-                        </label>
-                        <label
-                            v-if="selected.data.ai_max_messages"
-                            class="field-label"
-                            >Ao atingir o limite
-                            <AppSelect
-                                v-model="selected.data.ai_limit_action"
-                                @change="markDirty"
-                            >
-                                <option value="human">
-                                    Abrir atendimento humanizado
-                                </option>
-                                <option value="continue">
-                                    Continuar fluxo
-                                </option>
-                            </AppSelect>
-                        </label>
-                        <small
-                            >A IA envia uma abertura pelo prompt. Vídeos não são
-                            analisados. A saída Atendimento Humanizado abre a
-                            fila diretamente.</small
+                        <details
+                            :key="`conversation-${selected.id}`"
+                            class="ai-section"
+                            open
                         >
-                        <a href="/settings/openai"
-                            >Configurar chave OpenAI deste workspace</a
+                            <summary>Conversa</summary>
+                            <label class="field-label"
+                                >O que a IA deve fazer?
+                                <ContactTemplateInput
+                                    :workspace-id="workspace.id"
+                                    :fields="catalog.contact_fields"
+                                    v-model="selected.data.ai_prompt"
+                                    aria-label="O que a IA deve fazer?"
+                                    rows="9"
+                                    maxlength="8000"
+                                    placeholder="Descreva o papel, as informações disponíveis e quando concluir ou encaminhar."
+                                    @input="markDirty"
+                                />
+                            </label>
+                        </details>
+                        <details
+                            :key="`paths-${selected.id}`"
+                            class="ai-section"
+                            open
                         >
-                        <div class="ai-resource-group">
-                            <h3>Mídias</h3>
-                            <small
-                                >Até 20 arquivos de 20 MiB. Cada arquivo tem uma
-                                tentativa de envio por sessão, sem
-                                legenda.</small
+                            <summary>Caminhos da conversa</summary>
+                            <template
+                                v-if="selected.data.ai_outputs !== undefined"
                             >
-                            <div
-                                v-for="(item, index) in selected.data.ai_media"
-                                :key="item.id"
-                                class="ai-resource"
-                            >
-                                <strong>{{ aiMediaName(item) }}</strong>
-                                <label class="field-label"
-                                    >Arquivo {{ index + 1 }}
-                                    <input
-                                        type="file"
-                                        accept=".jpg,.jpeg,.png,.webp,.gif,.mp4,.mp3,.ogg,.pdf,.doc,.docx,.xls,.xlsx,.txt"
-                                        @change="uploadMedia($event, item)"
-                                    />
-                                </label>
-                                <label class="field-label"
-                                    >Quando enviar a mídia {{ index + 1 }}
-                                    <Textarea
-                                        v-model="item.instruction"
-                                        maxlength="2000"
-                                        rows="3"
-                                        placeholder="Ex.: enviar quando o cliente solicitar o catálogo."
-                                        @input="markDirty"
-                                    />
-                                </label>
-                                <AppButton
-                                    variant="secondary"
-                                    @click="
-                                        selected.data.ai_media?.splice(
-                                            index,
-                                            1,
-                                        );
-                                        markDirty();
-                                    "
-                                    >Remover mídia {{ index + 1 }}</AppButton
+                                <small
+                                    >A IA escolhe pelo contexto e pelas
+                                    instruções. Pode enviar uma última mensagem
+                                    antes de seguir. Sem conexão, a saída
+                                    encerra o fluxo.</small
                                 >
-                            </div>
-                            <AppButton
-                                variant="secondary"
-                                :disabled="
-                                    (selected.data.ai_media?.length || 0) >= 20
-                                "
-                                @click="addAiResource('media')"
-                                >Adicionar mídia</AppButton
-                            >
-                        </div>
-                        <div class="ai-resource-group">
-                            <h3>Tags</h3>
-                            <small
-                                >Autorize apenas as tags que a IA poderá
-                                adicionar. Tags existentes serão
-                                preservadas.</small
-                            >
-                            <div
-                                v-for="(item, index) in selected.data.ai_tags"
-                                :key="item.id"
-                                class="ai-resource"
-                            >
-                                <label class="field-label"
-                                    >Tag autorizada {{ index + 1 }}
-                                    <AppSelect
-                                        v-model.number="item.tag_id"
-                                        :aria-label="`Tag autorizada ${index + 1}`"
-                                        @change="markDirty"
+                                <details
+                                    v-for="(output, index) in selected.data
+                                        .ai_outputs"
+                                    :key="output.id"
+                                    class="ai-path"
+                                    :name="`ai-path-${selected.id}`"
+                                >
+                                    <summary>
+                                        <strong>{{
+                                            output.label || 'Novo caminho'
+                                        }}</strong
+                                        ><small>{{
+                                            aiDestination(
+                                                `ai_exit:${output.id}`,
+                                            )
+                                        }}</small>
+                                    </summary>
+                                    <label class="field-label"
+                                        >Nome do caminho<Input
+                                            v-model="output.label"
+                                            maxlength="120"
+                                            @input="changeMenu"
+                                    /></label>
+                                    <label class="field-label"
+                                        >Quando seguir este caminho?<Textarea
+                                            v-model="output.instruction"
+                                            rows="3"
+                                            maxlength="2000"
+                                            @input="changeMenu"
+                                    /></label>
+                                    <div class="item-heading">
+                                        <strong>Saída {{ index + 1 }}</strong>
+                                        <div>
+                                            <AppIconButton
+                                                :disabled="index === 0"
+                                                @click="moveAiOutput(index, -1)"
+                                                label="Mover saída para cima"
+                                                ><ChevronUp :size="16"
+                                            /></AppIconButton>
+                                            <AppIconButton
+                                                :disabled="
+                                                    index ===
+                                                    selected.data.ai_outputs
+                                                        .length -
+                                                        1
+                                                "
+                                                @click="moveAiOutput(index, 1)"
+                                                label="Mover saída para baixo"
+                                                ><ChevronDown :size="16"
+                                            /></AppIconButton>
+                                            <AppIconButton
+                                                @click="removeAiOutput(index)"
+                                                label="Remover saída"
+                                                ><X :size="16"
+                                            /></AppIconButton>
+                                        </div>
+                                    </div>
+                                </details>
+                                <AppButton variant="ghost" @click="addAiOutput"
+                                    >Adicionar caminho</AppButton
+                                >
+                                <p
+                                    v-if="!selected.data.ai_outputs.length"
+                                    class="condition-help"
+                                >
+                                    A IA continuará conversando até ocorrer uma
+                                    saída automática ou alguém assumir o
+                                    atendimento.
+                                </p>
+                                <div class="ai-automatic">
+                                    <strong
+                                        >Saída automática · Continuar</strong
                                     >
-                                        <option :value="undefined">
-                                            Selecione uma tag
-                                        </option>
-                                        <option
-                                            v-for="tag in reference.tags"
-                                            :key="tag.id"
-                                            :value="tag.id"
-                                        >
-                                            {{ tag.name }}
-                                        </option>
-                                    </AppSelect>
-                                </label>
-                                <label class="field-label"
-                                    >Quando aplicar a tag {{ index + 1 }}
-                                    <Textarea
-                                        v-model="item.instruction"
-                                        maxlength="2000"
-                                        rows="3"
-                                        @input="markDirty"
-                                    />
-                                </label>
-                                <AppButton
-                                    variant="secondary"
-                                    @click="
-                                        selected.data.ai_tags?.splice(index, 1);
-                                        markDirty();
-                                    "
-                                    >Remover permissão de tag
-                                    {{ index + 1 }}</AppButton
+                                    <p>
+                                        Usada em caso de falha, tempo sem
+                                        resposta ou limite de mensagens.
+                                    </p>
+                                    <small>{{
+                                        aiDestination('continue')
+                                    }}</small>
+                                </div>
+                            </template>
+                        </details>
+                        <details
+                            :key="`resources-${selected.id}`"
+                            class="ai-section"
+                        >
+                            <summary>
+                                Recursos ·
+                                {{
+                                    (selected.data.ai_media?.length || 0) +
+                                    (selected.data.ai_tags?.length || 0) +
+                                    (selected.data.ai_fields?.length || 0)
+                                }}
+                            </summary>
+                            <div class="ai-resource-group">
+                                <h3>Mídias</h3>
+                                <small
+                                    >Até 20 arquivos de 20 MiB. Cada arquivo tem
+                                    uma tentativa de envio por sessão, sem
+                                    legenda.</small
                                 >
-                            </div>
-                            <AppButton
-                                variant="secondary"
-                                :disabled="
-                                    (selected.data.ai_tags?.length || 0) >= 50
-                                "
-                                @click="addAiResource('tags')"
-                                >Autorizar tag</AppButton
-                            >
-                        </div>
-                        <div class="ai-resource-group">
-                            <h3>Campos personalizados</h3>
-                            <small
-                                >Autorize campos de texto. Com sobrescrita
-                                permitida, a última gravação vence.</small
-                            >
-                            <div
-                                v-for="(item, index) in selected.data.ai_fields"
-                                :key="item.id"
-                                class="ai-resource"
-                            >
-                                <label class="field-label"
-                                    >Campo autorizado {{ index + 1 }}
-                                    <AppSelect
-                                        v-model.number="item.field_id"
-                                        :aria-label="`Campo autorizado ${index + 1}`"
-                                        @change="markDirty"
+                                <div
+                                    v-for="(item, index) in selected.data
+                                        .ai_media"
+                                    :key="item.id"
+                                    class="ai-resource"
+                                >
+                                    <strong>{{ aiMediaName(item) }}</strong>
+                                    <label class="field-label"
+                                        >Arquivo {{ index + 1 }}
+                                        <input
+                                            type="file"
+                                            accept=".jpg,.jpeg,.png,.webp,.gif,.mp4,.mp3,.ogg,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                                            @change="uploadMedia($event, item)"
+                                        />
+                                    </label>
+                                    <label class="field-label"
+                                        >Quando enviar a mídia {{ index + 1 }}
+                                        <Textarea
+                                            v-model="item.instruction"
+                                            maxlength="2000"
+                                            rows="3"
+                                            placeholder="Ex.: enviar quando o cliente solicitar o catálogo."
+                                            @input="markDirty"
+                                        />
+                                    </label>
+                                    <AppButton
+                                        variant="secondary"
+                                        @click="
+                                            selected.data.ai_media?.splice(
+                                                index,
+                                                1,
+                                            );
+                                            markDirty();
+                                        "
+                                        >Remover mídia
+                                        {{ index + 1 }}</AppButton
                                     >
-                                        <option :value="undefined">
-                                            Selecione um campo
-                                        </option>
-                                        <option
-                                            v-for="field in reference.fields.filter(
-                                                (field) =>
-                                                    field.type === 'text',
-                                            )"
-                                            :key="field.id"
-                                            :value="field.id"
-                                        >
-                                            {{ field.name }}
-                                        </option>
-                                    </AppSelect>
-                                </label>
-                                <label class="field-label"
-                                    >Instruções do campo {{ index + 1 }}
-                                    <Textarea
-                                        v-model="item.instruction"
-                                        maxlength="2000"
-                                        rows="3"
-                                        placeholder="Explique quando preencher e qual informação registrar."
-                                        @input="markDirty"
-                                    />
-                                </label>
-                                <label class="ai-overwrite"
-                                    ><input
-                                        v-model="item.allow_overwrite"
-                                        type="checkbox"
-                                        @change="markDirty"
-                                    />Permitir sobrescrever valor existente —
-                                    campo {{ index + 1 }}</label
-                                >
+                                </div>
                                 <AppButton
                                     variant="secondary"
-                                    @click="
-                                        selected.data.ai_fields?.splice(
-                                            index,
-                                            1,
-                                        );
-                                        markDirty();
+                                    :disabled="
+                                        (selected.data.ai_media?.length || 0) >=
+                                        20
                                     "
-                                    >Remover permissão de campo
-                                    {{ index + 1 }}</AppButton
+                                    @click="addAiResource('media')"
+                                    >Adicionar mídia</AppButton
                                 >
                             </div>
-                            <AppButton
-                                variant="secondary"
-                                :disabled="
-                                    (selected.data.ai_fields?.length || 0) >= 50
+                            <div class="ai-resource-group">
+                                <h3>Tags</h3>
+                                <small
+                                    >Autorize apenas as tags que a IA poderá
+                                    adicionar. Tags existentes serão
+                                    preservadas.</small
+                                >
+                                <div
+                                    v-for="(item, index) in selected.data
+                                        .ai_tags"
+                                    :key="item.id"
+                                    class="ai-resource"
+                                >
+                                    <label class="field-label"
+                                        >Tag autorizada {{ index + 1 }}
+                                        <AppSelect
+                                            v-model.number="item.tag_id"
+                                            :aria-label="`Tag autorizada ${index + 1}`"
+                                            @change="markDirty"
+                                        >
+                                            <option :value="undefined">
+                                                Selecione uma tag
+                                            </option>
+                                            <option
+                                                v-for="tag in reference.tags"
+                                                :key="tag.id"
+                                                :value="tag.id"
+                                            >
+                                                {{ tag.name }}
+                                            </option>
+                                        </AppSelect>
+                                    </label>
+                                    <label class="field-label"
+                                        >Quando aplicar a tag {{ index + 1 }}
+                                        <Textarea
+                                            v-model="item.instruction"
+                                            maxlength="2000"
+                                            rows="3"
+                                            @input="markDirty"
+                                        />
+                                    </label>
+                                    <AppButton
+                                        variant="secondary"
+                                        @click="
+                                            selected.data.ai_tags?.splice(
+                                                index,
+                                                1,
+                                            );
+                                            markDirty();
+                                        "
+                                        >Remover permissão de tag
+                                        {{ index + 1 }}</AppButton
+                                    >
+                                </div>
+                                <AppButton
+                                    variant="secondary"
+                                    :disabled="
+                                        (selected.data.ai_tags?.length || 0) >=
+                                        50
+                                    "
+                                    @click="addAiResource('tags')"
+                                    >Autorizar tag</AppButton
+                                >
+                            </div>
+                            <div class="ai-resource-group">
+                                <h3>Campos personalizados</h3>
+                                <small
+                                    >Autorize campos de texto. Com sobrescrita
+                                    permitida, a última gravação vence.</small
+                                >
+                                <div
+                                    v-for="(item, index) in selected.data
+                                        .ai_fields"
+                                    :key="item.id"
+                                    class="ai-resource"
+                                >
+                                    <label class="field-label"
+                                        >Campo autorizado {{ index + 1 }}
+                                        <AppSelect
+                                            v-model.number="item.field_id"
+                                            :aria-label="`Campo autorizado ${index + 1}`"
+                                            @change="markDirty"
+                                        >
+                                            <option :value="undefined">
+                                                Selecione um campo
+                                            </option>
+                                            <option
+                                                v-for="field in reference.fields.filter(
+                                                    (field) =>
+                                                        field.type === 'text',
+                                                )"
+                                                :key="field.id"
+                                                :value="field.id"
+                                            >
+                                                {{ field.name }}
+                                            </option>
+                                        </AppSelect>
+                                    </label>
+                                    <label class="field-label"
+                                        >Instruções do campo {{ index + 1 }}
+                                        <Textarea
+                                            v-model="item.instruction"
+                                            maxlength="2000"
+                                            rows="3"
+                                            placeholder="Explique quando preencher e qual informação registrar."
+                                            @input="markDirty"
+                                        />
+                                    </label>
+                                    <label class="ai-overwrite"
+                                        ><input
+                                            v-model="item.allow_overwrite"
+                                            type="checkbox"
+                                            @change="markDirty"
+                                        />Permitir sobrescrever valor existente
+                                        — campo {{ index + 1 }}</label
+                                    >
+                                    <AppButton
+                                        variant="secondary"
+                                        @click="
+                                            selected.data.ai_fields?.splice(
+                                                index,
+                                                1,
+                                            );
+                                            markDirty();
+                                        "
+                                        >Remover permissão de campo
+                                        {{ index + 1 }}</AppButton
+                                    >
+                                </div>
+                                <AppButton
+                                    variant="secondary"
+                                    :disabled="
+                                        (selected.data.ai_fields?.length ||
+                                            0) >= 50
+                                    "
+                                    @click="addAiResource('fields')"
+                                    >Autorizar campo</AppButton
+                                >
+                            </div>
+                        </details>
+                        <details
+                            :key="`settings-${selected.id}`"
+                            class="ai-section"
+                        >
+                            <summary>Configurações</summary>
+                            <label class="field-label"
+                                >Contexto inicial (opcional)
+                                <ContactTemplateInput
+                                    :workspace-id="workspace.id"
+                                    :fields="catalog.contact_fields"
+                                    v-model="selected.data.ai_initial_context"
+                                    initial-context
+                                    aria-label="Contexto inicial"
+                                    rows="4"
+                                    maxlength="8000"
+                                    placeholder="Insira Última mensagem para contextualizar a abertura da IA."
+                                    @input="markDirty"
+                                />
+                                <small
+                                    >Enviado uma vez ao entrar no bloco. Última
+                                    mensagem aceita texto e mídias
+                                    suportadas.</small
+                                >
+                            </label>
+                            <label class="field-label"
+                                >Modelo OpenAI
+                                <AppSelect
+                                    v-model="selected.data.ai_model"
+                                    @change="markDirty"
+                                >
+                                    <option value="gpt-6-luna">
+                                        GPT-6 Luna
+                                    </option>
+                                    <option value="gpt-6.1-sol">
+                                        GPT-6.1 Sol
+                                    </option>
+                                    <option value="gpt-6-astra">
+                                        GPT-6 Astra
+                                    </option>
+                                </AppSelect>
+                            </label>
+                            <label class="field-label"
+                                >Inatividade (segundos, 300 a 604800)
+                                <Input
+                                    v-model.number="
+                                        selected.data.ai_inactivity_seconds
+                                    "
+                                    type="number"
+                                    min="300"
+                                    max="604800"
+                                    @input="markDirty"
+                                />
+                            </label>
+                            <label
+                                class="field-label"
+                                v-if="selected.data.ai_outputs === undefined"
+                                >Ao expirar
+                                <AppSelect
+                                    v-model="selected.data.ai_expiry_action"
+                                    @change="markDirty"
+                                >
+                                    <option value="end">
+                                        Encerrar fluxo atual
+                                    </option>
+                                    <option value="human">
+                                        Abrir atendimento humanizado
+                                    </option>
+                                </AppSelect>
+                            </label>
+                            <label class="field-label"
+                                >Máximo de mensagens do lead (vazio = sem
+                                limite)
+                                <Input
+                                    v-model.number="
+                                        selected.data.ai_max_messages
+                                    "
+                                    type="number"
+                                    min="1"
+                                    max="200"
+                                    @input="markDirty"
+                                />
+                            </label>
+                            <label
+                                v-if="
+                                    selected.data.ai_max_messages &&
+                                    selected.data.ai_outputs === undefined
                                 "
-                                @click="addAiResource('fields')"
-                                >Autorizar campo</AppButton
+                                class="field-label"
+                                >Ao atingir o limite
+                                <AppSelect
+                                    v-model="selected.data.ai_limit_action"
+                                    @change="markDirty"
+                                >
+                                    <option value="human">
+                                        Abrir atendimento humanizado
+                                    </option>
+                                    <option value="continue">
+                                        Continuar fluxo
+                                    </option>
+                                </AppSelect>
+                            </label>
+                            <small
+                                >A IA envia uma abertura pelo prompt. Vídeos não
+                                são analisados. Configure os próximos passos
+                                conectando as saídas.</small
                             >
-                        </div>
+                            <a href="/settings/openai"
+                                >Configurar chave OpenAI deste workspace</a
+                            >
+                        </details>
                     </section>
                     <FlowMenuEditor
                         v-else-if="selected.data.nodeType === 'menu'"
@@ -2719,8 +2950,13 @@ onBeforeUnmount(() =>
                         <button
                             v-for="definition in definitions"
                             :key="definition.type"
+                            :data-flow-type="definition.type"
                             @click="addNode(definition.type)"
                         >
+                            <span
+                                class="block-type-marker"
+                                aria-hidden="true"
+                            />
                             {{ definition.label }}
                         </button>
                     </div>
@@ -3192,7 +3428,9 @@ onBeforeUnmount(() =>
     box-shadow: 0 10px 24px #15321d1c;
 }
 .block-menu button {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     width: 100%;
     padding: 9px;
     border: 0;
@@ -3204,7 +3442,14 @@ onBeforeUnmount(() =>
     cursor: pointer;
 }
 .block-menu button:hover {
-    background: var(--accent);
+    background: var(--flow-type-soft);
+}
+.block-type-marker {
+    width: 10px;
+    height: 10px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--flow-type-color);
 }
 .canvas-caption {
     position: absolute;
@@ -3472,5 +3717,42 @@ onBeforeUnmount(() =>
     outline: 2px solid var(--ring);
     outline-offset: 2px;
     border-radius: var(--radius);
+}
+</style>
+
+<style scoped>
+.ai-section {
+    border-top: 1px solid var(--border);
+    padding: 14px 0;
+}
+.ai-section > summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 12px;
+}
+.ai-path {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    margin: 10px 0;
+}
+.ai-path > summary {
+    cursor: pointer;
+    font-size: 13px;
+}
+.ai-path > summary small {
+    display: block;
+    margin: 5px 0 0 16px;
+    color: var(--muted-foreground);
+}
+.ai-path[open] > summary {
+    margin-bottom: 14px;
+}
+.ai-automatic {
+    border-top: 1px dashed var(--border);
+    margin-top: 18px;
+    padding-top: 14px;
+    font-size: 13px;
 }
 </style>

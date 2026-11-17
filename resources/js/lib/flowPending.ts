@@ -109,6 +109,16 @@ export function flowPendingReasons(
     }
 
     if (type === 'ai') {
+        if (
+            rows('ai_outputs').some(
+                (o) =>
+                    !String(o.label || '').trim() ||
+                    !String(o.instruction || '').trim(),
+            )
+        ) {
+            reasons.add('Preencha o nome e as instruções de cada saída.');
+        }
+
         if (!String(data.ai_prompt || '').trim()) {
             reasons.add('Preencha as instruções da IA.');
         }

@@ -1,5 +1,8 @@
 # chAIt — Especificação do bloco IA
 
+> O contrato atual de saídas está em [Saídas personalizadas](bloco-ia-saidas-personalizadas.md). As saídas fixas e ações diretas descritas abaixo permanecem apenas para versões publicadas legadas.
+
+
 > **Atualização:** as regras de edição e execução de fluxos foram substituídas pelas de [salvamento automático e ativação](fluxos-salvamento-automatico.md). Elas prevalecem sobre as referências históricas a rascunhos, prévias e publicação de fluxos neste documento.
 
 > Revisão documental em 16/10/2026, confrontada com o código; não representa nova homologação operacional.

@@ -1,0 +1,81 @@
+/* Shared type colors for the canvas, block picker and configuration header. */
+:root {
+    --flow-start: #15803d;
+    --flow-start-text: #166534;
+    --flow-content: #2563eb;
+    --flow-content-text: #1e40af;
+    --flow-wait-reply: #b45309;
+    --flow-wait-reply-text: #92400e;
+    --flow-operations: #ea580c;
+    --flow-operations-text: #9a3412;
+    --flow-jump-flow: #0891b2;
+    --flow-jump-flow-text: #155e75;
+    --flow-condition: #db2777;
+    --flow-condition-text: #9d174d;
+    --flow-ai: #7c3aed;
+    --flow-ai-text: #5b21b6;
+    --flow-menu: #4f46e5;
+    --flow-menu-text: #3730a3;
+}
+
+.dark {
+    --flow-start: #4ade80;
+    --flow-start-text: #86efac;
+    --flow-content: #60a5fa;
+    --flow-content-text: #93c5fd;
+    --flow-wait-reply: #fbbf24;
+    --flow-wait-reply-text: #fcd34d;
+    --flow-operations: #fb923c;
+    --flow-operations-text: #fdba74;
+    --flow-jump-flow: #22d3ee;
+    --flow-jump-flow-text: #67e8f9;
+    --flow-condition: #f472b6;
+    --flow-condition-text: #f9a8d4;
+    --flow-ai: #a78bfa;
+    --flow-ai-text: #c4b5fd;
+    --flow-menu: #818cf8;
+    --flow-menu-text: #a5b4fc;
+}
+
+[data-flow-type] {
+    --flow-type-color: var(--muted-foreground);
+    --flow-type-text: var(--foreground);
+    --flow-type-soft: color-mix(
+        in srgb,
+        var(--flow-type-color) 10%,
+        var(--card)
+    );
+}
+
+[data-flow-type='start'] {
+    --flow-type-color: var(--flow-start);
+    --flow-type-text: var(--flow-start-text);
+}
+[data-flow-type='content'] {
+    --flow-type-color: var(--flow-content);
+    --flow-type-text: var(--flow-content-text);
+}
+[data-flow-type='wait_reply'] {
+    --flow-type-color: var(--flow-wait-reply);
+    --flow-type-text: var(--flow-wait-reply-text);
+}
+[data-flow-type='operations'] {
+    --flow-type-color: var(--flow-operations);
+    --flow-type-text: var(--flow-operations-text);
+}
+[data-flow-type='jump_flow'] {
+    --flow-type-color: var(--flow-jump-flow);
+    --flow-type-text: var(--flow-jump-flow-text);
+}
+[data-flow-type='condition'] {
+    --flow-type-color: var(--flow-condition);
+    --flow-type-text: var(--flow-condition-text);
+}
+[data-flow-type='ai'] {
+    --flow-type-color: var(--flow-ai);
+    --flow-type-text: var(--flow-ai-text);
+}
+[data-flow-type='menu'] {
+    --flow-type-color: var(--flow-menu);
+    --flow-type-text: var(--flow-menu-text);
+}

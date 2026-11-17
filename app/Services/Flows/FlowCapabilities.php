@@ -9,7 +9,15 @@ class FlowCapabilities
 {
     public static function aiDefaults(): array
     {
-        return ['ai_grouping_seconds' => 5, 'ai_initial_context' => '', 'ai_prompt' => '', 'ai_model' => 'gpt-6.1-sol', 'ai_inactivity_seconds' => 3600, 'ai_expiry_action' => 'end', 'ai_max_messages' => null, 'ai_limit_action' => 'human', 'ai_media' => [], 'ai_tags' => [], 'ai_fields' => []];
+        return ['ai_outputs' => self::aiOutputDefaults(), 'ai_grouping_seconds' => 5, 'ai_initial_context' => '', 'ai_prompt' => '', 'ai_model' => 'gpt-6.1-sol', 'ai_inactivity_seconds' => 3600, 'ai_expiry_action' => 'end', 'ai_max_messages' => null, 'ai_limit_action' => 'human', 'ai_media' => [], 'ai_tags' => [], 'ai_fields' => []];
+    }
+
+    public static function aiOutputDefaults(): array
+    {
+        return [
+            ['id' => 'finished', 'label' => 'Atendimento finalizado', 'instruction' => 'Use quando concluir o atendimento e não houver pendências ou necessidade de mais informações.'],
+            ['id' => 'human', 'label' => 'Atendimento humano', 'instruction' => 'Use quando o lead pedir para falar com um atendente humano.'],
+        ];
     }
 
     public const FIELDS = [
@@ -20,7 +28,7 @@ class FlowCapabilities
         'condition' => ['label', 'description', 'checks', 'condition_operator'],
         'operations' => ['label', 'description', 'actions'],
         'jump_flow' => ['label', 'description', 'target_flow_id'],
-        'ai' => ['label', 'description', 'ai_grouping_seconds', 'ai_initial_context', 'ai_prompt', 'ai_model', 'ai_inactivity_seconds', 'ai_expiry_action', 'ai_max_messages', 'ai_limit_action', 'ai_media', 'ai_tags', 'ai_fields'],
+        'ai' => ['ai_outputs', 'label', 'description', 'ai_grouping_seconds', 'ai_initial_context', 'ai_prompt', 'ai_model', 'ai_inactivity_seconds', 'ai_expiry_action', 'ai_max_messages', 'ai_limit_action', 'ai_media', 'ai_tags', 'ai_fields'],
     ];
 
     public const OUTPUTS = [
@@ -33,6 +41,10 @@ class FlowCapabilities
         $outputs = self::OUTPUTS[$node['type']] ?? [];
         if ($node['type'] === 'menu') {
             $outputs = [...array_map(fn ($option) => 'option:'.$option['id'], $node['data']['options'] ?? []), ...$outputs];
+        }
+
+        if ($node['type'] === 'ai') {
+            $outputs = [...array_map(fn ($output) => 'ai_exit:'.$output['id'], $node['data']['ai_outputs'] ?? []), ...$outputs];
         }
 
         return $outputs;
@@ -80,6 +92,11 @@ class FlowCapabilities
             'nodes.*.data.checks.*.operator' => ['nullable', 'in:has,not_has,equals,contains'],
             'nodes.*.data.checks.*.value' => ['nullable', 'string', 'max:4000'], 'nodes.*.data.field_id' => ['nullable', 'integer'],
             'nodes.*.data.target_flow_id' => ['nullable', 'integer'], 'nodes.*.data.actions' => ['sometimes', 'array', 'max:20'],
+            'nodes.*.data.ai_outputs' => ['sometimes', 'array', 'list'],
+            'nodes.*.data.ai_outputs.*' => ['array:id,label,instruction'],
+            'nodes.*.data.ai_outputs.*.id' => ['required', 'string', 'max:48', 'regex:/^[A-Za-z0-9_-]+$/D'],
+            'nodes.*.data.ai_outputs.*.label' => ['nullable', 'string', 'max:120'],
+            'nodes.*.data.ai_outputs.*.instruction' => ['nullable', 'string', 'max:2000'],
             'nodes.*.data.ai_grouping_seconds' => ['sometimes', 'integer', 'between:5,45'],
             'nodes.*.data.ai_prompt' => ['nullable', 'string', 'max:8000'],
             'nodes.*.data.ai_model' => ['nullable', 'in:gpt-6-luna,gpt-6.1-sol,gpt-6-astra'],
@@ -126,7 +143,7 @@ class FlowCapabilities
             'condition' => 'Consulta etiquetas e campos de texto, sem coletar, enviar ou alterar dados. Combina checks com all/any. Para identificar opção não reconhecida, teste todas as alternativas antes do último Não.',
             'operations' => 'Executa ações em ordem. Abrir atendimento humano ou pausar encerra a execução e deve ser a última ação, sem continuação automática. Recursos de membros e sequências exigem seleção manual.',
             'jump_flow' => 'Transfere para outro fluxo publicado e ativo do workspace, sem retorno nem saída. Destino exige seleção manual; não usar para criar ciclos.',
-            'ai' => 'Conversa com o contato durante a execução; é diferente do assistente construtor. Configure prompt, modelo, inatividade, ações de limites e recursos autorizados. Encaminhamento humano e encerramento são terminais. Não inserir quando o usuário pedir sem IA.',
+            'ai' => 'Conversa com o contato durante a execução; é diferente do assistente construtor. Configure prompt, modelo, inatividade, saídas personalizadas e recursos autorizados. Atendimento humano exige conexão a Operações. Não inserir quando o usuário pedir sem IA.',
             'menu' => 'Apresenta opções e espera seleção. Numérico aceita somente o número anunciado; Botões/Lista exigem seleção interativa. Respostas inválidas são tratadas internamente até o limite, sem ciclo no grafo. Não grava automaticamente a escolha em campo.',
         ];
         $meanings = [
@@ -135,7 +152,7 @@ class FlowCapabilities
             'not_replied' => 'O prazo venceu sem resposta aceita. Não grava resposta nem identifica uma opção inválida recebida.',
             'yes' => 'O critério configurado foi atendido.',
             'no' => 'O critério não foi atendido; pode testar outra alternativa. Só representa opção não reconhecida após excluir as demais alternativas.',
-            'continue' => 'A IA concluiu pelo caminho Continuar ou atingiu limite configurado para continuar. Não é a saída de atendimento humano.',
+            'continue' => 'No bloco IA novo, usada somente em falha, inatividade ou limite de mensagens; não é escolhida pela IA.',
         ];
         $graphRules = [
             'Proibidos ciclos, auto-conexões e retornos a blocos anteriores, mesmo quando o caminho contém espera por resposta.',
@@ -154,9 +171,9 @@ class FlowCapabilities
                 $type === 'menu' => 'Segue quando o prazo vence OU o limite de respostas inválidas é atingido; não representa uma escolha válida.',
                 $type === 'operations' => 'Segue após ações não terminais. Abrir atendimento humano ou pausar encerra a execução e não utiliza esta saída.',
                 default => $meanings[$id],
-            }], $outputs), 'input' => $type !== 'start' ? 'input' : null, 'fields' => self::FIELDS[$type], 'dynamic_outputs' => $type === 'menu' ? ['field' => 'options', 'prefix' => 'option:', 'meaning' => 'option:{id} segue pela opção escolhida. Preserve o ID ao renomear ou reordenar; desconecte a saída no mesmo lote ao remover a opção.'] : null];
+            }], $outputs), 'input' => $type !== 'start' ? 'input' : null, 'fields' => self::FIELDS[$type], 'dynamic_outputs' => $type === 'ai' ? ['field' => 'ai_outputs', 'prefix' => 'ai_exit:', 'meaning' => 'Saídas personalizadas escolhidas pelo contexto e instruções; sem prioridade pela ordem. Continuar é operacional.'] : ($type === 'menu' ? ['field' => 'options', 'prefix' => 'option:', 'meaning' => 'option:{id} segue pela opção escolhida. Preserve o ID ao renomear ou reordenar; desconecte a saída no mesmo lote ao remover a opção.'] : null)];
         }
 
-        return ['contact_fields' => $workspace ? app(ContactTemplate::class)->catalog($workspace) : null, 'defaults' => ['ai' => self::aiDefaults()], 'content_button' => app(FlowContentButton::class)->catalog(), 'graph_rules' => $graphRules, 'menu' => ['defaults' => FlowMenu::defaults(), 'formats' => ['numeric', 'button', 'list'], 'matching' => 'Numérico aceita apenas o número anunciado. Botões/Lista exigem seleção interativa da espera vigente.'], 'schema_version' => 2, 'nodes' => $result, 'rules' => $this->rules(), 'standard_fields' => FlowCondition::STANDARD_FIELDS, 'condition' => ['max_checks' => 50, 'operators' => ['tag' => ['has', 'not_has'], 'field' => ['equals', 'contains']], 'matching' => 'Ignora maiúsculas, acentos e espaços nas extremidades. Contém procura substring. Campos vazios não correspondem.'], 'limits' => ['nodes' => 200, 'edges' => 500], 'limitations' => ['Condição consulta etiquetas e campos de texto do contato; não interpreta intenção ou histórico de mensagens.', 'Mídias, atendentes, outros fluxos e sequências precisam de seleção manual.', 'A saída human do bloco IA é terminal, sem conexão.']];
+        return ['contact_fields' => $workspace ? app(ContactTemplate::class)->catalog($workspace) : null, 'defaults' => ['ai' => self::aiDefaults()], 'content_button' => app(FlowContentButton::class)->catalog(), 'graph_rules' => $graphRules, 'menu' => ['defaults' => FlowMenu::defaults(), 'formats' => ['numeric', 'button', 'list'], 'matching' => 'Numérico aceita apenas o número anunciado. Botões/Lista exigem seleção interativa da espera vigente.'], 'schema_version' => 2, 'nodes' => $result, 'rules' => $this->rules(), 'standard_fields' => FlowCondition::STANDARD_FIELDS, 'condition' => ['max_checks' => 50, 'operators' => ['tag' => ['has', 'not_has'], 'field' => ['equals', 'contains']], 'matching' => 'Ignora maiúsculas, acentos e espaços nas extremidades. Contém procura substring. Campos vazios não correspondem.'], 'limits' => ['nodes' => 200, 'edges' => 500], 'limitations' => ['Condição consulta etiquetas e campos de texto do contato; não interpreta intenção ou histórico de mensagens.', 'Mídias, atendentes, outros fluxos e sequências precisam de seleção manual.', 'Saídas ai_exit:{id} são escolhidas pela IA. Continuar é acionada somente por falha, inatividade ou limite; atendimento humano exige Operações.']];
     }
 }

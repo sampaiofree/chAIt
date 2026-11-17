@@ -9,6 +9,7 @@ use App\Models\FlowAiRun;
 use App\Models\FlowDraftSession;
 use App\Models\Workspace;
 use App\Services\Flows\ContactTemplate;
+use App\Services\Flows\FlowAiOutputs;
 use App\Services\Flows\FlowEditLock;
 use App\Services\Flows\FlowGraphValidator;
 use Illuminate\Support\Facades\DB;
@@ -35,7 +36,7 @@ class DraftSessionService
     {
         return $this->current($flow) ?? FlowDraftSession::create([
             'workspace_id' => $flow->workspace_id, 'flow_id' => $flow->id, 'generation' => (string) Str::uuid(),
-            'name' => $flow->name, 'graph' => app(FlowGraphValidator::class)->normalize($flow->graph), 'base_revision' => $flow->revision, 'revision' => 1,
+            'name' => $flow->name, 'graph' => app(FlowAiOutputs::class)->convert(app(FlowGraphValidator::class)->normalize($flow->graph)), 'base_revision' => $flow->revision, 'revision' => 1,
         ]);
     }
 

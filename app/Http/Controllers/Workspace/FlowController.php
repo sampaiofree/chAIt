@@ -162,7 +162,7 @@ class FlowController extends Controller
             }
         });
 
-        return response()->json(['data' => ['deleted' => true]]);
+        return response()->json(['data' => ['deleted' => true], 'meta' => ['media_cleanup_pending' => DB::table('flow_asset_deletions')->where('flow_id', $flow)->exists()]]);
     }
 
     public function moveToFolder(Request $request, Workspace $workspace, int $flow): JsonResponse
@@ -231,15 +231,8 @@ class FlowController extends Controller
 
             return $assets;
         }, 3);
-        foreach ($assets as $asset) {
-            try {
-                Storage::disk($asset->disk)->delete($asset->path);
-            } catch (\Throwable $error) {
-                report($error);
-            }
-        }
 
-        return response()->json(['data' => ['deleted' => true]]);
+        return response()->json(['data' => ['deleted' => true], 'meta' => ['media_cleanup_pending' => DB::table('flow_asset_deletions')->where('flow_id', $flow)->exists()]]);
     }
 
     public function edit(Request $request, Workspace $workspace, int $flow): Response
@@ -279,7 +272,7 @@ class FlowController extends Controller
         $rows = $query->orderByDesc('e.id')->limit(51)->get(['e.id', 'e.flow_execution_id', 'x.flow_version_id', 'e.event_type', 'e.node_id', 'e.metadata', 'e.created_at']);
         $more = $rows->count() > 50;
         $rows = $rows->take(50)->map(function ($row) {
-            $row->metadata = array_intersect_key(json_decode($row->metadata, true) ?? [], array_flip(['item_id', 'field', 'reason', 'outcome', 'version_id', 'handle', 'from']));
+            $row->metadata = array_intersect_key(json_decode($row->metadata, true) ?? [], array_flip(['item_id', 'field', 'reason', 'outcome', 'version_id', 'handle', 'from', 'output', 'output_label']));
 
             return $row;
         });
@@ -318,7 +311,7 @@ class FlowController extends Controller
         app(DraftSessionService::class)->update($flow, $data + ['actor_user_id' => $request->user()->id]);
         $updated = $flow->fresh();
 
-        return response()->json(['data' => $updated]);
+        return response()->json(['data' => $updated, 'meta' => ['media_cleanup_pending' => DB::table('flow_asset_deletions')->where('flow_id', $flow->id)->exists()]]);
     }
 
     public function acquireEditLock(Request $request, Workspace $workspace, int $flowId, FlowEditLock $locks): JsonResponse
@@ -432,6 +425,7 @@ class FlowController extends Controller
     public function storeField(Request $request, Workspace $workspace): JsonResponse
     {
         $this->ensureCanManage($request, $workspace);
+        abort_unless($request->user()->hasLeadPermission($workspace, 'can_create_contact_fields'),403);
         $data = $request->validate(['name' => ['required', 'string', 'max:100']]);
         $field = $workspace->contactCustomFields()->firstOrCreate(['name' => trim($data['name'])], ['type' => 'text']);
 
@@ -441,6 +435,7 @@ class FlowController extends Controller
     public function storeTag(Request $request, Workspace $workspace): JsonResponse
     {
         $this->ensureCanManage($request, $workspace);
+        abort_unless($request->user()->hasLeadPermission($workspace, 'can_create_tags'),403);
         $data = $request->validate(['name' => ['required', 'string', 'max:100']]);
         $tag = $workspace->tags()->firstOrCreate(['name' => trim($data['name'])], ['color' => '#16a34a', 'created_by_user_id' => $request->user()->id]);
 

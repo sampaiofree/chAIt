@@ -263,7 +263,7 @@ test('transport exports media hints without private identifiers and resets only 
     expect($ai['ai_prompt'])->toBe('Atenda com cuidado.')->and($ai['ai_model'])->toBe('gpt-6.1-sol')->and($ai['ai_inactivity_seconds'])->toBe(900)->and($ai['ai_max_messages'])->toBe(5)
         ->and($ai['ai_expiry_action'])->toBe('end')->and($ai['ai_limit_action'])->toBe('human')->and($ai['ai_fields'][0]['allow_overwrite'])->toBeFalse()
         ->and($ai['ai_fields'][0]['field_id'])->toBe($field->id)->and($ai['ai_tags'][0]['tag_id'])->toBe($tag->id)->and($ai['ai_media'][0]['instruction'])->toBe('Envie quando solicitado.');
-    expect($asset->fresh())->not->toBeNull();
+    expect($asset->fresh())->toBeNull();
 });
 
 test('transport keeps valid positions and deterministically lays out all nodes otherwise', function () {

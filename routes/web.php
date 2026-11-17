@@ -10,11 +10,16 @@ use App\Http\Controllers\Workspace\ExternalWebhookController;
 use App\Http\Controllers\Workspace\FlowAssistantController;
 use App\Http\Controllers\Workspace\FlowController;
 use App\Http\Controllers\Workspace\FlowTransportController;
+use App\Http\Controllers\Workspace\LeadController;
 use App\Http\Controllers\Workspace\SequenceController;
 use App\Http\Controllers\Workspace\UazapiChatController;
 use App\Http\Middleware\EnsureSystemAdmin;
+use App\Http\Middleware\RequireConnectedChat;
 use App\Models\User;
+use App\Models\Workspace;
+use App\Services\Chat\ChatConnectionAccess;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -48,13 +53,22 @@ Route::inertia('/', 'welcome', [
     'canRegister' => Features::enabled(Features::registration()),
 ])->name('home');
 
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::middleware(['auth', 'verified', RequireConnectedChat::class])->group(function () {
     Route::middleware(EnsureSystemAdmin::class)->prefix('admin/usuarios')->name('admin.users.')->group(function () {
         Route::get('/', [AdminUserController::class, 'index'])->name('index');
         Route::post('/', [AdminUserController::class, 'store'])->name('store');
         Route::get('{user}/editar', [AdminUserController::class, 'edit'])->name('edit');
         Route::patch('{user}', [AdminUserController::class, 'update'])->name('update');
     });
+    Route::get('workspaces/{workspace}/chat-access', function (Request $request, Workspace $workspace) {
+        abort_unless($request->user()->canAccessWorkspace($workspace), 403);
+
+        return response()->json(app(ChatConnectionAccess::class)->state($workspace));
+    });
+    Route::get('workspaces/{workspace}/leads', [LeadController::class, 'index'])->name('workspaces.leads.index');
+    Route::post('workspaces/{workspace}/leads', [LeadController::class, 'store'])->name('workspaces.leads.store');
+    Route::get('workspaces/{workspace}/leads/{lead}', [LeadController::class, 'show'])->name('workspaces.leads.show');
+    Route::patch('workspaces/{workspace}/leads/{lead}', [LeadController::class, 'update'])->name('workspaces.leads.update');
     Route::post('workspaces/{workspace}/uazapi/import', [ChatController::class, 'import'])->name('workspaces.uazapi.import');
     Route::post('workspaces/{workspace}/uazapi/diagnose', [UazapiChatController::class, 'diagnose'])->name('workspaces.uazapi.diagnose');
     Route::get('workspaces/{workspace}/webhooks', [ExternalWebhookController::class, 'index'])->name('workspaces.webhooks.index');

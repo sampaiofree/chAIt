@@ -543,6 +543,7 @@ class UazapiChatController extends Controller
     {
         $this->authorizeThread($request, $workspace, $thread);
         $this->mayActOnThread($request, $thread);
+        abort_unless($request->user()->hasLeadPermission($workspace, 'can_edit_leads'), 403);
         $contact = $thread->contact;
         $contact->update($request->validate([
             'display_name' => ['nullable', 'string', 'max:255'],

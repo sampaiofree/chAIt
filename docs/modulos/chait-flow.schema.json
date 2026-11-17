@@ -1248,6 +1248,38 @@
                                         ],
                                         "maxLength": 500
                                     },
+                                    "ai_outputs": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string",
+                                                    "maxLength": 48,
+                                                    "pattern": "^[A-Za-z0-9_-]+$",
+                                                    "minLength": 1
+                                                },
+                                                "label": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "maxLength": 120
+                                                },
+                                                "instruction": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "maxLength": 2000
+                                                }
+                                            },
+                                            "required": [
+                                                "id"
+                                            ]
+                                        }
+                                    },
                                     "ai_grouping_seconds": {
                                         "type": "integer",
                                         "minimum": 5,

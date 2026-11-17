@@ -14,11 +14,19 @@ type Member = {
     name: string;
     email: string;
     role: string;
+    can_view_leads: boolean;
+    can_edit_leads: boolean;
+    can_create_tags: boolean;
+    can_create_contact_fields: boolean;
     can_view_unassigned: boolean;
     can_manage_flows: boolean;
     can_use_flow_assistant: boolean;
 };
 type Permission =
+    | 'can_view_leads'
+    | 'can_edit_leads'
+    | 'can_create_tags'
+    | 'can_create_contact_fields'
     | 'can_view_unassigned'
     | 'can_manage_flows'
     | 'can_use_flow_assistant';
@@ -152,6 +160,29 @@ const roleName = (role: string) =>
                         :aria-busy="savingMembers.has(member.id)"
                     >
                         <label
+                            v-for="permission in [
+                                ['can_view_leads', 'Visualizar leads'],
+                                ['can_edit_leads', 'Editar leads'],
+                                ['can_create_tags', 'Criar etiquetas'],
+                                [
+                                    'can_create_contact_fields',
+                                    'Criar campos personalizados',
+                                ],
+                            ] as const"
+                            :key="permission[0]"
+                            ><input
+                                type="checkbox"
+                                :checked="member[permission[0]]"
+                                @change="
+                                    update(
+                                        member,
+                                        permission[0],
+                                        ($event.target as HTMLInputElement)
+                                            .checked,
+                                    )
+                                "
+                            />{{ permission[1] }}</label
+                        ><label
                             class="form-checkbox"
                             :for="`unassigned-${member.id}`"
                             ><Checkbox

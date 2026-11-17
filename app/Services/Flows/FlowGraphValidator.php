@@ -82,6 +82,13 @@ class FlowGraphValidator
                     $this->invalid('graph.nodes.'.$node['id'].'.options', 'Os IDs das opções devem ser únicos no Menu.');
                 }
             }
+            if ($node['type'] === 'ai' && array_key_exists('ai_outputs', $node['data'])) {
+                $ids = array_column($node['data']['ai_outputs'], 'id');
+                $labels = array_values(array_filter(array_map(fn ($o) => mb_strtolower(trim($o['label'] ?? '')), $node['data']['ai_outputs']), fn ($label) => $label !== ''));
+                if (count($ids) !== count(array_unique($ids)) || count($labels) !== count(array_unique($labels)) || in_array('continuar', $labels, true)) {
+                    $this->invalid('graph.nodes.'.$node['id'].'.ai_outputs', 'Use IDs e nomes únicos; Continuar é uma saída reservada.');
+                }
+            }
             foreach (['ai_media' => 'asset_id', 'ai_tags' => 'tag_id', 'ai_fields' => 'field_id'] as $list => $resourceKey) {
                 $ids = array_filter(array_column($node['data'][$list] ?? [], $resourceKey), fn ($id) => $id !== null);
                 if (count($ids) !== count(array_unique($ids))) {
@@ -308,9 +315,14 @@ class FlowGraphValidator
                     }
                 }
                 if (trim(ContactTemplate::display($data['ai_prompt'] ?? '')) === '' || ! in_array($data['ai_model'] ?? '', ['gpt-6-luna', 'gpt-6.1-sol', 'gpt-6-astra'], true)
-                    || ! isset($data['ai_inactivity_seconds']) || ! in_array($data['ai_expiry_action'] ?? '', ['end', 'human'], true)
-                    || (! empty($data['ai_max_messages']) && ! in_array($data['ai_limit_action'] ?? '', ['continue', 'human'], true))) {
+                    || ! isset($data['ai_inactivity_seconds']) || (! array_key_exists('ai_outputs', $data) && (! in_array($data['ai_expiry_action'] ?? '', ['end', 'human'], true)
+                    || (! empty($data['ai_max_messages']) && ! in_array($data['ai_limit_action'] ?? '', ['continue', 'human'], true))))) {
                     $this->invalid("graph.nodes.{$id}", 'Configure prompt, modelo, inatividade e ação do limite no bloco IA.');
+                }
+                foreach ($data['ai_outputs'] ?? [] as $output) {
+                    if (trim($output['label'] ?? '') === '' || trim($output['instruction'] ?? '') === '') {
+                        $this->invalid("graph.nodes.{$id}.ai_outputs", 'Preencha o nome e as instruções de cada saída.');
+                    }
                 }
                 $integration = WorkspaceOpenAiIntegration::where('workspace_id', $workspace->id)->first();
                 if (! $integration) {

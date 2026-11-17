@@ -112,6 +112,8 @@ class ProcessChatOperation implements ShouldQueue
                 return;
             }
             $user = User::findOrFail($operation->user_id);
+            $access = app(\App\Services\Chat\ChatConnectionAccess::class)->state($thread->workspace);
+            abort_unless($access['allowed'],409,'WhatsApp desconectado ou indisponível.');
             abort_unless($user->canAccessWorkspace($thread->workspace), 403);
             $request = Request::create('/', in_array($operation->kind, ['send', 'send_file', 'read'], true) ? 'POST' : 'GET', $payload);
             $request->headers->set('Accept', 'application/json');

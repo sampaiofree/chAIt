@@ -147,6 +147,37 @@ let searchGeneration = 0;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 let listAbort: AbortController | undefined;
 const threads = ref<Thread[]>([]);
+const chatAllowed = ref(false);
+const chatAccessStatus = ref('checking');
+let accessTimer: ReturnType<typeof setInterval> | undefined;
+async function checkChatAccess() {
+    const checkedWorkspace = workspace.value.id;
+    try {
+        const response = await fetch(
+            `/workspaces/${workspace.value.id}/chat-access`,
+            { headers: { Accept: 'application/json' } },
+        );
+        const result = await response.json();
+        if (checkedWorkspace !== workspace.value.id) return;
+        const previous = chatAllowed.value;
+        chatAllowed.value = response.ok && result.allowed === true;
+        if (chatAllowed.value && !previous) void loadThreads();
+        chatAccessStatus.value = result.status || 'unavailable';
+    } catch {
+        chatAllowed.value = false;
+        chatAccessStatus.value = 'unavailable';
+    }
+    if (!chatAllowed.value) {
+        listAbort?.abort();
+        threads.value = [];
+        selected.value = null;
+        messages.value = [];
+        liveMessages.clear();
+        liveStatuses.clear();
+        void clearChatCache();
+    }
+}
+
 const selected = ref<Thread | null>(null);
 const messages = ref<Message[]>([]);
 const connection = ref<{
@@ -392,6 +423,12 @@ function params() {
     });
     for (const id of appliedTagIds.value) q.append('tag_ids[]', `${id}`);
     if (selected.value) q.set('thread_id', `${selected.value.id}`);
+    else {
+        const requested = new URLSearchParams(window.location.search).get(
+            'thread_id',
+        );
+        if (requested) q.set('thread_id', requested);
+    }
     return q;
 }
 const cacheKey = (suffix: string) =>
@@ -402,6 +439,7 @@ function listCacheKey() {
     return cacheKey(`list:${query.toString()}`);
 }
 async function loadThreads(append = false) {
+    if (!chatAllowed.value) return;
     const generation = searchGeneration;
     const previousId = selected.value?.id;
     listAbort?.abort();
@@ -1154,6 +1192,8 @@ function receiveChat(event: ChatUpdate) {
         return;
     }
     if (event.type === 'connection.changed') {
+        if (event.data.status !== 'connected') chatAllowed.value = false;
+        void checkChatAccess();
         const wasConnected = connection.value?.status === 'connected';
         connection.value = { ...connection.value, ...event.data };
         connectionLoaded.value = true;
@@ -1557,6 +1597,8 @@ watch(
         messages.value = [];
         selected.value = null;
         historyNextOffset.value = null;
+        chatAllowed.value = false;
+        void checkChatAccess();
         connectionLoaded.value = false;
         renderedThreadId = null;
         historyReadVersion.value = null;
@@ -1687,6 +1729,8 @@ watch(mobilePane, (pane) => {
     if (pane === 'chat') void nextTick().then(updateLatestPosition);
 });
 onMounted(async () => {
+    await checkChatAccess();
+    accessTimer = setInterval(() => void checkChatAccess(), 15000);
     dateLabelTimer = window.setInterval(refreshDateLabels, 60000);
     document.addEventListener('visibilitychange', refreshDateLabels);
     if (realtimeEnabled) {
@@ -1713,6 +1757,7 @@ onMounted(async () => {
     listTimer = window.setInterval(() => void loadThreads(), 30000);
 });
 onUnmounted(() => {
+    clearInterval(accessTimer);
     document.body.classList.remove('mobile-chat-detail');
     clearTimeout(skeletonTimer);
     clearTimeout(threadSkeletonTimer);
@@ -1730,7 +1775,32 @@ onUnmounted(() => {
 
 <template>
     <Head title="Conversas" />
+    <section
+        v-if="!chatAllowed"
+        style="padding: 48px; max-width: 700px; margin: auto"
+        role="status"
+    >
+        <h1>
+            {{
+                chatAccessStatus === 'checking'
+                    ? 'Verificando conexão…'
+                    : chatAccessStatus === 'disconnected'
+                      ? 'WhatsApp desconectado'
+                      : 'Não foi possível confirmar a conexão'
+            }}
+        </h1>
+        <p>Conecte o WhatsApp para usar as conversas.</p>
+        <a v-if="isAdmin" href="/settings/whatsapp">Configurar WhatsApp</a>
+        <p v-else>Solicite a conexão ao administrador do workspace.</p>
+        <button @click="checkChatAccess">Verificar novamente</button
+        ><a
+            v-if="page.props.canViewLeads"
+            :href="`/workspaces/${workspace.id}/leads`"
+            >Acessar Leads</a
+        >
+    </section>
     <main
+        v-if="chatAllowed"
         class="chat-shell"
         :class="{
             'profile-collapsed': profileCollapsed,

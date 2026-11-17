@@ -1,5 +1,8 @@
 # Bloco Assistente IA — Especificação funcional e técnica
 
+> O contrato atual de saídas está em [Saídas personalizadas](bloco-ia-saidas-personalizadas.md). As saídas fixas e ações diretas descritas abaixo permanecem apenas para versões publicadas legadas.
+
+
 > Revisão documental em 16/10/2026, confrontada com o código; não representa nova homologação operacional.
 
 > **Projeto:** chAIt — SaaS de atendimento e automações (Laravel)  

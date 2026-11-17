@@ -23,24 +23,28 @@ class OpenAiClient
         return $response->json('id');
     }
 
-    public function respond(string $key, string $conversationId, string $model, string $prompt, array $input, array $tools = [], ?AiTurnBudget $budget = null): array
+    public function respond(string $key, string $conversationId, string $model, string $prompt, array $input, array $tools = [], ?AiTurnBudget $budget = null, ?array $outputs = null): array
     {
         $payload = [
             'model' => $model, 'conversation' => $conversationId,
             'instructions' => $prompt."\nResponda em texto com no máximo 3500 caracteres por mensagem.",
             'input' => $input,
-            'tools' => array_merge([[
+            'tools' => array_merge($outputs === [] ? [] : [[
                 'type' => 'function', 'name' => 'concluir_bloco_ia',
                 'description' => 'Conclua o bloco somente quando o objetivo das instruções foi cumprido ou for necessário atendimento humano.',
                 'parameters' => [
-                    'type' => 'object', 'properties' => ['saida' => ['type' => 'string', 'enum' => ['continuar', 'atendimento_humanizado']]],
-                    'required' => ['saida'], 'additionalProperties' => false,
+                    'type' => 'object', 'properties' => ['saida' => ['type' => 'string', 'enum' => $outputs === null ? ['continuar', 'atendimento_humanizado'] : array_column($outputs, 'id')]],
+                    'required' => $outputs === null ? ['saida'] : ['saida', 'mensagem_final'], 'additionalProperties' => false,
                 ],
                 'strict' => true,
             ]], $tools),
             'parallel_tool_calls' => false,
             'max_output_tokens' => 1000,
         ];
+        if ($outputs !== null && $outputs !== []) {
+            $payload['tools'][0]['parameters']['properties']['mensagem_final'] = ['type' => ['string', 'null'], 'maxLength' => 3500];
+            $payload['tools'][0]['description'] = 'Escolha a saída mais adequada pelo contexto, sem prioridade pela ordem. Se faltar informação, continue conversando. mensagem_final é opcional e será enviada antes da saída. Saídas: '.json_encode($outputs, JSON_UNESCAPED_UNICODE);
+        }
         for ($attempt = 0; $attempt < 3; $attempt++) {
             $response = $this->request($key, $budget)->post('/responses', $payload);
             if ($response->successful()) {

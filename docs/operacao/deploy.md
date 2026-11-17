@@ -277,3 +277,7 @@ Aplicar migrations (inclui `flow_menu_waits` e `flow_menu_receipts`), atualizar 
 ## Chat em tempo real e controle de volume — 16/10/2026
 
 O novo caminho é liberado por configuração, com migrations aditivas, Laravel Reverb, supervisores separados e caixa de entrada temporária criptografada. Consulte [ativação, retenção, testes e retorno ao caminho anterior](chat-realtime.md). Manter `CHAIT_REALTIME_ENABLED=false` até validar a infraestrutura e os cenários de homologação. `/up` sozinho não valida Redis, filas, assinatura de canais ou entrega de eventos.
+
+## Exclusão recuperável dos arquivos dos fluxos
+
+Aplicar a migration `2026_11_17_000002_create_flow_asset_deletions` antes de liberar a versão. O scheduler existente executa `flows:cleanup-assets` a cada minuto; conferir com `php artisan schedule:list`. Para recuperação manual, executar `php artisan flows:cleanup-assets`. Não há novo worker. Solicitações persistem mesmo após apagar o fluxo e não são descartadas quando o armazenamento falha. Arquivos referenciados pelo fluxo, rascunho, versão ativa, execução ou envio pendente são preservados; versões apenas históricas não impedem a remoção. Não há varredura retroativa de arquivos órfãos.

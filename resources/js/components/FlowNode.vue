@@ -171,10 +171,23 @@ function mediaIcon(item: PreviewItem) {
         FileText
     );
 }
-const { updateNodeInternals } = useVueFlow();
+const {
+    updateNodeInternals,
+    edges: canvasEdges,
+    nodes: canvasNodes,
+} = useVueFlow();
+function exitDestination(handle: string) {
+    const edge = canvasEdges.value.find(
+        (e) => e.source === props.id && e.sourceHandle === handle,
+    );
+    const target = canvasNodes.value.find((n) => n.id === edge?.target);
+    return target ? `Segue para: ${target.data.label}` : 'Encerra o fluxo';
+}
 watch(
     () =>
-        props.data.options?.map((option) => option.id + option.label).join('|'),
+        [...(props.data.options || []), ...(props.data.ai_outputs || [])]
+            .map((option) => option.id + option.label)
+            .join('|'),
     async () => {
         await nextTick();
         updateNodeInternals([props.id]);
@@ -183,14 +196,18 @@ watch(
 const emits = defineEmits<{ add: [nodeId: string, handle: string] }>();
 const exits = computed(() => [
     ...flowOutputs(props.catalog, props.data.nodeType, props.data),
-    ...(props.data.nodeType === 'ai'
+    ...(props.data.nodeType === 'ai' && props.data.ai_outputs === undefined
         ? [{ id: 'human', label: 'Atendimento Humanizado' }]
         : []),
 ]);
 </script>
 
 <template>
-    <article class="flow-node" :class="`node-${data.nodeType}`">
+    <article
+        class="flow-node"
+        :class="`node-${data.nodeType}`"
+        :data-flow-type="data.nodeType"
+    >
         <Handle
             v-if="data.nodeType !== 'start'"
             id="input"
@@ -383,7 +400,19 @@ const exits = computed(() => [
                 :key="exit.id"
                 class="node-exit"
             >
-                <span>{{ exit.label }}</span>
+                <span
+                    v-if="data.nodeType === 'ai' && exit.id === 'continue'"
+                    class="automatic-label"
+                    >Saída automática<small
+                        >Falha, tempo sem resposta ou limite de mensagens</small
+                    ></span
+                >
+                <span
+                    >{{ exit.label
+                    }}<small v-if="data.nodeType === 'ai'">{{
+                        exitDestination(exit.id)
+                    }}</small></span
+                >
                 <span
                     v-if="exit.id === 'human'"
                     class="terminal-mark"
@@ -404,20 +433,21 @@ const exits = computed(() => [
                     :id="exit.id"
                     type="source"
                     :position="
-                        data.nodeType === 'menu'
+                        ['menu', 'ai'].includes(data.nodeType)
                             ? Position.Right
                             : Position.Bottom
                     "
                     :style="{
-                        top: data.nodeType === 'menu' ? '50%' : undefined,
-                        left:
-                            data.nodeType === 'menu'
-                                ? undefined
-                                : exits.length === 1
-                                  ? '50%'
-                                  : index === 0
-                                    ? '25%'
-                                    : '75%',
+                        top: ['menu', 'ai'].includes(data.nodeType)
+                            ? '50%'
+                            : undefined,
+                        left: ['menu', 'ai'].includes(data.nodeType)
+                            ? undefined
+                            : exits.length === 1
+                              ? '50%'
+                              : index === 0
+                                ? '25%'
+                                : '75%',
                     }"
                 />
             </div>
@@ -426,6 +456,22 @@ const exits = computed(() => [
 </template>
 
 <style scoped>
+.automatic-label {
+    display: block;
+    width: 100%;
+    font-weight: 600;
+}
+.node-ai .node-exit:has(.automatic-label) {
+    flex-wrap: wrap;
+    border-top: 1px dashed var(--border);
+    padding-top: 10px;
+    margin-top: 6px;
+}
+.node-exit small {
+    display: block;
+    font-size: 10px;
+    font-weight: normal;
+}
 .node-pending {
     display: block;
     margin-top: 8px;
@@ -461,7 +507,7 @@ const exits = computed(() => [
 .flow-node {
     position: relative;
     width: 224px;
-    padding: 15px 14px 10px;
+    padding: 0 14px 10px;
     border: 1px solid var(--border);
     border-radius: 13px;
     background: var(--card);
@@ -469,13 +515,20 @@ const exits = computed(() => [
     color: var(--foreground);
 }
 .node-header {
-    padding-bottom: 10px;
+    padding: 12px 14px 10px;
+    border-top: 4px solid var(--flow-type-color);
     border-bottom: 1px solid var(--border);
-    margin-bottom: 12px;
+    border-radius: 12px 12px 0 0;
+    margin: 0 -14px 12px;
+    background: var(--flow-type-soft);
+}
+.vue-flow__node.selected > .flow-node {
+    outline: 2px solid var(--ring);
+    outline-offset: 3px;
 }
 .node-header small {
     display: block;
-    color: var(--muted-foreground);
+    color: var(--flow-type-text);
     font-size: 10px;
     font-weight: 500;
     margin-bottom: 3px;
@@ -556,12 +609,6 @@ const exits = computed(() => [
     font-size: 11px;
     color: var(--muted-foreground);
 }
-.node-start {
-    border-color: var(--primary);
-}
-.node-start .node-header small {
-    color: var(--brand-strong);
-}
 .node-exits {
     display: flex;
     justify-content: space-around;
@@ -570,16 +617,19 @@ const exits = computed(() => [
     padding-top: 8px;
     border-top: 1px solid var(--border);
 }
-.node-menu .node-exits {
+.node-menu .node-exits,
+.node-ai .node-exits {
     display: grid;
     gap: 4px;
 }
-.node-menu .node-exit {
+.node-menu .node-exit,
+.node-ai .node-exit {
     position: relative;
     justify-content: space-between;
     padding-right: 8px;
 }
-.node-menu .node-exit > span {
+.node-menu .node-exit > span,
+.node-ai .node-exit > span {
     overflow-wrap: anywhere;
 }
 .node-menu .condition-pending {

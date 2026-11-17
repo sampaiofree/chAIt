@@ -433,10 +433,10 @@ class FlowRuntime
         });
     }
 
-    public function continueFromAi(FlowExecution $execution): void
+    public function continueFromAi(FlowExecution $execution, string $handle = 'continue'): void
     {
         $edges = collect($execution->version->graph['edges']);
-        $this->advance($execution, $edges, 'continue');
+        $this->advance($execution, $edges, $handle);
         if ($execution->status === 'running') {
             ProcessFlowExecution::dispatch($execution->id)->afterCommit();
         }

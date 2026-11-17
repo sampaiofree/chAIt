@@ -31,9 +31,11 @@ const title = computed(() =>
           ? 'Configurações'
           : page.url.startsWith('/dashboard')
             ? 'Conversas'
-            : /\/sequences(?:\/|\?|$)|\/flow-triggers/.test(page.url)
-              ? 'Automação'
-              : 'Fluxos',
+            : /\/leads(?:\/|\?|$)/.test(page.url)
+              ? 'Leads'
+              : /\/sequences(?:\/|\?|$)|\/flow-triggers/.test(page.url)
+                ? 'Automação'
+                : 'Fluxos',
 );
 watch(
     () => page.url,
