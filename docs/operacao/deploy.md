@@ -6,7 +6,7 @@ Guia manual via SSH para um servidor já configurado. Execute os comandos na ord
 
 ## Requisitos
 
-- PHP 8.3+ com as extensões exigidas pelo Composer, incluindo `pdo_pgsql`, `redis`, `pcntl` e `posix` para banco e Horizon.
+- PHP 8.3+ com as extensões exigidas pelo Composer, incluindo `pdo_pgsql`, `redis`, `pcntl` e `posix` para banco e Horizon, e `imagick` com suporte a JPEG/PNG para otimização de imagens dos fluxos. Verifique a extensão no PHP CLI e no PHP-FPM antes do deploy.
 - Composer, Node.js 22.13+ e npm (compatíveis com o Vite 8 do projeto).
 - PostgreSQL, Redis e FFmpeg com `libopus` + FFprobe disponíveis ao PHP.
 - HTTPS configurado, raiz web apontando para `public/` e permissão de escrita em `storage/` e `bootstrap/cache/` para o usuário do PHP e das filas.

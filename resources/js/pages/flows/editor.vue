@@ -129,8 +129,10 @@ type FlowData = FlowMenuData & {
     checks?: ConditionCheck[];
     target_flow_id?: number | null;
     actions?: FlowAction[];
+    ai_initial_context?: ContactTemplate;
     ai_prompt?: ContactTemplate;
     ai_model?: 'gpt-6-luna' | 'gpt-6.1-sol' | 'gpt-6-astra';
+    ai_grouping_seconds?: number;
     ai_inactivity_seconds?: number;
     ai_expiry_action?: 'end' | 'human';
     ai_max_messages?: number | null;
@@ -1690,6 +1692,25 @@ onBeforeUnmount(() =>
                                 placeholder="Descreva o papel, as informações disponíveis e quando concluir ou encaminhar."
                                 @input="markDirty"
                             />
+                        </label>
+                        <label class="field-label"
+                            >Contexto inicial (opcional)
+                            <ContactTemplateInput
+                                :workspace-id="workspace.id"
+                                :fields="catalog.contact_fields"
+                                v-model="selected.data.ai_initial_context"
+                                initial-context
+                                aria-label="Contexto inicial"
+                                rows="4"
+                                maxlength="8000"
+                                placeholder="Insira Última mensagem para contextualizar a abertura da IA."
+                                @input="markDirty"
+                            />
+                            <small
+                                >Enviado uma vez ao entrar no bloco. Última
+                                mensagem aceita texto e mídias
+                                suportadas.</small
+                            >
                         </label>
                         <label class="field-label"
                             >Modelo OpenAI

@@ -50,6 +50,7 @@ const props = defineProps<{
         tag_ids?: number[];
         condition_operator?: string;
         target_flow_id?: number | null;
+        ai_grouping_seconds?: number;
         ai_inactivity_seconds?: number;
     };
     reference?: {

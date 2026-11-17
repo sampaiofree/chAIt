@@ -13,6 +13,7 @@ use App\Models\Workspace;
 use App\Models\WorkspaceOpenAiIntegration;
 use App\Services\Flows\AiActionService;
 use App\Services\Flows\AiInboundMessage;
+use App\Services\Flows\AiInitialContext;
 use App\Services\Flows\AiSessionService;
 use App\Services\Flows\AiTurnBudget;
 use App\Services\Flows\FlowAutomationControl;
@@ -872,3 +873,46 @@ test('busy assistant sessions requeue their turn and expiry instead of opening h
     }
     expect($f['session']->fresh()->status)->toBe('active')->and($f['execution']->fresh()->status)->toBe('waiting_ai');
 })->with(['turn', 'expiry']);
+
+test('initial context expands the captured last message without consuming message allowance', function (array $content) {
+    Queue::fake();
+    $f = aiFixture();
+    $f['thread']->update(['metadata' => ['last_lead_message' => ['message_id' => 'opening-lead', 'inbox_id' => null]]]);
+    $execution = app(FlowRuntime::class)->start($f['version'], $f['contact']->id, $f['thread']->id, $f['connection'], 'test');
+    app(FlowRuntime::class)->run($execution->id);
+    $session = AiSession::sole();
+    $this->mock(AiInboundMessage::class, fn ($mock) => $mock->shouldReceive('input')->once()->withArgs(fn ($s, $id) => $s->id === $session->id && $id === 'opening-lead')->andReturn(['video' => false, 'content' => $content]));
+    $template = ['template_version' => 1, 'parts' => [['type' => 'text', 'text' => 'Mensagem do lead: '], ['type' => 'runtime', 'key' => 'ultima_mensagem']]];
+    $input = app(AiInitialContext::class)->input($session->fresh(['execution']), $template, 'test', new AiTurnBudget);
+    expect($input)->toBe([['type' => 'input_text', 'text' => 'Mensagem do lead: '], ...$content]);
+    expect($session->fresh()->message_count)->toBe(0);
+})->with([
+    'text' => [[['type' => 'input_text', 'text' => 'Quero preços']]],
+    'audio' => [[['type' => 'input_text', 'text' => 'Áudio do lead (transcrição): preços']]],
+    'image' => [[['type' => 'input_image', 'image_url' => 'data:image/png;base64,dGVzdA==']]],
+    'document' => [[['type' => 'input_file', 'filename' => 'a.pdf', 'file_data' => 'data:application/pdf;base64,dGVzdA==']]],
+]);
+
+test('last message reference is only accepted in initial context', function () {
+    $template = ['template_version' => 1, 'parts' => [['type' => 'runtime', 'key' => 'ultima_mensagem']]];
+    $f = aiFixture();
+    $graph = $f['version']->graph;
+    $index = collect($graph['nodes'])->search(fn ($node) => $node['type'] === 'ai');
+    $graph['nodes'][$index]['data']['ai_initial_context'] = $template;
+    expect(app(FlowGraphValidator::class)->validate($graph)['nodes'][$index]['data']['ai_initial_context'])->toBe($template);
+    $graph['nodes'][$index]['data']['ai_prompt'] = $template;
+    expect(fn () => app(FlowGraphValidator::class)->validate($graph))->toThrow(ValidationException::class);
+});
+
+test('initial context preserves normal opening when there is no captured message', function () {
+    Queue::fake();
+    $f = aiFixture();
+    $execution = app(FlowRuntime::class)->start($f['version'], $f['contact']->id, $f['thread']->id, $f['connection'], 'test');
+    app(FlowRuntime::class)->run($execution->id);
+    $service = app(AiInitialContext::class);
+    $session = AiSession::sole()->load('execution');
+    $template = ['template_version' => 1, 'parts' => [['type' => 'runtime', 'key' => 'ultima_mensagem']]];
+    expect($service->input($session, $template, 'test', new AiTurnBudget))->toBeNull();
+    expect($service->input($session, '', 'test', new AiTurnBudget))->toBeNull();
+    expect($service->input($session, 'Contexto literal', 'test', new AiTurnBudget))->toBe([['type' => 'input_text', 'text' => 'Contexto literal']]);
+});

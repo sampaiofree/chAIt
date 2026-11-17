@@ -1,7 +1,7 @@
 # Documentação do chAIt
 
-> **Atualizado em:** 2026-10-17
-> **Base desta revisão:** comparação estática dos documentos com rotas, páginas Vue, controllers, serviços, models, migrations e testes presentes no repositório. Nenhum teste ou homologação externa foi executado nesta revisão.
+> **Atualizado em:** 2026-11-17
+> **Base desta revisão:** revisão geral estática de 17/10/2026, sem testes ou homologação externa naquela revisão. Em 17/11/2026, inclusão pontual do planejamento de mensagens para IA, com evidências de testes locais registradas no documento específico; não representa nova revisão geral dos módulos.
 > **Fase atual:** fundação do workspace, autenticação, chat WhatsApp, editor/runtime de fluxos, blocos, Assistente IA de Fluxos, Sequências, Webhooks Externos e configurações estão implementados localmente. Leads ainda não tem módulo próprio. O chat em tempo real depende de ativação e infraestrutura; integrações e operação real mantêm homologações parciais registradas nos documentos específicos.
 
 ## Decisões aprovadas
@@ -60,8 +60,9 @@ Desktop e celular usarão a mesma aplicação web, com layout/navegação adapta
 | [Leads](modulos/leads.md)                                               | Listagem, filtros e ficha do contato.                                     | Não implementado; briefing funcional aprovado.                                                                 |
 | [Interface mobile](interfaces/mobile.md)                                | Experiência e navegação no celular.                                       | Comportamento observado e distinções em relação ao recorte inicial.                                            |
 | [Ordem de implementação](planejamento/ordem-de-implementacao.md)        | Sequência recomendada e dependências.                                     | Planejamento original; não comprova o estado atual de entrega.                                                 |
-| [Checklist de implementação e homologação](planejamento/implementar/checklist-pendencias.md) | Itens ainda não implementados e recursos prontos que aguardam liberação/homologação. | Revisado contra o repositório em 17/10/2026; ver limites de cada item. |
+| [Checklist de implementação e homologação](planejamento/implementar/checklist-pendencias.md) | Itens ainda não implementados e recursos prontos que aguardam liberação/homologação. | Revisão geral de 17/10/2026; etapas de mensagens para IA incluídas em 17/11/2026. |
 | [Notificações operacionais de fluxos](planejamento/notificacoes-operacionais-fluxos.md) | Proposta de notificações sobre falhas e resultados desconhecidos. | Não implementado; consta como pendência no checklist. |
+| [Mensagens para IA: ordenação, agrupamento e concorrência](planejamento/mensagens-ia-ordenacao-agrupamento.md) | Comparativo Chait/Facilitai, evidências e evolução em quatro etapas. | Planejado em 17/11/2026; melhorias não implementadas. |
 | [PostgreSQL no desenvolvimento](desenvolvimento/postgresql.md)          | Ambiente local, migração e testes isolados.                               | Guia de desenvolvimento.                                                                                       |
 | [Histórico e versões alternativas](historico/README.md)                 | Briefings anteriores, variantes e referências já consolidadas.            | Conteúdo preservado para consulta.                                                                             |
 
@@ -129,6 +130,7 @@ docs/
 │   │   ├── checklist-pendencias.md
 │   │   └── especificacao-importacao-exportacao-fluxos-chait.md
 │   ├── decisoes.md
+│   ├── mensagens-ia-ordenacao-agrupamento.md
 │   ├── notificacoes-operacionais-fluxos.md
 │   └── ordem-de-implementacao.md
 └── README.md

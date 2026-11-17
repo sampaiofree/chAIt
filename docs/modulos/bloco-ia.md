@@ -278,3 +278,14 @@ O mesmo tipo `ai` agora aceita mídias, tags e campos opcionais, com validação
 ## Prompt com campos do contato e continuidade — 15/10/2026
 
 O prompt aceita ContactTemplate v1, resolvido antes de cada chamada com snapshot atual. Valores seguem separados das instruções, em entrada de dados não confiáveis; não ampliam ferramentas/permissões. Continua proibido revelar dados pessoais do cadastro, mesmo recebidos por chips. Recursos e suas instruções não aceitam chips. Prompt personalizado inválido e recusa do envio da resposta seguem **Continuar**, com limpeza remota; falhas próprias da OpenAI mantêm a política anterior. Transporte incerto persiste somente metadados e usa conciliação recuperável, sem gerar/enviar novamente. Ao esgotar, registra resultado desconhecido e continua. Ver [contrato e homologação pendente](campos-do-contato-fluxos.md).
+
+
+## Contexto inicial e Última mensagem
+
+O bloco IA possui **Contexto inicial**, separado das instruções, opcional e vazio por padrão. Use **Inserir campo → Última mensagem** nesse campo para enviar à abertura a última mensagem recebida do lead naquela conversa até a entrada no bloco. A seleção é capturada ao entrar no bloco; mensagens posteriores não a alteram. O campo também aceita texto literal e os chips de contato existentes. Digitar `[ultima_mensagem]` como texto não insere a referência.
+
+O contexto é enviado uma vez como entrada da conversa e não consome o limite de mensagens. Texto, áudio transcrito, imagens e documentos PDF/DOCX/TXT usam o tratamento atual, com limite de mídia de 10 MB. Vídeos e mídias recusadas recebem orientação para enviar um formato compatível. Sem contexto ou sem mensagem recuperável, a abertura segue o prompt normalmente.
+
+A referência é isolada por conversa e conexão. Payloads permanecem criptografados e temporários, com consumidores para a última mensagem e para a abertura pendente, respeitando o descarte máximo de 24 horas. Referências não garantem disponibilidade do conteúdo no provedor. Não se cria histórico permanente. Fluxos existentes sem o campo mantêm seu comportamento.
+
+Validação automatizada usa provedores simulados; a homologação real de UAZAPI/OpenAI continua necessária antes da liberação.

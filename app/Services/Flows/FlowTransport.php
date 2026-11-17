@@ -123,7 +123,11 @@ class FlowTransport
             $data = $this->internalData($node['data'], $resources, 'nodes.'.$index.'.data');
             if ($node['type'] === 'ai') {
                 $defaults = FlowCapabilities::aiDefaults();
+                $legacyGrouping = ! array_key_exists('ai_grouping_seconds', $data);
                 $data += $defaults;
+                if ($legacyGrouping) {
+                    unset($data['ai_grouping_seconds']);
+                }
                 foreach (['ai_model', 'ai_expiry_action', 'ai_limit_action'] as $field) {
                     $data[$field] = $defaults[$field];
                 }

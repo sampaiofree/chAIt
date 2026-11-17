@@ -36,7 +36,15 @@ class AiSessionService
             'node_id' => $node['id'], 'model' => $node['data']['ai_model'],
             'expires_at' => now()->addSeconds((int) $node['data']['ai_inactivity_seconds']),
         ]);
-        $execution->forceFill(['status' => 'waiting_ai'])->save();
+        $context = $execution->context ?? [];
+        $context['ai_initial_session_id'] = $session->id;
+        $context['ai_initial_message'] = $execution->thread()->first()?->metadata['last_lead_message'] ?? null;
+        $usesLast = collect(ContactTemplate::parts($node['data']['ai_initial_context'] ?? ''))->contains(fn ($part) => ($part['type'] ?? '') === 'runtime');
+        $context['ai_initial_reserved'] = $usesLast && ! empty($context['ai_initial_message']['inbox_id']);
+        if ($context['ai_initial_reserved']) {
+            UazapiInbox::whereKey($context['ai_initial_message']['inbox_id'])->increment('consumers');
+        }
+        $execution->forceFill(['status' => 'waiting_ai', 'context' => $context])->save();
         ProcessAiTurn::dispatch($session->id)->afterCommit();
         ExpireAiSession::dispatch($session->id)->delay($session->expires_at)->afterCommit();
     }
@@ -119,7 +127,8 @@ class AiSessionService
                 if ($session->remote_conversation_id !== null) {
                     return;
                 }
-                $input = [['type' => 'input_text', 'text' => 'Inicie a conversa com o lead seguindo as instruções. Não presuma o conteúdo de uma mensagem anterior.']];
+                $input = app(AiInitialContext::class)->input($session, $data['ai_initial_context'] ?? '', $key, $budget)
+                    ?? [['type' => 'input_text', 'text' => 'Inicie a conversa com o lead seguindo as instruções. Não presuma o conteúdo de uma mensagem anterior.']];
             }
             try {
                 if (! $session->remote_conversation_id) {
@@ -132,6 +141,10 @@ class AiSessionService
                         return;
                     }
                     $session->forceFill(['remote_conversation_id' => $remoteId])->save();
+                    $initialId = $session->execution->context['ai_initial_message']['message_id'] ?? null;
+                    if ($initialId && collect(ContactTemplate::parts($data['ai_initial_context'] ?? ''))->contains(fn ($part) => ($part['type'] ?? '') === 'runtime')) {
+                        DB::table('ai_session_inputs')->insertOrIgnore(['ai_session_id' => $session->id, 'provider_message_id' => $initialId, 'created_at' => now(), 'updated_at' => now()]);
+                    }
                 }
                 $items = [['role' => 'user', 'content' => $input]];
                 while (true) {
@@ -221,6 +234,9 @@ class AiSessionService
         } catch (AiTurnLimitException $exception) {
             $this->failById($sessionId, $exception->getMessage());
         } finally {
+            if (isset($session) && ($session->remote_conversation_id || $session->status !== 'active')) {
+                app(AiInitialContext::class)->release($session);
+            }
             $lock->release();
         }
     }
@@ -248,6 +264,9 @@ class AiSessionService
             $node = collect($session->execution->version->graph['nodes'])->firstWhere('id', $session->node_id);
             $this->transition($session, ($node['data']['ai_expiry_action'] ?? 'end') === 'human' ? 'human' : 'end', 'inactivity');
         } finally {
+            if (isset($session) && ($session->remote_conversation_id || $session->status !== 'active')) {
+                app(AiInitialContext::class)->release($session);
+            }
             $lock->release();
         }
     }
@@ -272,6 +291,9 @@ class AiSessionService
 
     public function cleanup(int $sessionId): void
     {
+        if ($pending = AiSession::find($sessionId)) {
+            app(AiInitialContext::class)->release($pending);
+        }
         $session = AiSession::find($sessionId);
         if (! $session || $session->status === 'active' || $session->cleanup_completed_at) {
             return;
@@ -413,6 +435,9 @@ class AiSessionService
                 ReconcileAiSend::dispatch($session->id)->delay(5)->afterCommit();
             });
         } finally {
+            if (isset($session) && ($session->remote_conversation_id || $session->status !== 'active')) {
+                app(AiInitialContext::class)->release($session);
+            }
             $lock->release();
         }
     }
@@ -479,6 +504,7 @@ class AiSessionService
                 unset($context['ai_pending_send']);
                 $execution->update(['context' => $context]);
             }
+            app(AiInitialContext::class)->release($current);
             $current->forceFill(['status' => $execution?->status !== 'waiting_ai' ? 'interrupted' : match ($action) {
                 'continue' => 'completed', 'human' => 'handed_off', default => 'expired',
             },

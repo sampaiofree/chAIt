@@ -328,7 +328,7 @@ test('duplicate messages have one durable receipt and one state transition', fun
     $job = new ProcessInboundEvent(UazapiInbox::sole()->id);
     app()->call([$job, 'handle']);
     app()->call([$job, 'handle']);
-    expect($f['thread']->fresh()->unread_count)->toBe(1)->and(UazapiInbox::sole()->payload)->toBeNull()->and(UazapiInbox::sole()->status)->toBe('processed')
+    expect($f['thread']->fresh()->unread_count)->toBe(1)->and(UazapiInbox::sole()->consumers)->toBe(1)->and(UazapiInbox::sole()->payload['message']['text'])->toBe('private message body')->and(UazapiInbox::sole()->status)->toBe('processed')
         ->and($f['connection']->fresh()->chat_last_webhook_at)->not->toBeNull();
     Http::assertNothingSent();
 });
@@ -742,4 +742,20 @@ test('local cursor pagination includes selected details outside the current page
     $taggedThread = Thread::factory()->create(['workspace_id' => $f['workspace']->id, 'uazapi_connection_id' => $f['connection']->id, 'contact_id' => $taggedContact->id, 'last_message_at' => now()->subDay()]);
     $this->getJson($url.'?'.http_build_query(['tag_ids' => [$tag->id]]))->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $taggedThread->id);
     Http::assertNothingSent();
+});
+
+test('latest lead message releases replaced content and ignores outgoing messages', function () {
+    $f = runtimeChat();
+    receiveRuntimeWebhook($f, runtimeWebhook($f, 'first'))->assertOk();
+    $first = UazapiInbox::sole();
+    app()->call([new ProcessInboundEvent($first->id), 'handle']);
+    receiveRuntimeWebhook($f, runtimeWebhook($f, 'second'))->assertOk();
+    $second = UazapiInbox::latest('id')->first();
+    app()->call([new ProcessInboundEvent($second->id), 'handle']);
+    expect($first->fresh()->payload)->toBeNull();
+    expect($second->fresh()->consumers)->toBe(1);
+    expect($f['thread']->fresh()->metadata['last_lead_message']['message_id'])->toBe('second');
+    receiveRuntimeWebhook($f, runtimeWebhook($f, 'outbound', ['message' => ['fromMe' => true]]))->assertOk();
+    app()->call([new ProcessInboundEvent(UazapiInbox::latest('id')->value('id')), 'handle']);
+    expect($f['thread']->fresh()->metadata['last_lead_message']['message_id'])->toBe('second');
 });

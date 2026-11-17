@@ -9,7 +9,7 @@ class FlowCapabilities
 {
     public static function aiDefaults(): array
     {
-        return ['ai_prompt' => '', 'ai_model' => 'gpt-6.1-sol', 'ai_inactivity_seconds' => 3600, 'ai_expiry_action' => 'end', 'ai_max_messages' => null, 'ai_limit_action' => 'human', 'ai_media' => [], 'ai_tags' => [], 'ai_fields' => []];
+        return ['ai_grouping_seconds' => 5, 'ai_initial_context' => '', 'ai_prompt' => '', 'ai_model' => 'gpt-6.1-sol', 'ai_inactivity_seconds' => 3600, 'ai_expiry_action' => 'end', 'ai_max_messages' => null, 'ai_limit_action' => 'human', 'ai_media' => [], 'ai_tags' => [], 'ai_fields' => []];
     }
 
     public const FIELDS = [
@@ -20,7 +20,7 @@ class FlowCapabilities
         'condition' => ['label', 'description', 'checks', 'condition_operator'],
         'operations' => ['label', 'description', 'actions'],
         'jump_flow' => ['label', 'description', 'target_flow_id'],
-        'ai' => ['label', 'description', 'ai_prompt', 'ai_model', 'ai_inactivity_seconds', 'ai_expiry_action', 'ai_max_messages', 'ai_limit_action', 'ai_media', 'ai_tags', 'ai_fields'],
+        'ai' => ['label', 'description', 'ai_grouping_seconds', 'ai_initial_context', 'ai_prompt', 'ai_model', 'ai_inactivity_seconds', 'ai_expiry_action', 'ai_max_messages', 'ai_limit_action', 'ai_media', 'ai_tags', 'ai_fields'],
     ];
 
     public const OUTPUTS = [
@@ -80,6 +80,7 @@ class FlowCapabilities
             'nodes.*.data.checks.*.operator' => ['nullable', 'in:has,not_has,equals,contains'],
             'nodes.*.data.checks.*.value' => ['nullable', 'string', 'max:4000'], 'nodes.*.data.field_id' => ['nullable', 'integer'],
             'nodes.*.data.target_flow_id' => ['nullable', 'integer'], 'nodes.*.data.actions' => ['sometimes', 'array', 'max:20'],
+            'nodes.*.data.ai_grouping_seconds' => ['sometimes', 'integer', 'between:5,45'],
             'nodes.*.data.ai_prompt' => ['nullable', 'string', 'max:8000'],
             'nodes.*.data.ai_model' => ['nullable', 'in:gpt-6-luna,gpt-6.1-sol,gpt-6-astra'],
             'nodes.*.data.ai_inactivity_seconds' => ['nullable', 'integer', 'between:300,604800'],

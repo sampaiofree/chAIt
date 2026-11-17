@@ -1,7 +1,8 @@
 # Checklist de implementação e homologação
 
-> **Atualizado em:** 2026-10-17  
-> **Base:** comparação estática da documentação com rotas, páginas Vue, controllers, serviços, models, migrations e testes do repositório, revisada em 17/10/2026. Não foram executados testes nesta revisão.
+> **Atualizado em:** 2026-11-17
+>
+> **Base:** revisão geral estática de 17/10/2026, sem execução de testes naquela revisão. Em 17/11/2026, inclusão pontual das etapas de mensagens para IA; evidências de testes locais estão no documento específico. Os demais itens não foram reavaliados nesta atualização.
 > **Status:** acompanhamento de pendências; não define prioridade nem aprova novos recursos.
 
 ## Checklist de recursos
@@ -21,6 +22,15 @@
 - [ ] **Painel de custos da IA:** acompanhar consumo e custos mensais; a chave OpenAI própria do workspace já existe.
 
 Alguns itens são propostas ou exclusões deliberadas do escopo inicial. Sua presença neste checklist não significa aprovação para desenvolvimento. Consultar os documentos responsáveis e fechar as decisões necessárias antes de implementar. Referências adicionais: [Interface mobile](../../interfaces/mobile.md), [Assistente IA de Fluxos](../../modulos/assistente-ia-fluxos.md) e [Editor](../../modulos/editor-de-fluxos.md).
+
+## Evolução das mensagens para IA
+
+Planejamento de 17/11/2026, a partir da comparação Chait/Facilitai. A sequência abaixo é interna a esta evolução e não altera a prioridade geral do projeto. Cada etapa inclui implementação, testes e homologação, detalhados no [roteiro de mensagens para IA](../mensagens-ia-ordenacao-agrupamento.md).
+
+- [ ] **Etapa 1 — Ordenação até a IA:** preservar a ordem de aceitação por conversa, incluindo mídias pendentes e tratamento explícito de falhas; cobrir a ultrapassagem reproduzida por teste permanente.
+- [ ] **Etapa 2 — Agrupamento seguro:** definir janela, teto de espera e limites; separar o lote em processamento das novas entradas, sem descarte silencioso ou repetição de textos anteriores. Depende da etapa 1.
+- [ ] **Etapa 3 — Recuperação:** tratar reservas abandonadas, jobs duplicados e reinício de worker, mantendo rastreabilidade e sem repetir cegamente chamadas ou envios incertos. Depende das etapas anteriores.
+- [ ] **Etapa 4 — Capacidade e liberação gradual:** medir espera e concorrência entre conversas, validar exclusividade por sessão e definir ativação/reversão sem perder pendências. Depende das garantias das etapas anteriores.
 
 ## Recursos implementados que aguardam homologação ou liberação
 

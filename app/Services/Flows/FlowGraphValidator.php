@@ -139,6 +139,12 @@ class FlowGraphValidator
         }
 
         foreach ($graph['nodes'] as &$node) {
+            if ($node['type'] !== 'ai' && array_key_exists('ai_initial_context', $node['data'])) {
+                $this->invalid('graph.nodes.'.$node['id'].'.ai_initial_context', 'Contexto inicial disponível somente no bloco IA.');
+            }
+            if ($node['type'] === 'ai' && isset($node['data']['ai_initial_context'])) {
+                $node['data']['ai_initial_context'] = ContactTemplate::normalize($node['data']['ai_initial_context']);
+            }
             if ($node['type'] === 'ai' && isset($node['data']['ai_prompt'])) {
                 $node['data']['ai_prompt'] = ContactTemplate::normalize($node['data']['ai_prompt']);
             }

@@ -31,6 +31,21 @@ class FlowInboundProcessor
             DB::transaction(function () use ($connection, $thread, $message, $inboxId): void {
                 $contact = $thread->contact()->lockForUpdate()->first();
                 $thread->refresh();
+                $messageId = (string) ($message['id'] ?? $message['messageid'] ?? data_get($message, 'key.id') ?? '');
+                if ($messageId !== '') {
+                    $metadata = $thread->metadata ?? [];
+                    $previous = $metadata['last_lead_message'] ?? null;
+                    if (($previous['message_id'] ?? null) !== $messageId) {
+                        if ($inboxId) {
+                            UazapiInbox::whereKey($inboxId)->increment('consumers');
+                        }
+                        $metadata['last_lead_message'] = ['message_id' => $messageId, 'inbox_id' => $inboxId];
+                        $thread->update(['metadata' => $metadata]);
+                        if (! empty($previous['inbox_id'])) {
+                            UazapiInbox::find($previous['inbox_id'])?->consumed();
+                        }
+                    }
+                }
                 $buttonReply = app(FlowContentButton::class)->resolve($connection, $contact->id, $message);
                 if ($buttonReply) {
                     $id = $message['messageid'] ?? $message['id'] ?? data_get($message, 'key.id');

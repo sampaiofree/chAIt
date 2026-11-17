@@ -21,7 +21,7 @@ class ContactTemplateRule implements ValidationRule
             return;
         }
         $idKey = $this->portable ? 'field_ref' : 'field_id';
-        $rules = ['value' => ['array:template_version,parts'], 'value.template_version' => ['required', 'integer', 'in:1'], 'value.parts' => ['required', 'array', 'list', 'min:1', 'max:1000'], 'value.parts.*' => ['required', 'array:type,text,key,'.$idKey], 'value.parts.*.type' => ['required', 'in:text,standard,custom']];
+        $rules = ['value' => ['array:template_version,parts'], 'value.template_version' => ['required', 'integer', 'in:1'], 'value.parts' => ['required', 'array', 'list', 'min:1', 'max:1000'], 'value.parts.*' => ['required', 'array:type,text,key,'.$idKey], 'value.parts.*.type' => ['required', ($this->context === 'initial_context' ? 'in:text,standard,custom,runtime' : 'in:text,standard,custom')]];
         if (($value['template_version'] ?? null) !== 1 || Validator::make(['value' => $value], $rules)->fails()) {
             $fail('Documento de campos do contato inválido.');
 
@@ -31,6 +31,7 @@ class ContactTemplateRule implements ValidationRule
         foreach ($value['parts'] as $p) {
             $valid = match ($p['type']) {
                 'text' => array_keys($p) === ['type', 'text'] || (count($p) === 2 && isset($p['text'])),
+                'runtime' => $this->context === 'initial_context' && count($p) === 2 && ($p['key'] ?? null) === 'ultima_mensagem',
                 'standard' => count($p) === 2 && is_string($p['key'] ?? null) && isset(ContactTemplate::STANDARD[$p['key']]),
                 'custom' => count($p) === 2 && ($this->portable ? is_string($p['field_ref'] ?? null) && strlen($p['field_ref']) > 0 && strlen($p['field_ref']) <= 64 : is_int($p['field_id'] ?? null) && $p['field_id'] > 0),
             };
@@ -59,6 +60,7 @@ class ContactTemplateRule implements ValidationRule
 
         return ['anyOf' => [['type' => 'string', 'maxLength' => $this->limit], $object(['template_version' => ['type' => 'integer', 'enum' => [1]], 'parts' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 1000, 'items' => ['anyOf' => [
             $object(['type' => ['type' => 'string', 'enum' => ['text']], 'text' => ['type' => 'string', 'maxLength' => $this->limit]]),
+            ...($this->context === 'initial_context' ? [$object(['type' => ['type' => 'string', 'enum' => ['runtime']], 'key' => ['type' => 'string', 'enum' => ['ultima_mensagem']]])] : []),
             $object(['type' => ['type' => 'string', 'enum' => ['standard']], 'key' => ['type' => 'string', 'enum' => array_keys(ContactTemplate::STANDARD)]]),
             $object(['type' => ['type' => 'string', 'enum' => ['custom']], ($this->portable ? 'field_ref' : 'field_id') => ($this->portable ? ['type' => 'string', 'minLength' => 1, 'maxLength' => 64] : ['type' => 'integer', 'minimum' => 1])]),
         ]]]])]];

@@ -26,7 +26,7 @@ class PrepareAiInput implements ShouldQueue
 
     public int $timeout = 180;
 
-    public function __construct(public int $sessionId, public string $messageId, public int $inboxId)
+    public function __construct(public int $sessionId, public string $messageId, public int $inboxId, public bool $opening = false)
     {
         $this->onQueue('media');
     }
@@ -77,7 +77,7 @@ class PrepareAiInput implements ShouldQueue
                 $payload['prepared_input'] = $input;
                 $inbox->update(['payload' => $payload]);
             }
-            ProcessAiTurn::dispatch($this->sessionId, $this->messageId, $this->inboxId);
+            ProcessAiTurn::dispatch($this->sessionId, $this->opening ? null : $this->messageId, $this->inboxId);
         } catch (UazapiDeferredException $error) {
             if ($inbox && $error->reason === 'read_error') {
                 $payload = $inbox->fresh()->payload;
@@ -87,7 +87,7 @@ class PrepareAiInput implements ShouldQueue
                 }
                 $inbox->update(['payload' => $payload]);
                 if (isset($payload['prepared_error'])) {
-                    ProcessAiTurn::dispatch($this->sessionId, $this->messageId, $this->inboxId);
+                    ProcessAiTurn::dispatch($this->sessionId, $this->opening ? null : $this->messageId, $this->inboxId);
                 } else {
                     $this->release((2 ** $payload['media_attempts']) + random_int(0, 1));
                 }
@@ -99,7 +99,7 @@ class PrepareAiInput implements ShouldQueue
                 $payload = $inbox->payload;
                 $payload['prepared_error'] = true;
                 $inbox->update(['payload' => $payload]);
-                ProcessAiTurn::dispatch($this->sessionId, $this->messageId, $this->inboxId);
+                ProcessAiTurn::dispatch($this->sessionId, $this->opening ? null : $this->messageId, $this->inboxId);
             }
         } finally {
             $lock->release();

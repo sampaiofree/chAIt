@@ -63,7 +63,7 @@ jobs:
           php-version: ${{ matrix.php-version }}
           tools: composer:v2
           coverage: xdebug
-          extensions: pdo_pgsql, pdo_sqlite, intl, mbstring, redis
+          extensions: pdo_pgsql, pdo_sqlite, intl, mbstring, redis, imagick
           ini-values: memory_limit=512M
 
       - name: Setup Node

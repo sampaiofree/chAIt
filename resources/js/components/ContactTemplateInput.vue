@@ -26,6 +26,7 @@ const props = withDefaults(
         fields?: ContactFields;
         workspaceId: number;
         chips?: boolean;
+        initialContext?: boolean;
         rows?: string | number;
         maxlength?: string | number;
         placeholder?: string;
@@ -309,7 +310,13 @@ function paste(event: ClipboardEvent) {
                 error.value = 'Não é possível colar campos de outro workspace.';
                 return;
             }
-            if (!validClipboardParts(data.parts, catalog())) {
+            if (
+                !validClipboardParts(
+                    data.parts,
+                    catalog(),
+                    props.initialContext,
+                )
+            ) {
                 error.value =
                     'A referência colada não está disponível neste workspace.';
                 return;
@@ -432,6 +439,17 @@ onBeforeUnmount(() => {
                     placeholder="Pesquisar campo…"
                     aria-label="Pesquisar campo do contato"
                 />
+                <template v-if="initialContext">
+                    <small>Contexto da conversa</small>
+                    <button
+                        type="button"
+                        @click="
+                            insert({ type: 'runtime', key: 'ultima_mensagem' })
+                        "
+                    >
+                        Última mensagem
+                    </button>
+                </template>
                 <small>Dados padrão do contato</small>
                 <button
                     v-for="field in catalog().standard.filter((f) =>

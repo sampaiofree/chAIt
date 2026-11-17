@@ -17,6 +17,7 @@ class ContactTemplate
         'nodes.*.data.items.*.button.label' => [120, 'label'],
         'nodes.*.data.items.*.button.url' => [4000, 'url'],
         'nodes.*.data.items.*.button.copy_text' => [4000, 'copy'],
+        'nodes.*.data.ai_initial_context' => [8000, 'initial_context'],
         'nodes.*.data.ai_prompt' => [8000, 'prompt'],
     ];
 
@@ -77,7 +78,8 @@ class ContactTemplate
     {
         return ['template_version' => 1, 'standard' => collect(self::STANDARD)->map(fn ($label, $key) => ['key' => $key, 'label' => $label])->values()->all(),
             'custom' => $workspace->contactCustomFields()->orderBy('name')->orderBy('id')->get(['id', 'name', 'type'])->toArray(),
-            'allowed' => ['content.text', 'content.caption', 'content.button.url', 'content.button.copy', 'ai.ai_prompt'],
+            'allowed' => ['content.text', 'content.caption', 'content.button.url', 'content.button.copy', 'ai.ai_prompt', 'ai.ai_initial_context'],
+            'runtime' => [['key' => 'ultima_mensagem', 'label' => 'Última mensagem', 'allowed' => ['ai.ai_initial_context']]],
             'missing' => 'empty', 'literal_text' => 'Chaves digitadas ou coladas como texto não são interpretadas.'];
     }
 
@@ -87,6 +89,7 @@ class ContactTemplate
         foreach ($graph['nodes'] ?? [] as $node) {
             $prefix = 'graph.nodes.'.$node['id'].'.';
             if ($node['type'] === 'ai') {
+                $values[$prefix.'ai_initial_context'] = $node['data']['ai_initial_context'] ?? '';
                 $values[$prefix.'ai_prompt'] = $node['data']['ai_prompt'] ?? '';
             }
             if ($node['type'] !== 'content') {

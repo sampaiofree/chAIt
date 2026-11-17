@@ -39,15 +39,27 @@ class ProcessAiTurn implements ShouldQueue
 
     public function handle(AiSessionService $sessions): void
     {
+        $openingRef = null;
+        if ($this->providerMessageId === null) {
+            $session = AiSession::with('execution')->find($this->sessionId);
+            if ($session?->execution?->context['ai_initial_reserved'] ?? false) {
+                $openingRef = $session->execution->context['ai_initial_message'];
+                $this->inboxId = $openingRef['inbox_id'];
+            }
+        }
         $inbox = $this->inboxId ? UazapiInbox::find($this->inboxId) : null;
         if ($this->inboxId && (! $inbox?->payload || $inbox->expires_at->isPast())) {
-            return;
+            if ($this->providerMessageId !== null) {
+                return;
+            }
+            $this->inboxId = null;
+            $inbox = null;
         }
         if ($inbox) {
             $payload = $inbox->payload;
             $type = strtolower((string) data_get($payload, 'message.messageType', data_get($payload, 'message.type', 'text')));
             if (! in_array($type, ['text', 'conversation', 'extendedtextmessage', 'extended_text_message', 'buttonsresponsemessage'], true) && ! isset($payload['prepared_input']) && ! isset($payload['prepared_error'])) {
-                PrepareAiInput::dispatch($this->sessionId, $this->providerMessageId, $this->inboxId);
+                PrepareAiInput::dispatch($this->sessionId, $this->providerMessageId ?? $openingRef['message_id'], $this->inboxId, $this->providerMessageId === null);
 
                 return;
             }

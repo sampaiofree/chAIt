@@ -57,6 +57,14 @@ O runtime usa `/send/text` para textos e `/send/media` para imagens, vídeos MP4
 
 Cada envio do fluxo recebe um `track_id`. Quando a resposta indicar fila/pendência ou a conexão ficar incerta, o runtime consulta `/message/find` antes de avançar; não repete automaticamente a chamada de envio. Os corpos recebidos são usados para selecionar gatilhos e capturar texto em `Aguardar Resposta`. No modo de tempo real, a caixa de entrada temporária é criptografada e limitada conforme o contrato acima. Não vão como corpos de jobs nem para logs, e não formam histórico completo no SaaS. Texto capturado em `Aguardar Resposta` fica no campo personalizado escolhido do contato.
 
+### Otimização de novos uploads dos fluxos
+
+JPEG e PNG estáticos dos blocos Conteúdo e dos recursos de mídia da IA passam por Imagick no próprio upload, antes da gravação. A versão gerada preserva proporção, corrige orientação, normaliza cores para sRGB, remove metadados e reduz o maior lado para até 1.600 px sem ampliar imagens pequenas. Imagens opacas geram JPEG qualidade 75; imagens com transparência geram PNG com compressão sem perda. O formato JPEG é preferencial no [contrato oficial de envio](https://docs.uazapi.com/reference/sendMedia.md).
+
+Somente o menor entre o original e o resultado é armazenado; por isso, um original menor pode manter dimensões acima de 1.600 px. MIME, tamanho e extensão retornados correspondem ao arquivo definitivo. Não há meta obrigatória em KB, cópia adicional do original, processamento no navegador, fila ou miniatura local. A API de upload permanece a mesma e aceita até 20 MiB.
+
+GIF, WebP, PNG animado e outros anexos seguem sem recompressão. A mudança não reprocessa arquivos existentes nem altera sua compatibilidade com o provedor. Imagens elegíveis inválidas ou acima de 16.384 px por lado/60 milhões de pixels recebem erro de validação, sem gravação parcial. O processador limita recursos de memória/mapa/disco/threads e restaura os limites do processo ao terminar. A homologação real de JPEG e PNG gerados na instância contratada continua necessária; testes automatizados simulam a UAZAPI.
+
 O processamento usa Redis + Horizon. Configure `QUEUE_CONNECTION=redis`, Cache Redis compatível com locks e execute `php artisan horizon` nos ambientes que processam fluxos. O Horizon exige Redis. [Documentação Laravel](https://laravel.com/framework/docs/horizon).
 
 Recursos do provedor não aprovam automaticamente sua inclusão na interface. Status, responsáveis e notas internas do SaaS seguem os contratos do [multiatendimento](../modulos/chat-multiatendimento.md).

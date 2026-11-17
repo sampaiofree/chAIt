@@ -1,4 +1,5 @@
 export type ContactPart =
+    | { type: 'runtime'; key: 'ultima_mensagem' }
     | { type: 'text'; text: string }
     | { type: 'standard'; key: 'nome' | 'primeiro_nome' | 'telefone' }
     | { type: 'custom'; field_id: number };
@@ -26,6 +27,8 @@ export function partLabel(part: ContactPart, fields?: ContactFields): string {
     if (part.type === 'text') {
         return part.text;
     }
+
+    if (part.type === 'runtime') return 'Última mensagem';
 
     if (part.type === 'standard') {
         return (
@@ -80,6 +83,7 @@ export function templateUnits(value?: ContactTemplate): ContactPart[] {
 export function validClipboardParts(
     value: unknown,
     fields: ContactFields,
+    initialContext = false,
 ): value is ContactPart[] {
     return (
         Array.isArray(value) &&
@@ -88,9 +92,13 @@ export function validClipboardParts(
             (p) =>
                 p &&
                 typeof p === 'object' &&
-                ((p.type === 'text' &&
-                    typeof p.text === 'string' &&
+                ((initialContext &&
+                    p.type === 'runtime' &&
+                    p.key === 'ultima_mensagem' &&
                     Object.keys(p).length === 2) ||
+                    (p.type === 'text' &&
+                        typeof p.text === 'string' &&
+                        Object.keys(p).length === 2) ||
                     (p.type === 'standard' &&
                         standardFields.some((f) => f.key === p.key) &&
                         Object.keys(p).length === 2) ||

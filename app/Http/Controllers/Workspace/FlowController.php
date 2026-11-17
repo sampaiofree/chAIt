@@ -19,6 +19,7 @@ use App\Services\Flows\FlowCapabilities;
 use App\Services\Flows\FlowEditLock;
 use App\Services\Flows\FlowExecutionManager;
 use App\Services\Flows\FlowGraphValidator;
+use App\Services\Flows\FlowImageOptimizer;
 use App\Services\Flows\FlowMedia;
 use App\Services\Flows\FlowRuntime;
 use App\Services\Sequences\SequenceDefinitionService;
@@ -26,6 +27,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -398,9 +400,31 @@ class FlowController extends Controller
         if (! $type || ! FlowMedia::validExtension($file->getClientOriginalName(), $mime)) {
             throw ValidationException::withMessages(['file' => 'Envie imagem, vídeo MP4, áudio MP3/OGG ou documento compatível.']);
         }
-        $path = $file->store("flows/{$workspace->id}/{$flow->id}", 'local');
-        $asset = FlowAsset::create(['workspace_id' => $workspace->id, 'flow_id' => $flow->id, 'disk' => 'local', 'path' => $path,
-            'original_name' => $file->getClientOriginalName(), 'mime_type' => $mime, 'size' => $file->getSize()]);
+        $optimized = app(FlowImageOptimizer::class)->optimize($file, $mime);
+        $name = $optimized['original_name'] ?? $file->getClientOriginalName();
+        $mime = $optimized['mime_type'] ?? $mime;
+        $size = $optimized ? strlen($optimized['contents']) : $file->getSize();
+        $directory = "flows/{$workspace->id}/{$flow->id}";
+        $disk = Storage::disk('local');
+        $path = $directory.'/'.Str::uuid().'.'.strtolower(pathinfo($name, PATHINFO_EXTENSION));
+
+        try {
+            $stored = $optimized
+                ? $disk->put($path, $optimized['contents'])
+                : $disk->putFileAs($directory, $file, basename($path));
+            if (! $stored) {
+                throw new \RuntimeException('Não foi possível armazenar o arquivo.');
+            }
+            $asset = FlowAsset::create(['workspace_id' => $workspace->id, 'flow_id' => $flow->id, 'disk' => 'local', 'path' => $path,
+                'original_name' => $name, 'mime_type' => $mime, 'size' => $size]);
+        } catch (\Throwable $exception) {
+            try {
+                $disk->delete($path);
+            } catch (\Throwable $cleanupException) {
+                report($cleanupException);
+            }
+            throw $exception;
+        }
 
         return response()->json(['data' => ['id' => $asset->id, 'media_type' => $type, 'original_name' => $asset->original_name, 'mime_type' => $mime, 'size' => $asset->size]], 201);
     }

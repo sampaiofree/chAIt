@@ -86,3 +86,12 @@ test('shared conflict reapplication keeps the complete local template and remote
     );
     assert.deepEqual(merged, [{ ...node(local), position: { x: 10, y: 30 } }]);
 });
+
+test('last message chips preserve identity and are only pasted into initial context', () => {
+    const parts = [{ type: 'runtime', key: 'ultima_mensagem' }];
+    const fields = { standard: [], custom: [] };
+    assert.equal(validClipboardParts(parts, fields), false);
+    assert.equal(validClipboardParts(parts, fields, true), true);
+    assert.equal(templateDisplay(normalizeTemplate(parts)), '{Última mensagem}');
+    assert.equal(templateDisplay('[ultima_mensagem]'), '[ultima_mensagem]');
+});
