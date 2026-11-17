@@ -1816,6 +1816,7 @@ onUnmounted(() => {
                     ><Search :size="16" aria-hidden="true" /><Input
                         ref="conversationSearchInput"
                         v-model="search"
+                        class="h-full rounded-none border-0 bg-transparent px-0 shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
                         aria-label="Buscar por nome ou telefone"
                         placeholder="Buscar conversas"
                 /></label>

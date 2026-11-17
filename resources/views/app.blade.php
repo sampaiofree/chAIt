@@ -39,7 +39,9 @@
             .startup-brand-end { clip-path: inset(0 0 0 84%); }
         </style>
 
-        <link rel="icon" href="/brand/symbol.png" type="image/png">
+        <link rel="icon" href="/favicon.ico?v=chait-1" sizes="16x16 32x32">
+        <link rel="icon" href="/favicon-16x16.png?v=chait-1" type="image/png" sizes="16x16">
+        <link rel="icon" href="/favicon-32x32.png?v=chait-1" type="image/png" sizes="32x32">
         <link rel="apple-touch-icon" href="/brand/app-icon.png">
 
         <link rel="preconnect" href="https://fonts.bunny.net">

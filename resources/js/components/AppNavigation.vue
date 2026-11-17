@@ -10,6 +10,7 @@ import {
     ChevronsUpDown,
     Check,
     LoaderCircle,
+    LogOut,
     ShieldCheck,
 } from '@lucide/vue';
 import AppBrand from '@/components/AppBrand.vue';
@@ -22,6 +23,7 @@ import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
+    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
@@ -29,6 +31,11 @@ const props = defineProps<{ compact?: boolean }>();
 const emit = defineEmits<{ navigate: [] }>();
 const page = usePage<any>();
 const switching = ref(false);
+const logoutForm = ref<HTMLFormElement | null>(null);
+const csrfToken =
+    document
+        .querySelector('meta[name="csrf-token"]')
+        ?.getAttribute('content') || '';
 watch(
     () => page.url,
     () => {
@@ -150,7 +157,7 @@ function switchWorkspace(id: number) {
             <DropdownMenu>
                 <DropdownMenuTrigger
                     class="workspace-trigger"
-                    :aria-label="`Workspace atual: ${workspace?.name ?? ''}. Trocar workspace`"
+                    :aria-label="`Workspace atual: ${workspace?.name ?? ''}. Trocar workspace ou sair da conta`"
                     :disabled="switching"
                 >
                     <span class="user-avatar">
@@ -198,8 +205,19 @@ function switchWorkspace(id: number) {
                         }}</span
                         ><Check v-if="option.id === workspace?.id" :size="16" />
                     </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                        :disabled="switching"
+                        @select="logoutForm?.requestSubmit()"
+                    >
+                        <LogOut :size="16" aria-hidden="true" />
+                        <span>Sair da conta</span>
+                    </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
+            <form ref="logoutForm" method="post" action="/logout" hidden>
+                <input type="hidden" name="_token" :value="csrfToken" />
+            </form>
         </div>
     </div>
 </template>

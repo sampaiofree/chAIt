@@ -57,6 +57,7 @@ Route::middleware(['auth', 'verified', RequireConnectedChat::class])->group(func
     Route::middleware(EnsureSystemAdmin::class)->prefix('admin/usuarios')->name('admin.users.')->group(function () {
         Route::get('/', [AdminUserController::class, 'index'])->name('index');
         Route::post('/', [AdminUserController::class, 'store'])->name('store');
+        Route::post('{user}/workspaces', [AdminUserController::class, 'storeWorkspace'])->name('workspaces.store');
         Route::get('{user}/editar', [AdminUserController::class, 'edit'])->name('edit');
         Route::patch('{user}', [AdminUserController::class, 'update'])->name('update');
     });

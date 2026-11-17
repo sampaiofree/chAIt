@@ -183,3 +183,7 @@ Recibo e efeito de entrada são transacionais; o buffer de clique antecipado gua
 ## Campos do contato e substituições nativas — 15/10/2026
 
 Chips são resolvidos internamente no Laravel, nunca convertidos deliberadamente para variáveis nativas UAZAPI. O OpenAPI documenta substituições próprias e não oferece escape/desativação comprovados. Texto literal e valores também podem conter padrões nativos. O ensaio local confirmou que texto e legenda com padrões nativos podem ser alterados pela UAZAPI. Por decisão do responsável, desde 17/10/2026 chips estão liberados para publicação e novas preparações em todas as conexões, sem perfis; a validação real em produção será feita por ele. Nenhum padrão é bloqueado automaticamente e não são usados caracteres invisíveis. Ver [regras de liberação e evidências](../modulos/campos-do-contato-fluxos.md). Conteúdo estático ou personalizado passa a continuar após falha confirmada, registrando ocorrência; resultado incerto é conciliado e nunca reenviado.
+
+## Verificação de números no WhatsApp — 17/11/2026
+
+O serviço reutilizável `WhatsAppNumberChecker` consulta `/chat/check` e distingue registro confirmado, ausência confirmada e indisponibilidade. O cadastro manual de Leads exige confirmação positiva. Ver [contrato, exemplo de uso e tratamento de falhas](verificacao-whatsapp.md). Homologação na instância contratada permanece pendente; testes simulados não a substituem.

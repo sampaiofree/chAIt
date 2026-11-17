@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Head, Link, router } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { ref, watch } from 'vue';
 import { Plus } from '@lucide/vue';
 import AppButton from '@/components/AppButton.vue';
+import AppFormDialog from '@/components/AppFormDialog.vue';
 import UserForm from '@/components/admin/UserForm.vue';
 import { Input } from '@/components/ui/input';
 
@@ -20,12 +21,51 @@ const props = defineProps<{
         prev_page_url: string | null;
         next_page_url: string | null;
     };
-    filters: { filter: string; search: string };
+    filters: { filter: string; search: string; page?: string };
+    editingUser?: {
+        id: number;
+        name: string;
+        email: string;
+        phone: string | null;
+        is_system_admin: boolean;
+    } | null;
     success?: string;
 }>();
 const search = ref(props.filters.search);
 const filter = ref(props.filters.filter);
 const creating = ref(false);
+const workspaceUser = ref<User | null>(null);
+const workspaceForm = useForm({ name: '' });
+watch(
+    () => props.editingUser,
+    () => {
+        creating.value = false;
+    },
+);
+function closeUser() {
+    creating.value = false;
+    if (props.editingUser)
+        router.get(
+            `/admin/usuarios?${new URLSearchParams(props.filters as Record<string, string>)}`,
+            {},
+            { preserveScroll: true, preserveState: true },
+        );
+}
+function closeWorkspace() {
+    workspaceUser.value = null;
+    workspaceForm.reset();
+    workspaceForm.clearErrors();
+}
+function createWorkspace() {
+    if (!workspaceUser.value || workspaceForm.processing) return;
+    workspaceForm.post(
+        `/admin/usuarios/${workspaceUser.value.id}/workspaces?${new URLSearchParams(props.filters as Record<string, string>)}`,
+        {
+            preserveScroll: true,
+            onSuccess: closeWorkspace,
+        },
+    );
+}
 function applyFilters() {
     router.get(
         '/admin/usuarios',
@@ -41,7 +81,7 @@ const roleName = (role: string) =>
         agent: 'Atendente',
     })[role] ?? role;
 const editUrl = (id: number) =>
-    `/admin/usuarios/${id}/editar?${new URLSearchParams(props.filters)}`;
+    `/admin/usuarios/${id}/editar?${new URLSearchParams(props.filters as Record<string, string>)}`;
 </script>
 <template>
     <Head title="Administração de usuários" />
@@ -52,24 +92,59 @@ const editUrl = (id: number) =>
                 <h1>Usuários</h1>
                 <p>Consulte e gerencie as contas da plataforma.</p>
             </div>
-            <AppButton v-if="!creating" @click="creating = true"
+            <AppButton @click="creating = true"
                 ><Plus :size="16" />Novo usuário</AppButton
             >
         </header>
         <p v-if="success" class="notice" role="status">{{ success }}</p>
-        <section
-            v-if="creating"
-            class="panel form-panel"
-            aria-labelledby="create-title"
+        <UserForm
+            v-if="creating || editingUser"
+            :key="editingUser?.id ?? 'new'"
+            :open="true"
+            :user="editingUser ?? undefined"
+            :filters="filters"
+            @cancel="closeUser"
+            @saved="creating = false"
+        />
+        <AppFormDialog
+            :open="!!workspaceUser"
+            title="Novo workspace"
+            :description="`Crie um workspace independente para ${workspaceUser?.name ?? ''} (${workspaceUser?.email ?? ''}). O usuário será o proprietário.`"
+            :busy="workspaceForm.processing"
+            :dirty="workspaceForm.isDirty"
+            @update:open="closeWorkspace"
+            v-slot="{ close }"
         >
-            <h2 id="create-title">Novo usuário</h2>
-            <p>Um workspace será criado para o novo usuário.</p>
-            <UserForm
-                :filters="filters"
-                @cancel="creating = false"
-                @saved="creating = false"
-            />
-        </section>
+            <form class="workspace-form" @submit.prevent="createWorkspace">
+                <label for="workspace-name">Nome do workspace</label>
+                <Input
+                    id="workspace-name"
+                    v-model="workspaceForm.name"
+                    required
+                    maxlength="255"
+                    :disabled="workspaceForm.processing"
+                    :aria-invalid="!!workspaceForm.errors.name"
+                    aria-describedby="workspace-name-error"
+                />
+                <small
+                    v-if="workspaceForm.errors.name"
+                    id="workspace-name-error"
+                    role="alert"
+                    >{{ workspaceForm.errors.name }}</small
+                >
+                <div class="row-actions">
+                    <AppButton
+                        variant="secondary"
+                        :disabled="workspaceForm.processing"
+                        @click="close()"
+                        >Cancelar</AppButton
+                    >
+                    <AppButton type="submit" :loading="workspaceForm.processing"
+                        >Criar workspace</AppButton
+                    >
+                </div>
+            </form>
+        </AppFormDialog>
         <section class="panel" aria-label="Lista de usuários">
             <form class="filters" @submit.prevent="applyFilters">
                 <div class="filter-field">
@@ -114,12 +189,22 @@ const editUrl = (id: number) =>
                             >Sem workspace</span
                         >
                     </div>
-                    <Link
-                        class="edit-link"
-                        :href="editUrl(user.id)"
-                        :aria-label="`Editar ${user.name}`"
-                        >Editar</Link
-                    >
+                    <div class="row-actions">
+                        <Link
+                            preserve-scroll
+                            preserve-state
+                            class="edit-link"
+                            :href="editUrl(user.id)"
+                            :aria-label="`Editar ${user.name}`"
+                            >Editar</Link
+                        >
+                        <AppButton
+                            variant="secondary"
+                            :aria-label="`Novo workspace para ${user.name}`"
+                            @click="workspaceUser = user"
+                            >Novo workspace</AppButton
+                        >
+                    </div>
                 </article>
             </div>
             <p v-else class="empty">Nenhum usuário encontrado.</p>
@@ -144,11 +229,26 @@ const editUrl = (id: number) =>
 </template>
 <style scoped>
 .admin-page {
-    max-width: 1100px;
+    width: 100%;
+    min-width: 0;
     margin: 0 auto;
-    padding: 32px;
+    padding: 24px 40px 48px;
     display: grid;
     gap: 20px;
+}
+.row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 12px;
+}
+.workspace-form {
+    display: grid;
+    gap: 12px;
+}
+.workspace-form small {
+    color: var(--destructive);
 }
 .page-header {
     display: flex;
@@ -164,8 +264,7 @@ h2 {
     font-size: 18px;
     font-weight: 600;
 }
-.page-header p,
-.form-panel > p {
+.page-header p {
     color: var(--muted-foreground);
     font-size: 14px;
 }
@@ -174,11 +273,6 @@ h2 {
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 20px;
-}
-.form-panel {
-    max-width: 620px;
-    display: grid;
-    gap: 12px;
 }
 .filters {
     display: flex;
@@ -190,7 +284,7 @@ h2 {
 .filter-field {
     display: grid;
     gap: 5px;
-    min-width: 180px;
+    min-width: min(180px, 100%);
     flex: 1;
 }
 .filter-field label {
@@ -198,7 +292,7 @@ h2 {
     font-weight: 500;
 }
 select {
-    height: 36px;
+    height: var(--control-height);
     padding: 0 10px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -248,14 +342,14 @@ select {
 }
 @media (max-width: 640px) {
     .admin-page {
-        padding: 20px 16px;
+        padding: 16px 16px 32px;
     }
     .page-header {
         align-items: flex-start;
         flex-wrap: wrap;
     }
     .user-row {
-        grid-template-columns: 1fr auto;
+        grid-template-columns: minmax(0, 1fr);
     }
     .memberships {
         grid-column: 1 / -1;

@@ -118,3 +118,9 @@ A inspeção visual usa capturas de tela nos dois temas e uma revisão da sessã
 
 - **v2.0 — 2026-10-13:** implementado o briefing de padronização, menu permanente, modais, componentes compartilhados e validação responsiva.
 - **v1.0 — 2026-10-12:** registrada a direção visual inicial e as recomendações de design.
+
+## Administração de usuários — 17/11/2026
+
+`/admin/usuarios` ocupa toda a largura disponível, com espaçamento igual ao de Configurações. Criação e edição usam `AppFormDialog`, com proteção de descarte e bloqueio durante envio. A URL de edição continua válida e abre o modal sobre a lista; busca, filtro e página são preservados.
+
+Somente o administrador da plataforma pode criar workspaces adicionais pela ação **Novo workspace** de cada usuário. O nome é obrigatório (até 255 caracteres). O usuário selecionado recebe o papel de proprietário; cada ambiente nasce vazio, com integrações e equipe independentes. A criação não troca o workspace ativo nem adiciona o administrador à equipe. O novo workspace aparece no seletor existente após atualizar os dados. Não há novo limite de quantidade. Cadastro inicial e criação adicional compartilham a criação transacional de workspace e vínculo; Equipe mantém suas regras de vínculo de contas.

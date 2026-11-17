@@ -46,8 +46,10 @@ let previousFocus: HTMLElement | null = null;
 watch(
     () => props.open,
     (open) => {
-        if (open) previousFocus = document.activeElement as HTMLElement;
+        if (open && typeof document !== 'undefined')
+            previousFocus = document.activeElement as HTMLElement;
     },
+    { immediate: true },
 );
 function requestClose(open = false) {
     if (open || props.busy) return;

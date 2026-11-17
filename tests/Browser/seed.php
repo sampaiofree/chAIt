@@ -25,6 +25,7 @@ if (! $app->environment('testing') || config('database.default') !== 'pgsql'
     || ! preg_match('/\Achait_browser_[a-f0-9]{32}\z/', config('database.connections.pgsql.search_path'))) {
     throw new RuntimeException('Browser fixtures require an isolated test database.');
 }
+User::factory()->create(['name' => 'Administrador da plataforma', 'email' => User::SYSTEM_ADMIN_EMAIL]);
 $admin = User::factory()->create(['name' => 'Admin de teste', 'email' => 'admin@example.test']);
 $workspace = $admin->fresh()->currentWorkspace;
 $workspace->update(['name' => 'Workspace de revisão visual', 'timezone' => 'America/Sao_Paulo']);

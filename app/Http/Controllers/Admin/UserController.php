@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Rules\AccountEmail;
 use App\Rules\InternationalPhone;
+use App\Services\CreateUserWorkspace;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +17,7 @@ use Inertia\Response;
 
 class UserController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(Request $request, ?User $editingUser = null): Response
     {
         $filters = $this->filters($request);
         $users = User::query()
@@ -27,7 +28,7 @@ class UserController extends Controller
             })
             ->with(['memberships.workspace'])
             ->orderBy('name')->orderBy('id')
-            ->paginate(20)->withQueryString()
+            ->paginate(20)->withPath(route('admin.users.index'))->withQueryString()
             ->through(fn (User $user) => [
                 'id' => $user->id,
                 'name' => $user->name,
@@ -41,6 +42,13 @@ class UserController extends Controller
 
         return Inertia::render('admin/users', [
             'users' => $users,
+            'editingUser' => $editingUser ? [
+                'id' => $editingUser->id,
+                'name' => $editingUser->name,
+                'email' => $editingUser->email,
+                'phone' => $editingUser->phone,
+                'is_system_admin' => $editingUser->isSystemAdmin(),
+            ] : null,
             'filters' => $filters,
             'success' => $request->session()->get('success'),
         ]);
@@ -56,16 +64,18 @@ class UserController extends Controller
 
     public function edit(Request $request, User $user): Response
     {
-        return Inertia::render('admin/user-edit', [
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'phone' => $user->phone,
-                'is_system_admin' => $user->isSystemAdmin(),
-            ],
-            'filters' => $this->filters($request),
-        ]);
+        return $this->index($request, $user);
+    }
+
+    public function storeWorkspace(Request $request, User $user): RedirectResponse
+    {
+        if (is_string($request->input('name'))) {
+            $request->merge(['name' => trim($request->input('name'))]);
+        }
+        $data = $request->validate(['name' => ['required', 'string', 'max:255']]);
+        app(CreateUserWorkspace::class)->create($user, $data['name']);
+
+        return to_route('admin.users.index', $this->filters($request))->with('success', 'Workspace criado para o usuário.');
     }
 
     public function update(Request $request, User $user): RedirectResponse
@@ -101,6 +111,7 @@ class UserController extends Controller
     private function filters(Request $request): array
     {
         return [
+            ...($request->has('page') ? ['page' => (string) max(1, (int) $request->query('page'))] : []),
             'filter' => $request->query('filter') === 'all' ? 'all' : 'owners',
             'search' => is_string($request->query('search')) ? mb_substr(trim($request->query('search')), 0, 255) : '',
         ];

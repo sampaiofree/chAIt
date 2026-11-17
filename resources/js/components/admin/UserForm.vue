@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
+import AppFormDialog from '@/components/AppFormDialog.vue';
 import AppButton from '@/components/AppButton.vue';
 import PhoneInput from '@/components/PhoneInput.vue';
 import { Input } from '@/components/ui/input';
 
 const props = defineProps<{
+    open: boolean;
     user?: {
         id: number;
         name: string;
@@ -12,7 +14,7 @@ const props = defineProps<{
         phone: string | null;
         is_system_admin: boolean;
     };
-    filters: { filter: string; search: string };
+    filters: { filter: string; search: string; page?: string };
 }>();
 const emit = defineEmits<{ cancel: []; saved: [] }>();
 const form = useForm({
@@ -23,8 +25,10 @@ const form = useForm({
     password_confirmation: '',
 });
 function submit() {
+    if (form.processing) return;
     const query = new URLSearchParams(props.filters).toString();
     const options = {
+        preserveScroll: true,
         onSuccess: () => {
             form.reset();
             emit('saved');
@@ -36,114 +40,128 @@ function submit() {
 }
 </script>
 <template>
-    <form class="user-form" @submit.prevent="submit">
-        <p v-if="user" class="form-help">
-            Os dados da conta são compartilhados entre todos os workspaces do
-            usuário.
-        </p>
-        <fieldset class="form-fields" :disabled="form.processing">
-            <div class="form-field">
-                <label for="admin-name">Nome</label>
-                <Input
-                    id="admin-name"
-                    v-model="form.name"
-                    required
-                    autocomplete="name"
-                    :aria-invalid="!!form.errors.name"
-                    aria-describedby="admin-name-error"
-                />
-                <small
-                    v-if="form.errors.name"
-                    id="admin-name-error"
-                    class="form-error"
-                    role="alert"
-                    >{{ form.errors.name }}</small
+    <AppFormDialog
+        :open="open"
+        :title="user ? 'Editar usuário' : 'Novo usuário'"
+        :description="
+            user
+                ? 'Atualize os dados da conta.'
+                : 'Um workspace será criado para o novo usuário.'
+        "
+        :busy="form.processing"
+        :dirty="form.isDirty"
+        @update:open="emit('cancel')"
+        v-slot="{ close }"
+    >
+        <form class="user-form" @submit.prevent="submit">
+            <p v-if="user" class="form-help">
+                Os dados da conta são compartilhados entre todos os workspaces
+                do usuário.
+            </p>
+            <fieldset class="form-fields" :disabled="form.processing">
+                <div class="form-field">
+                    <label for="admin-name">Nome</label>
+                    <Input
+                        id="admin-name"
+                        v-model="form.name"
+                        required
+                        autocomplete="name"
+                        :aria-invalid="!!form.errors.name"
+                        aria-describedby="admin-name-error"
+                    />
+                    <small
+                        v-if="form.errors.name"
+                        id="admin-name-error"
+                        class="form-error"
+                        role="alert"
+                        >{{ form.errors.name }}</small
+                    >
+                </div>
+                <div class="form-field">
+                    <label for="admin-email">E-mail</label>
+                    <Input
+                        id="admin-email"
+                        v-model="form.email"
+                        type="email"
+                        required
+                        autocomplete="email"
+                        :readonly="user?.is_system_admin"
+                        :aria-invalid="!!form.errors.email"
+                        aria-describedby="admin-email-error"
+                    />
+                    <small
+                        v-if="form.errors.email"
+                        id="admin-email-error"
+                        class="form-error"
+                        role="alert"
+                        >{{ form.errors.email }}</small
+                    >
+                </div>
+                <div class="form-field">
+                    <label for="admin-phone">WhatsApp</label>
+                    <PhoneInput
+                        id="admin-phone"
+                        v-model="form.phone"
+                        required
+                        :aria-invalid="!!form.errors.phone"
+                        aria-describedby="admin-phone-help admin-phone-error"
+                    />
+                    <small id="admin-phone-help" class="form-help"
+                        >Informe DDI e número, somente dígitos.</small
+                    >
+                    <small
+                        v-if="form.errors.phone"
+                        id="admin-phone-error"
+                        class="form-error"
+                        role="alert"
+                        >{{ form.errors.phone }}</small
+                    >
+                </div>
+                <div class="form-field">
+                    <label for="admin-password">{{
+                        user ? 'Nova senha (opcional)' : 'Senha inicial'
+                    }}</label>
+                    <Input
+                        id="admin-password"
+                        v-model="form.password"
+                        type="password"
+                        autocomplete="new-password"
+                        :required="!user"
+                        :aria-invalid="!!form.errors.password"
+                        aria-describedby="admin-password-error"
+                    />
+                    <small
+                        v-if="form.errors.password"
+                        id="admin-password-error"
+                        class="form-error"
+                        role="alert"
+                        >{{ form.errors.password }}</small
+                    >
+                </div>
+                <div class="form-field">
+                    <label for="admin-confirm">Confirmar senha</label>
+                    <Input
+                        id="admin-confirm"
+                        v-model="form.password_confirmation"
+                        type="password"
+                        autocomplete="new-password"
+                        :required="!user || !!form.password"
+                    />
+                </div>
+            </fieldset>
+            <div class="form-actions">
+                <AppButton
+                    variant="secondary"
+                    :disabled="form.processing"
+                    @click="close()"
+                    >Cancelar</AppButton
                 >
+                <AppButton type="submit" :loading="form.processing">{{
+                    user ? 'Salvar alterações' : 'Cadastrar usuário'
+                }}</AppButton>
             </div>
-            <div class="form-field">
-                <label for="admin-email">E-mail</label>
-                <Input
-                    id="admin-email"
-                    v-model="form.email"
-                    type="email"
-                    required
-                    autocomplete="email"
-                    :readonly="user?.is_system_admin"
-                    :aria-invalid="!!form.errors.email"
-                    aria-describedby="admin-email-error"
-                />
-                <small
-                    v-if="form.errors.email"
-                    id="admin-email-error"
-                    class="form-error"
-                    role="alert"
-                    >{{ form.errors.email }}</small
-                >
-            </div>
-            <div class="form-field">
-                <label for="admin-phone">WhatsApp</label>
-                <PhoneInput
-                    id="admin-phone"
-                    v-model="form.phone"
-                    required
-                    :aria-invalid="!!form.errors.phone"
-                    aria-describedby="admin-phone-help admin-phone-error"
-                />
-                <small id="admin-phone-help" class="form-help"
-                    >Informe DDI e número, somente dígitos.</small
-                >
-                <small
-                    v-if="form.errors.phone"
-                    id="admin-phone-error"
-                    class="form-error"
-                    role="alert"
-                    >{{ form.errors.phone }}</small
-                >
-            </div>
-            <div class="form-field">
-                <label for="admin-password">{{
-                    user ? 'Nova senha (opcional)' : 'Senha inicial'
-                }}</label>
-                <Input
-                    id="admin-password"
-                    v-model="form.password"
-                    type="password"
-                    autocomplete="new-password"
-                    :required="!user"
-                    :aria-invalid="!!form.errors.password"
-                    aria-describedby="admin-password-error"
-                />
-                <small
-                    v-if="form.errors.password"
-                    id="admin-password-error"
-                    class="form-error"
-                    role="alert"
-                    >{{ form.errors.password }}</small
-                >
-            </div>
-            <div class="form-field">
-                <label for="admin-confirm">Confirmar senha</label>
-                <Input
-                    id="admin-confirm"
-                    v-model="form.password_confirmation"
-                    type="password"
-                    autocomplete="new-password"
-                    :required="!user || !!form.password"
-                />
-            </div>
-        </fieldset>
-        <div class="form-actions">
-            <AppButton
-                variant="secondary"
-                :disabled="form.processing"
-                @click="emit('cancel')"
-                >Cancelar</AppButton
-            >
-            <AppButton type="submit" :loading="form.processing">{{
-                user ? 'Salvar alterações' : 'Cadastrar usuário'
-            }}</AppButton>
-        </div>
-    </form>
+        </form>
+    </AppFormDialog>
 </template>
 <style scoped>
 .user-form {

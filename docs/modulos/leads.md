@@ -4,7 +4,7 @@
 > **Documento sugerido no repositório:** `docs/modulos/leads.md`  
 > **Versão:** 0.1  
 > **Data do briefing:** 2026-10-14
-> **Estado em 17/11/2026:** listagem, ficha, cadastro manual e permissões implementados sobre `contacts`. Filtros oferecem E/OU e inclusão adicional de contatos sem etiqueta. Campos personalizados reutilizam o tipo texto atualmente implementado. Leads independe da conexão; Conversas exige confirmação da UAZAPI com cache de 15 segundos.
+> **Estado em 17/11/2026:** listagem, ficha, cadastro manual e permissões implementados sobre `contacts`. Filtros oferecem E/OU e inclusão adicional de contatos sem etiqueta. Campos personalizados reutilizam o tipo texto atualmente implementado. Listagem, ficha e edição independem da conexão; cadastro manual exige confirmação de registro no WhatsApp pela UAZAPI. Conversas exige confirmação da UAZAPI com cache de 15 segundos.
 > **Stack do produto:** Laravel no backend; Vue 3 + Inertia.js na aplicação web  
 > **Relacionado:** `docs/modulos/chat-multiatendimento.md`, `docs/interfaces/chat.md`, `docs/modulos/editor-de-fluxos.md` e `docs/planejamento/decisoes.md`.
 
@@ -319,3 +319,7 @@ Estes pontos não impedem a documentação da proposta, mas **não devem ser tra
 ---
 
 **Orientação para o desenvolvedor:** incluir este arquivo em `docs/modulos/leads.md`, referenciá-lo no índice de `docs/README.md` quando incorporado ao repositório e implementar sobre as entidades já existentes. Não interpretar exemplos técnicos ou pendências como novos requisitos aprovados.
+
+## Verificação no cadastro manual — 17/11/2026
+
+Antes de salvar, o cadastro consulta o serviço compartilhado de [verificação de WhatsApp](../integracoes/verificacao-whatsapp.md). Só uma confirmação positiva permite cadastrar. Ausência de WhatsApp confirmada bloqueia o número; falta de conexão ou falha de consulta bloqueia o cadastro com orientação para tentar novamente, preservando os campos. Esta regra não altera edição, listagem nem criação por webhook.

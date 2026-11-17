@@ -161,3 +161,7 @@ Ao decidir um ponto, atualizar o registro, o documento responsável, os critéri
 **Referências de verdade:** decisões aprovadas registram a intenção de produto; o código registra o comportamento implementado, descrito nos documentos vigentes. Diferenças observadas não são aprovações retroativas. Registros históricos e contagens de testes conservam suas datas; esta revisão não reexecuta testes ou homologações. Para o retrato de implementação e pendências, comece pelo [checklist](planejamento/implementar/checklist-pendencias.md); para especificações, use os módulos e integrações listados acima.
 
 **Fonte de verdade do briefing:** estes arquivos do projeto, versionados junto ao código no repositório Git. Cópias em outros ambientes não se sincronizam automaticamente.
+
+### Verificação reutilizável de WhatsApp
+
+[Serviço de verificação de números](integracoes/verificacao-whatsapp.md): contrato tipado, exemplo de uso e regras do cadastro manual de Leads (17/11/2026).

@@ -95,6 +95,15 @@ class UazapiClient
         return $this->send($this->execute($connection, 'get', '/instance/status', interactive: true, read: true));
     }
 
+    public function checkNumbers(UazapiConnection $connection, array $numbers): array
+    {
+        if (! filled($connection->instance_token)) {
+            throw new RuntimeException('A instância não possui token para consultar o WhatsApp.');
+        }
+
+        return $this->send($this->execute($connection, 'post', '/chat/check', ['numbers' => array_values($numbers)], interactive: true, read: true));
+    }
+
     public function avatar(UazapiConnection $connection, string $chatId, bool $preview = true): array
     {
         return $this->send($this->execute($connection, 'post', '/chat/avatar', ['number' => $chatId, 'preview' => $preview], read: true));

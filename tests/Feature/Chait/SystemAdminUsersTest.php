@@ -112,3 +112,62 @@ test('reserved email cannot be claimed through registration or team creation whe
     ])->assertSessionHasErrors('email');
     $this->assertDatabaseMissing('users', ['email' => User::SYSTEM_ADMIN_EMAIL]);
 });
+
+test('additional workspaces require the platform administrator', function () {
+    $target = User::factory()->create();
+    $url = "/admin/usuarios/{$target->id}/workspaces";
+    $this->post($url, ['name' => 'Other'])->assertRedirect('/login');
+    $this->actingAs($target)->post($url, ['name' => 'Other'])->assertForbidden();
+});
+
+test('additional workspaces are independent owned environments and preserve active workspaces', function () {
+    $admin = systemAdmin();
+    $target = User::factory()->create();
+    $active = $target->current_workspace_id;
+    $adminActive = $admin->current_workspace_id;
+    foreach (range(1, 2) as $iteration) {
+        $this->actingAs($admin)->post("/admin/usuarios/{$target->id}/workspaces?filter=all&search=cliente&page=2", ['name' => '  Filial  '])
+            ->assertSessionHasNoErrors()->assertRedirect('/admin/usuarios?page=2&filter=all&search=cliente');
+    }
+    $workspaces = $target->availableWorkspaces();
+    expect($workspaces)->toHaveCount(3)
+        ->and($workspaces->pluck('slug')->unique())->toHaveCount(3)
+        ->and($target->fresh()->current_workspace_id)->toBe($active)
+        ->and($admin->fresh()->current_workspace_id)->toBe($adminActive);
+    foreach ($workspaces->where('id', '!=', $active) as $workspace) {
+        expect($workspace->name)->toBe('Filial')
+            ->and($workspace->memberships()->sole()->role)->toBe('owner')
+            ->and($workspace->users()->sole()->id)->toBe($target->id)
+            ->and($workspace->flows()->count())->toBe(0);
+        $this->actingAs($target)->post("/workspaces/{$workspace->id}/current")->assertRedirect('/dashboard');
+        expect($target->fresh()->current_workspace_id)->toBe($workspace->id);
+    }
+});
+
+test('workspace names are validated and failed memberships roll back the workspace', function () {
+    $admin = systemAdmin();
+    $target = User::factory()->create();
+    $url = "/admin/usuarios/{$target->id}/workspaces";
+    foreach (['', '   ', str_repeat('a', 256)] as $name) {
+        $this->actingAs($admin)->post($url, ['name' => $name])->assertSessionHasErrors('name');
+    }
+    $count = Workspace::count();
+    WorkspaceMembership::creating(fn () => throw new RuntimeException('Membership failure'));
+    try {
+        $this->withoutExceptionHandling()->post($url, ['name' => 'Failed workspace']);
+    } catch (RuntimeException $error) {
+        expect($error->getMessage())->toBe('Membership failure');
+    } finally {
+        WorkspaceMembership::flushEventListeners();
+    }
+    expect(Workspace::count())->toBe($count);
+});
+
+test('the edit URL renders the list and selected account without exposing other account details', function () {
+    $admin = systemAdmin();
+    $target = User::factory()->create();
+    $this->actingAs($admin)->get("/admin/usuarios/{$target->id}/editar?filter=all")
+        ->assertInertia(fn (Assert $page) => $page->component('admin/users')
+            ->where('editingUser.id', $target->id)->has('users.data', 2)
+            ->missing('users.data.0.phone')->missing('editingUser.password'));
+});

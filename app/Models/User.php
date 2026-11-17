@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\WorkspaceRole;
+use App\Services\CreateUserWorkspace;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -14,7 +15,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Support\Str;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 
 #[Fillable(['name', 'email', 'phone', 'password', 'current_workspace_id', 'appearance'])]
@@ -38,33 +38,7 @@ class User extends Authenticatable
                 return;
             }
 
-            $slugBase = Str::slug($user->name ?: Str::before($user->email, '@'));
-            $slugBase = $slugBase !== '' ? $slugBase : 'workspace';
-            $slug = $slugBase;
-            $suffix = 1;
-
-            while (Workspace::query()->where('slug', $slug)->exists()) {
-                $suffix++;
-                $slug = "{$slugBase}-{$suffix}";
-            }
-
-            $workspace = Workspace::query()->create([
-                'name' => "{$user->name}'s Workspace",
-                'slug' => $slug,
-                'timezone' => config('app.timezone', 'UTC'),
-            ]);
-
-            WorkspaceMembership::query()->create([
-                'workspace_id' => $workspace->id,
-                'user_id' => $user->id,
-                'role' => WorkspaceRole::Owner->value,
-                'joined_at' => now(),
-                'last_seen_at' => now(),
-            ]);
-
-            $user->forceFill([
-                'current_workspace_id' => $workspace->id,
-            ])->saveQuietly();
+            app(CreateUserWorkspace::class)->create($user, "{$user->name}'s Workspace", true);
         });
     }
 

@@ -55,6 +55,7 @@ watch(creating, (open) => {
     }
 });
 function create() {
+    if (form.processing) return;
     form.post(root, { onSuccess: () => (creating.value = false) });
 }
 function clearFilters() {
@@ -284,7 +285,7 @@ function search() {
         <AppFormDialog
             v-model:open="creating"
             title="Novo lead"
-            description="Cadastre um contato no seu workspace."
+            description="O cadastro exige confirmar que o número possui WhatsApp. Mantenha o WhatsApp deste workspace conectado."
             :busy="form.processing"
             :dirty="form.isDirty"
             v-slot="{ close }"
@@ -317,6 +318,7 @@ function search() {
                         ><Input
                             :id="`new-lead-${key}`"
                             v-model="form[key]"
+                            :disabled="form.processing"
                             :type="
                                 key === 'email'
                                     ? 'email'
@@ -352,7 +354,11 @@ function search() {
                             <span class="leads-optional"
                                 >(opcional)</span
                             ></label
-                        ><LeadTagPicker v-model="form.tag_ids" :tags="tags" />
+                        ><LeadTagPicker
+                            v-model="form.tag_ids"
+                            :tags="tags"
+                            :disabled="form.processing"
+                        />
                     </div>
                 </div>
                 <div class="form-actions">

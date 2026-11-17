@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers\Workspace;
 
+use App\Enums\WhatsAppNumberStatus;
 use App\Enums\WorkspaceRole;
 use App\Http\Controllers\Controller;
 use App\Models\Contact;
 use App\Models\Thread;
+use App\Models\UazapiConnection;
 use App\Models\Workspace;
 use App\Services\Chat\ChatPublisher;
 use App\Services\Contacts\ContactIdentity;
 use App\Services\Contacts\InternationalPhone;
+use App\Services\Uazapi\WhatsAppNumberChecker;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -96,6 +99,21 @@ class LeadController extends Controller
         $phone = app(InternationalPhone::class)->normalize($r->input('phone'));
         if (! $phone) {
             throw ValidationException::withMessages(['phone' => 'Informe um WhatsApp válido com código do país.']);
+        }
+        if (Contact::where('workspace_id', $workspace->id)->where('phone', $phone)->exists()) {
+            throw ValidationException::withMessages(['phone' => 'Este WhatsApp já está cadastrado. Busque o número na lista de Leads.']);
+        }
+        $connection = UazapiConnection::where('workspace_id', $workspace->id)->first();
+        if (! $connection) {
+            throw ValidationException::withMessages(['phone' => 'Não foi possível verificar este número. Conecte o WhatsApp deste workspace e tente novamente.']);
+        }
+        $verification = app(WhatsAppNumberChecker::class)->check($connection, $phone);
+        if ($verification->status === WhatsAppNumberStatus::NotRegistered) {
+            throw ValidationException::withMessages(['phone' => 'Este número não está cadastrado no WhatsApp.']);
+        }
+        if ($verification->status === WhatsAppNumberStatus::Unavailable) {
+            $wait = $verification->retryAfter ? " Aguarde {$verification->retryAfter} segundos antes de tentar novamente." : '';
+            throw ValidationException::withMessages(['phone' => 'Não foi possível verificar este número. Confira a conexão do WhatsApp e tente novamente.'.$wait]);
         }
         $contact = DB::transaction(function () use ($workspace, $phone, $data) {
             $inserted = DB::table('contacts')->insertOrIgnore(['workspace_id' => $workspace->id, 'phone' => $phone, 'created_at' => now(), 'updated_at' => now()]);
