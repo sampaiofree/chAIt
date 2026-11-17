@@ -179,6 +179,14 @@ async function checkChatAccess() {
 }
 
 const selected = ref<Thread | null>(null);
+const initialThreadId = Number(
+    new URLSearchParams(page.url.split('?')[1] || '').get('thread_id'),
+);
+const pendingThreadId = ref<number | null>(
+    Number.isSafeInteger(initialThreadId) && initialThreadId > 0
+        ? initialThreadId
+        : null,
+);
 const messages = ref<Message[]>([]);
 const connection = ref<{
     status: string;
@@ -422,13 +430,8 @@ function params() {
         search: search.value,
     });
     for (const id of appliedTagIds.value) q.append('tag_ids[]', `${id}`);
-    if (selected.value) q.set('thread_id', `${selected.value.id}`);
-    else {
-        const requested = new URLSearchParams(window.location.search).get(
-            'thread_id',
-        );
-        if (requested) q.set('thread_id', requested);
-    }
+    const threadId = pendingThreadId.value ?? selected.value?.id;
+    if (threadId) q.set('thread_id', `${threadId}`);
     return q;
 }
 const cacheKey = (suffix: string) =>
@@ -469,18 +472,26 @@ async function loadThreads(append = false) {
                 threadsReady.value = true;
                 clearTimeout(threadSkeletonTimer);
                 showThreadSkeleton.value = false;
-                if (!selected.value && cached.data[0])
-                    choose(cached.data[0], false);
+                if (!selected.value) {
+                    const requestedId = pendingThreadId.value;
+                    const cachedSelection = requestedId
+                        ? cached.data.find(
+                              (thread) => thread.id === requestedId,
+                          )
+                        : cached.data[0];
+                    if (cachedSelection)
+                        choose(cachedSelection, requestedId !== null);
+                }
             },
         );
     try {
         const query = params();
         if (append && nextCursor.value) query.set('cursor', nextCursor.value);
         const result = await api(`${root()}/conversations?${query}`, {
-            signal: listAbort.signal,
+            signal: request.signal,
         });
         completed = true;
-        if (generation !== searchGeneration) return;
+        if (request.signal.aborted || generation !== searchGeneration) return;
         if (!append)
             void cachePut(key, {
                 data: result.data,
@@ -502,8 +513,13 @@ async function loadThreads(append = false) {
                 (result.selected_thread?.id === selected.value.id
                     ? result.selected_thread
                     : selected.value);
-        if (!selected.value && result.selected_thread)
-            choose(result.selected_thread, false);
+        if (
+            !selected.value &&
+            result.selected_thread &&
+            (pendingThreadId.value === null ||
+                result.selected_thread.id === pendingThreadId.value)
+        )
+            choose(result.selected_thread, pendingThreadId.value !== null);
         else if (
             !realtimeEnabled &&
             selected.value?.id === previousId &&
@@ -1344,6 +1360,7 @@ function onListScroll(event: Event) {
 }
 function choose(thread: Thread, openMobile = true) {
     renderedThreadId = null;
+    pendingThreadId.value = null;
     selected.value = thread;
     historyNextOffset.value = null;
     messages.value = pendingMedia.value.filter(
@@ -1596,6 +1613,7 @@ watch(
         pendingMedia.value = [];
         messages.value = [];
         selected.value = null;
+        pendingThreadId.value = null;
         historyNextOffset.value = null;
         chatAllowed.value = false;
         void checkChatAccess();

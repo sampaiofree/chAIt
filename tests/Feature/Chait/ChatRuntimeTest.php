@@ -539,6 +539,21 @@ test('an agent without thread access cannot queue history or see list previews',
     expect(ChatOperation::count())->toBe(0);
 });
 
+test('requesting a restricted thread does not select another accessible conversation', function () {
+    $f = runtimeChat();
+    $agent = User::factory()->create();
+    WorkspaceMembership::factory()->create(['workspace_id' => $f['workspace']->id, 'user_id' => $agent->id, 'role' => 'agent', 'can_view_unassigned' => false]);
+    $accessible = Thread::factory()->create(['workspace_id' => $f['workspace']->id, 'uazapi_connection_id' => $f['connection']->id, 'contact_id' => $f['thread']->contact_id, 'assigned_to_user_id' => $agent->id]);
+    Cache::put('chat-access:'.$f['connection']->id, ['allowed' => true, 'status' => 'connected'], 15);
+    Http::fake();
+
+    $this->actingAs($agent)->getJson(route('workspaces.conversations.index', $f['workspace']).'?thread_id='.$f['thread']->id)
+        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $accessible->id)->assertJsonPath('selected_thread', null);
+    $this->getJson(route('workspaces.conversations.messages', [$f['workspace'], $f['thread']]))->assertNotFound();
+    expect(ChatOperation::count())->toBe(0);
+    Http::assertNothingSent();
+});
+
 test('list query count stays bounded as the number of conversations grows', function () {
     $f = runtimeChat();
     $this->actingAs($f['user']);
