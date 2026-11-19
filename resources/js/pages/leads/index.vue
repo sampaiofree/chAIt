@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { router, Link, useForm, Head } from '@inertiajs/vue3';
 import { computed, reactive, ref, watch } from 'vue';
+import AppDialog from '@/components/AppDialog.vue';
+import { useAppDialog } from '@/composables/useAppDialog';
+import { clearChatCache } from '@/lib/chatCache';
 import AppButton from '@/components/AppButton.vue';
 import AppSelect from '@/components/AppSelect.vue';
 import AppFormDialog from '@/components/AppFormDialog.vue';
@@ -17,6 +20,43 @@ import {
     ChevronRight,
 } from '@lucide/vue';
 import '@/../css/leads.css';
+const { dialog, confirm, finish } = useAppDialog();
+const deletion = useForm({});
+const deletingId = ref<number | null>(null);
+const deleteError = ref('');
+async function deleteLead(lead: any) {
+    if (deletingId.value !== null) return;
+    deletingId.value = lead.id;
+    deleteError.value = '';
+    const approved = await confirm(
+        `Excluir ${lead.display_name || 'Sem nome'} (${lead.phone || 'sem WhatsApp'})? O cadastro, as conversas e todas as automações serão removidos. Se voltar a conversar, será um novo lead. Esta ação não pode ser desfeita.`,
+        'Excluir lead',
+    );
+    if (!approved) {
+        deletingId.value = null;
+        return;
+    }
+    deletion.delete(`${root}/${lead.id}`, {
+        preserveScroll: true,
+        onSuccess: () => {
+            void clearChatCache();
+            if (!props.leads.data.length && props.leads.current_page > 1) {
+                router.get(
+                    root,
+                    { ...filters, page: props.leads.current_page - 1 },
+                    { preserveState: true, preserveScroll: true },
+                );
+            }
+        },
+        onError: () => {
+            deleteError.value =
+                'Não foi possível excluir o lead. Tente novamente.';
+        },
+        onFinish: () => {
+            deletingId.value = null;
+        },
+    });
+}
 const filterOpen = ref(false);
 const props = defineProps<{
     workspace: any;
@@ -71,6 +111,11 @@ function clearFilters() {
     search();
 }
 const root = `/workspaces/${props.workspace.id}/leads`;
+function openLeadRow(event: MouseEvent, id: number) {
+    if (!(event.target as HTMLElement).closest('a, button')) {
+        router.visit(`${root}/${id}`);
+    }
+}
 function search() {
     router.get(
         root,
@@ -81,7 +126,11 @@ function search() {
 </script>
 <template>
     <Head title="Leads" />
+    <AppDialog :dialog="dialog" @resolve="finish" />
     <main class="leads-page">
+        <p v-if="deleteError" class="form-error" role="alert">
+            {{ deleteError }}
+        </p>
         <header class="leads-header">
             <div>
                 <h1>Leads</h1>
@@ -190,13 +239,13 @@ function search() {
                 <span>Lead</span><span>Etiquetas</span><span>Cadastrado em</span
                 ><span>Ação</span>
             </div>
-            <Link
+            <div
                 v-for="lead in leads.data"
                 :key="lead.id"
-                :href="`${root}/${lead.id}`"
                 class="leads-list-row"
+                @click="openLeadRow($event, lead.id)"
             >
-                <div class="leads-identity">
+                <Link :href="`${root}/${lead.id}`" class="leads-identity">
                     <span class="lead-avatar" aria-hidden="true">{{
                         (lead.display_name || '?').charAt(0).toUpperCase()
                     }}</span>
@@ -206,7 +255,7 @@ function search() {
                             lead.phone || 'WhatsApp não informado'
                         }}</span>
                     </div>
-                </div>
+                </Link>
                 <div class="lead-tags">
                     <span
                         v-for="tag in lead.tags"
@@ -229,10 +278,21 @@ function search() {
                         new Date(lead.created_at).toLocaleDateString('pt-BR')
                     }}</span
                 >
-                <span class="leads-row-action"
-                    >Abrir ficha<ArrowUpRight :size="16" aria-hidden="true"
-                /></span>
-            </Link>
+                <div class="leads-row-action">
+                    <Link :href="`${root}/${lead.id}`"
+                        >Abrir ficha<ArrowUpRight
+                            :size="16"
+                            aria-hidden="true" /></Link
+                    ><AppButton
+                        v-if="canEdit"
+                        variant="ghost"
+                        :disabled="deletingId !== null"
+                        :aria-label="`Excluir lead ${lead.display_name || lead.phone}`"
+                        @click="deleteLead(lead)"
+                        >Excluir</AppButton
+                    >
+                </div>
+            </div>
             <div v-if="!leads.data.length" class="leads-empty">
                 <UsersRound :size="32" :stroke-width="1.5" />
                 <h2>Nenhum lead encontrado</h2>

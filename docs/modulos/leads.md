@@ -323,3 +323,11 @@ Estes pontos não impedem a documentação da proposta, mas **não devem ser tra
 ## Verificação no cadastro manual — 17/11/2026
 
 Antes de salvar, o cadastro consulta o serviço compartilhado de [verificação de WhatsApp](../integracoes/verificacao-whatsapp.md). Só uma confirmação positiva permite cadastrar. Ausência de WhatsApp confirmada bloqueia o número; falta de conexão ou falha de consulta bloqueia o cadastro com orientação para tentar novamente, preservando os campos. Esta regra não altera edição, listagem nem criação por webhook.
+
+## Abertura e exclusão — 17/11/2026
+
+**Abrir conversa** cria a conversa ao clicar quando o lead ainda não possui uma, sem enviar mensagens ou iniciar atendimento humano. Exige conexão confirmada e as permissões existentes do Chat; criar uma conversa sem responsável exige administrador ou acesso a conversas não atribuídas.
+
+A lista permite **Excluir** individualmente, com confirmação, para quem possui **Visualizar leads** e **Editar leads**. A exclusão funciona desconectado e remove cadastro, conversas, notas, vínculos, execuções, sessões de IA e inscrições em sequências do contato. As definições compartilhadas de fluxos, campos, etiquetas e sequências são preservadas. Jobs antigos não retomam o atendimento; envios já entregues ao provedor não podem ser desfeitos.
+
+Um marco persistente por identidade WhatsApp impede que mensagens anteriores à exclusão recriem o cadastro ou reapareçam no histórico e nos downloads de mídia. Uma nova mensagem cria novo contato e conversa e volta a aplicar os gatilhos de primeiro contato. As mensagens no aparelho WhatsApp não são apagadas. A migração `2026_11_17_000004_create_contact_resets` deve ser aplicada antes de ativar o código.

@@ -16,6 +16,7 @@ use App\Services\Chat\ChatProjection;
 use App\Services\Chat\ChatPublisher;
 use App\Services\Chat\HumanAssignment;
 use App\Services\Chat\InboundEvents;
+use App\Services\Contacts\ContactReset;
 use App\Services\Flows\FlowAutomationControl;
 use App\Services\Flows\FlowExecutionManager;
 use App\Services\Uazapi\UazapiClient;
@@ -189,15 +190,18 @@ class UazapiChatController extends Controller
         $offset = (int) ($request->validate(['offset' => ['sometimes', 'integer', 'min:0', 'max:100000']])['offset'] ?? 0);
         try {
             $page = $this->asList($uazapi->messages($connection, $thread->external_chat_id, $offset), ['messages', 'data', 'items']);
-            $messages = array_reverse($page);
+            $cutoff = app(ContactReset::class)->cutoff($workspace->id, $thread->external_chat_id);
+            $visible = fn ($message) => ! $cutoff || (($time = app(ChatProjection::class)->timestamp($message['messageTimestamp'] ?? $message['timestamp'] ?? null)) && $time->gt($cutoff));
+            $reachedReset = $cutoff && count(array_filter($page, $visible)) !== count($page);
+            $messages = array_reverse(array_values(array_filter($page, $visible)));
             $trackId = $request->string('track_id')->toString();
             if ($offset === 0 && $trackId !== '') {
                 $correlated = array_values(array_filter($this->asList($uazapi->messages($connection, $thread->external_chat_id, 0, $trackId, restrictToChat: true), ['messages', 'data', 'items']), fn ($item) => ($item['chatid'] ?? data_get($item, 'key.remoteJid')) === $thread->external_chat_id));
-                $messages = [...$messages, ...$correlated];
+                $messages = [...$messages, ...array_filter($correlated, $visible)];
             }
             $messages = collect($messages)->unique(fn (array $message) => (string) (data_get($message, 'id') ?? data_get($message, 'messageid') ?? data_get($message, 'track_id')))->values();
 
-            return response()->json(['data' => $messages->map(fn ($message) => $this->transientMessage($message, $workspace, $thread))->values(), 'next_offset' => count($page) === 100 ? $offset + 100 : null, 'history_limited' => false, 'read_version' => $readVersion]);
+            return response()->json(['data' => $messages->map(fn ($message) => $this->transientMessage($message, $workspace, $thread))->values(), 'next_offset' => ! $reachedReset && count($page) === 100 ? $offset + 100 : null, 'history_limited' => false, 'read_version' => $readVersion]);
         } catch (UazapiDeferredException $exception) {
             throw $exception;
         } catch (HttpClientException|RuntimeException) {
@@ -330,6 +334,14 @@ class UazapiChatController extends Controller
         $belongsToThread = collect($found)->contains(fn (array $message) => (string) (data_get($message, 'id') ?? data_get($message, 'messageid')) === $messageId
             && (string) (data_get($message, 'chatid') ?? data_get($message, 'key.remoteJid') ?? '') === $chatId
         );
+        $cutoff = app(ContactReset::class)->cutoff($workspace->id, (string) $thread->external_chat_id);
+        if ($cutoff) {
+            $belongsToThread = $belongsToThread && collect($found)->contains(function (array $message) use ($messageId, $cutoff) {
+                $time = app(ChatProjection::class)->timestamp($message['messageTimestamp'] ?? $message['timestamp'] ?? null);
+
+                return (string) ($message['id'] ?? $message['messageid'] ?? '') === $messageId && $time && $time->gt($cutoff);
+            });
+        }
         abort_unless($belongsToThread, 404);
         try {
             $url = data_get($uazapi->downloadMessage($thread->uazapiConnection, $messageId), 'fileURL');

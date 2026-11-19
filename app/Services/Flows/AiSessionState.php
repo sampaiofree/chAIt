@@ -8,6 +8,9 @@ class AiSessionState
 {
     public static function current(AiSession $session, bool $checkExpiry = true): bool
     {
+        if (! AiSession::whereKey($session->id)->exists()) {
+            return false;
+        }
         $session->refresh();
         $execution = $session->execution()->with(['version', 'thread', 'connection', 'contact'])->first();
         $session->setRelation('execution', $execution);

@@ -8,7 +8,8 @@ import {
 import { openChatRealtime, type ChatUpdate } from '@/lib/chatRealtime';
 import { formatMessageDate } from '@/lib/messageDate';
 import { Textarea } from '@/components/ui/textarea';
-import { Head, usePage } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
+import { Button } from '@/components/ui/button';
 import { useVoiceRecorder } from '@/composables/useVoiceRecorder';
 import ContactSequence from '@/components/ContactSequence.vue';
 import AppDialog from '@/components/AppDialog.vue';
@@ -36,6 +37,8 @@ import {
     CircleCheck,
     CirclePause,
     CircleOff,
+    MessagesSquare,
+    LoaderCircle,
 } from '@lucide/vue';
 import { Mic } from '@lucide/vue';
 import { useAppDialog } from '@/composables/useAppDialog';
@@ -149,23 +152,38 @@ let listAbort: AbortController | undefined;
 const threads = ref<Thread[]>([]);
 const chatAllowed = ref(false);
 const chatAccessStatus = ref('checking');
+const accessChecking = ref(false);
+let accessCheckGeneration = 0;
 let accessTimer: ReturnType<typeof setInterval> | undefined;
 async function checkChatAccess() {
     const checkedWorkspace = workspace.value.id;
+    const generation = ++accessCheckGeneration;
+    accessChecking.value = true;
     try {
         const response = await fetch(
-            `/workspaces/${workspace.value.id}/chat-access`,
+            `/workspaces/${checkedWorkspace}/chat-access`,
             { headers: { Accept: 'application/json' } },
         );
         const result = await response.json();
-        if (checkedWorkspace !== workspace.value.id) return;
+        if (
+            generation !== accessCheckGeneration ||
+            checkedWorkspace !== workspace.value.id
+        )
+            return;
         const previous = chatAllowed.value;
         chatAllowed.value = response.ok && result.allowed === true;
         if (chatAllowed.value && !previous) void loadThreads();
         chatAccessStatus.value = result.status || 'unavailable';
     } catch {
+        if (
+            generation !== accessCheckGeneration ||
+            checkedWorkspace !== workspace.value.id
+        )
+            return;
         chatAllowed.value = false;
         chatAccessStatus.value = 'unavailable';
+    } finally {
+        if (generation === accessCheckGeneration) accessChecking.value = false;
     }
     if (!chatAllowed.value) {
         listAbort?.abort();
@@ -194,13 +212,6 @@ const connection = ref<{
     provider_available?: boolean;
     last_checked_at?: string | null;
 } | null>(null);
-const connectionLoaded = ref(false);
-const connectionWarning = computed(
-    () =>
-        connectionLoaded.value &&
-        (connection.value?.status !== 'connected' ||
-            connection.value.provider_available === false),
-);
 const workspaceTags = computed(
     () =>
         (page.props.tags ?? []) as {
@@ -859,14 +870,10 @@ async function markVisibleConversationRead() {
 }
 async function refreshConnection() {
     try {
-        const old = connection.value?.status;
         const result = await api(
             `${root()}/uazapi/${realtimeEnabled ? 'connection' : 'status'}`,
         );
         connection.value = result.data;
-        connectionLoaded.value = true;
-        if (!realtimeEnabled && old !== connection.value?.status)
-            await loadThreads();
     } catch {
         /* keep the last known provider status */
     }
@@ -1208,11 +1215,13 @@ function receiveChat(event: ChatUpdate) {
         return;
     }
     if (event.type === 'connection.changed') {
-        if (event.data.status !== 'connected') chatAllowed.value = false;
+        if (event.data.status && event.data.status !== 'connected') {
+            chatAllowed.value = false;
+            chatAccessStatus.value = 'disconnected';
+        }
         void checkChatAccess();
         const wasConnected = connection.value?.status === 'connected';
         connection.value = { ...connection.value, ...event.data };
-        connectionLoaded.value = true;
         if (!wasConnected && connection.value?.status === 'connected')
             void loadThreads();
         return;
@@ -1616,8 +1625,8 @@ watch(
         pendingThreadId.value = null;
         historyNextOffset.value = null;
         chatAllowed.value = false;
+        chatAccessStatus.value = 'checking';
         void checkChatAccess();
-        connectionLoaded.value = false;
         renderedThreadId = null;
         historyReadVersion.value = null;
         hasNewMessages.value = false;
@@ -1633,85 +1642,20 @@ watch(
     },
     { flush: 'sync' },
 );
-// Connection notices are shown at most once for this mounted dashboard visit.
-const connectionDialogOpen = ref(false);
-const conversationSearchInput = ref<InstanceType<typeof Input> | null>(null);
-const sequenceDialogOpen = ref(false);
-const connectionNoticeShown = ref(false);
 const realtimeInitialWaitOver = ref(false);
 let realtimeInitialTimer: ReturnType<typeof setTimeout> | undefined;
-let connectionPreviousFocus: HTMLElement | null = null;
 const realtimeWarning = computed(
     () =>
         realtimeEnabled &&
         realtimeInitialWaitOver.value &&
         !realtimeConnected.value,
 );
-const connectionNoticeMessages = computed(() => {
-    const notices: string[] = [];
-    if (connectionWarning.value) {
-        notices.push(
-            connection.value?.provider_available === false
-                ? 'WhatsApp indisponível. As conversas podem estar desatualizadas.'
-                : 'WhatsApp desconectado. As conversas locais continuam disponíveis.',
-        );
-    }
-    if (realtimeWarning.value) {
-        notices.push(
-            'Atualizações em tempo real indisponíveis. As conversas podem estar desatualizadas.',
-        );
-    }
-    return notices;
-});
 watch(realtimeConnected, (connected) => {
     if (connected) {
         realtimeInitialWaitOver.value = true;
         clearTimeout(realtimeInitialTimer);
     }
 });
-watch(
-    [
-        connectionNoticeMessages,
-        () => dialog.open,
-        filterOpen,
-        expandedImage,
-        sequenceDialogOpen,
-    ],
-    async () => {
-        if (!connectionNoticeMessages.value.length) {
-            connectionDialogOpen.value = false;
-            return;
-        }
-        // Let a queued application dialog open before deciding to show this notice.
-        await nextTick();
-        if (
-            !connectionNoticeMessages.value.length ||
-            connectionNoticeShown.value ||
-            dialog.open ||
-            filterOpen.value ||
-            expandedImage.value ||
-            sequenceDialogOpen.value
-        )
-            return;
-        connectionPreviousFocus = document.activeElement as HTMLElement | null;
-        connectionNoticeShown.value = true;
-        connectionDialogOpen.value = true;
-    },
-    { flush: 'post' },
-);
-function restoreConnectionFocus(event: Event) {
-    event.preventDefault();
-    if (
-        connectionPreviousFocus?.isConnected &&
-        connectionPreviousFocus !== document.body
-    ) {
-        connectionPreviousFocus.focus();
-    } else {
-        (
-            conversationSearchInput.value?.$el as HTMLElement | undefined
-        )?.focus();
-    }
-}
 watch(realtimeConnected, (connected) => {
     if (!connected) return;
     for (const id of visibleAvatars) {
@@ -1747,8 +1691,6 @@ watch(mobilePane, (pane) => {
     if (pane === 'chat') void nextTick().then(updateLatestPosition);
 });
 onMounted(async () => {
-    await checkChatAccess();
-    accessTimer = setInterval(() => void checkChatAccess(), 15000);
     dateLabelTimer = window.setInterval(refreshDateLabels, 60000);
     document.addEventListener('visibilitychange', refreshDateLabels);
     if (realtimeEnabled) {
@@ -1765,14 +1707,14 @@ onMounted(async () => {
             (value) => (realtimeConnected.value = value),
             { immediate: true },
         );
-        void refreshConnection();
-        void loadThreads();
-        return;
     }
+    await checkChatAccess();
+    accessTimer = setInterval(() => void checkChatAccess(), 15000);
     await refreshConnection();
-    await loadThreads();
-    statusTimer = window.setInterval(refreshConnection, 15000);
-    listTimer = window.setInterval(() => void loadThreads(), 30000);
+    if (!realtimeEnabled) {
+        statusTimer = window.setInterval(refreshConnection, 15000);
+        listTimer = window.setInterval(() => void loadThreads(), 30000);
+    }
 });
 onUnmounted(() => {
     clearInterval(accessTimer);
@@ -1795,898 +1737,983 @@ onUnmounted(() => {
     <Head title="Conversas" />
     <section
         v-if="!chatAllowed"
-        style="padding: 48px; max-width: 700px; margin: auto"
-        role="status"
+        class="connection-setup"
+        aria-labelledby="connection-setup-title"
+        :aria-busy="accessChecking"
     >
-        <h1>
-            {{
-                chatAccessStatus === 'checking'
-                    ? 'Verificando conexão…'
-                    : chatAccessStatus === 'disconnected'
-                      ? 'WhatsApp desconectado'
-                      : 'Não foi possível confirmar a conexão'
-            }}
-        </h1>
-        <p>Conecte o WhatsApp para usar as conversas.</p>
-        <a v-if="isAdmin" href="/settings/whatsapp">Configurar WhatsApp</a>
-        <p v-else>Solicite a conexão ao administrador do workspace.</p>
-        <button @click="checkChatAccess">Verificar novamente</button
-        ><a
-            v-if="page.props.canViewLeads"
-            :href="`/workspaces/${workspace.id}/leads`"
-            >Acessar Leads</a
-        >
-    </section>
-    <main
-        v-if="chatAllowed"
-        class="chat-shell"
-        :class="{
-            'profile-collapsed': profileCollapsed,
-        }"
-    >
-        <section
-            class="list-pane"
-            :class="{ 'mobile-hidden': mobilePane !== 'list' }"
-        >
-            <h1 class="sr-only">Conversas</h1>
-            <div class="search-row">
-                <label class="search"
-                    ><Search :size="16" aria-hidden="true" /><Input
-                        ref="conversationSearchInput"
-                        v-model="search"
-                        class="h-full rounded-none border-0 bg-transparent px-0 shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
-                        aria-label="Buscar por nome ou telefone"
-                        placeholder="Buscar conversas"
-                /></label>
-                <button
-                    type="button"
-                    class="filter-trigger"
-                    :class="{ active: activeFilterCount > 0 }"
-                    :aria-label="
-                        activeFilterCount
-                            ? `Filtrar conversas, ${activeFilterCount} critérios ativos`
-                            : 'Filtrar conversas'
-                    "
-                    :aria-expanded="filterOpen"
-                    aria-haspopup="dialog"
-                    title="Filtrar conversas"
-                    @click="openFilters"
-                >
-                    <ListFilter :size="18" aria-hidden="true" />
-                    <span v-if="activeFilterCount" class="filter-count">{{
-                        activeFilterCount
-                    }}</span>
-                </button>
+        <div class="connection-setup-content">
+            <div class="connection-setup-icon" aria-hidden="true">
+                <LoaderCircle
+                    v-if="chatAccessStatus === 'checking'"
+                    :size="28"
+                    class="animate-spin"
+                />
+                <MessagesSquare v-else :size="28" />
             </div>
-            <AppButton
-                v-if="nextCursor"
-                :disabled="loadingThreads"
-                @click="loadMoreChats"
-                >Carregar mais conversas</AppButton
-            >
-            <div class="thread-list" @scroll="onListScroll">
-                <button
-                    v-for="thread in threads"
-                    :key="thread.id"
-                    type="button"
-                    class="thread"
-                    :class="{ chosen: selected?.id === thread.id }"
-                    :aria-pressed="selected?.id === thread.id"
-                    @click="choose(thread)"
-                >
-                    <span v-avatar="thread" class="avatar"
-                        >{{ initials(thread.contact.display_name)
-                        }}<img
-                            v-if="messageAvatar(thread)"
-                            :src="messageAvatar(thread)!"
-                            alt=""
-                            @error="avatarError(thread)" /></span
-                    ><span class="thread-main"
-                        ><span class="thread-top"
-                            ><b>{{
-                                thread.contact.display_name ||
-                                thread.contact.phone ||
-                                'Contato sem nome'
-                            }}</b
-                            ><span class="thread-time"
-                                ><small>{{
-                                    messageDate(thread.last_message_at)
-                                }}</small
-                                ><span
-                                    v-if="thread.unread_count > 0"
-                                    class="unread-dot"
-                                    aria-label="Mensagens não lidas"
-                                ></span></span></span
-                        ><small
-                            v-if="thread.last_message_type"
-                            class="message-preview"
-                            >{{ previewText(thread) }}</small
-                        >
-                        <span class="thread-bottom"
-                            ><small>{{
-                                thread.assigned_to?.name || 'Sem responsável'
-                            }}</small
-                            ><em
-                                v-if="statusBadge(thread)"
-                                :class="statusBadge(thread)?.className"
-                                >{{ statusBadge(thread)?.label }}</em
-                            ></span
-                        ></span
-                    >
-                </button>
-                <div v-if="threadsError" class="empty" role="alert">
-                    Não foi possível carregar as conversas.
-                    <button type="button" @click="loadThreads()">
-                        Tentar novamente
-                    </button>
-                </div>
-                <div
-                    v-else-if="loadingThreads && !threadsReady"
-                    class="skeleton-list"
-                    role="status"
-                    aria-label="Carregando conversas"
-                >
-                    <template v-if="showThreadSkeleton"
-                        ><span v-for="n in 5" :key="n"></span
-                    ></template>
-                </div>
-                <p v-else-if="threadsReady && !threads.length" class="empty">
+            <div role="status" aria-live="polite">
+                <h1 id="connection-setup-title">
                     {{
-                        activeFilterCount || search
-                            ? 'Nenhuma conversa encontrada.'
-                            : 'As conversas aparecerão após a primeira mensagem recebida.'
+                        chatAccessStatus === 'checking'
+                            ? 'Preparando suas conversas…'
+                            : chatAccessStatus === 'disconnected'
+                              ? 'Conecte seu WhatsApp para começar'
+                              : 'Estamos verificando sua conexão'
                     }}
+                </h1>
+                <p v-if="chatAccessStatus === 'disconnected'">
+                    Para receber e responder mensagens, conecte o WhatsApp deste
+                    workspace em Configurações.
+                </p>
+                <p v-else-if="chatAccessStatus !== 'checking'">
+                    A confirmação da conexão está temporariamente indisponível.
+                    Vamos verificar novamente automaticamente em instantes.
                 </p>
             </div>
-        </section>
-        <section
-            class="chat-pane"
-            :class="{ 'mobile-hidden': mobilePane !== 'chat' }"
+            <template v-if="chatAccessStatus === 'disconnected'">
+                <p v-if="isAdmin" class="connection-setup-guidance">
+                    Em Configurações → WhatsApp, toque em Conectar com QR Code e
+                    siga as instruções.
+                </p>
+                <p v-else class="connection-setup-guidance">
+                    Peça ao administrador do workspace para conectar o WhatsApp.
+                </p>
+            </template>
+            <div
+                v-if="chatAccessStatus !== 'checking'"
+                class="connection-setup-actions"
+            >
+                <Button
+                    v-if="isAdmin && chatAccessStatus === 'disconnected'"
+                    as-child
+                >
+                    <Link href="/settings/whatsapp">Conectar WhatsApp</Link>
+                </Button>
+                <AppButton
+                    variant="secondary"
+                    :loading="accessChecking"
+                    @click="checkChatAccess"
+                >
+                    Verificar novamente
+                </AppButton>
+                <Button v-if="page.props.canViewLeads" variant="ghost" as-child>
+                    <Link :href="`/workspaces/${workspace.id}/leads`">
+                        Acessar Leads
+                    </Link>
+                </Button>
+            </div>
+        </div>
+    </section>
+    <div v-if="chatAllowed" class="connected-chat">
+        <div v-if="realtimeWarning" class="realtime-notice" role="status">
+            As atualizações em tempo real serão retomadas automaticamente.
+            Enquanto isso, as conversas podem estar desatualizadas.
+        </div>
+        <main
+            class="chat-shell"
+            :class="{
+                'profile-collapsed': profileCollapsed,
+            }"
         >
-            <template v-if="selected">
-                <header class="chat-heading">
+            <section
+                class="list-pane"
+                :class="{ 'mobile-hidden': mobilePane !== 'list' }"
+            >
+                <h1 class="sr-only">Conversas</h1>
+                <div class="search-row">
+                    <label class="search"
+                        ><Search :size="16" aria-hidden="true" /><Input
+                            v-model="search"
+                            class="h-full rounded-none border-0 bg-transparent px-0 shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
+                            aria-label="Buscar por nome ou telefone"
+                            placeholder="Buscar conversas"
+                    /></label>
                     <button
-                        class="back"
                         type="button"
-                        aria-label="Voltar para conversas"
-                        title="Voltar para conversas"
-                        @click="mobilePane = 'list'"
+                        class="filter-trigger"
+                        :class="{ active: activeFilterCount > 0 }"
+                        :aria-label="
+                            activeFilterCount
+                                ? `Filtrar conversas, ${activeFilterCount} critérios ativos`
+                                : 'Filtrar conversas'
+                        "
+                        :aria-expanded="filterOpen"
+                        aria-haspopup="dialog"
+                        title="Filtrar conversas"
+                        @click="openFilters"
                     >
-                        <ArrowLeft :size="20" /></button
-                    ><span class="avatar mini">
-                        {{ initials(selected.contact.display_name)
-                        }}<img
-                            v-if="messageAvatar(selected)"
-                            :src="messageAvatar(selected)!"
-                            alt=""
-                            @error="avatarError(selected)"
-                        />
-                    </span>
-                    <div class="title">
-                        <b>{{
-                            selected.contact.display_name ||
-                            selected.contact.phone
-                        }}</b
-                        ><small>{{ selected.contact.phone }}</small>
-                        <small class="service-state"
-                            >{{ humanStatus }} ·
-                            {{
-                                selected.assigned_to?.name || 'Sem responsável'
-                            }}</small
+                        <ListFilter :size="18" aria-hidden="true" />
+                        <span v-if="activeFilterCount" class="filter-count">{{
+                            activeFilterCount
+                        }}</span>
+                    </button>
+                </div>
+                <AppButton
+                    v-if="nextCursor"
+                    :disabled="loadingThreads"
+                    @click="loadMoreChats"
+                    >Carregar mais conversas</AppButton
+                >
+                <div class="thread-list" @scroll="onListScroll">
+                    <button
+                        v-for="thread in threads"
+                        :key="thread.id"
+                        type="button"
+                        class="thread"
+                        :class="{ chosen: selected?.id === thread.id }"
+                        :aria-pressed="selected?.id === thread.id"
+                        @click="choose(thread)"
+                    >
+                        <span v-avatar="thread" class="avatar"
+                            >{{ initials(thread.contact.display_name)
+                            }}<img
+                                v-if="messageAvatar(thread)"
+                                :src="messageAvatar(thread)!"
+                                alt=""
+                                @error="avatarError(thread)" /></span
+                        ><span class="thread-main"
+                            ><span class="thread-top"
+                                ><b>{{
+                                    thread.contact.display_name ||
+                                    thread.contact.phone ||
+                                    'Contato sem nome'
+                                }}</b
+                                ><span class="thread-time"
+                                    ><small>{{
+                                        messageDate(thread.last_message_at)
+                                    }}</small
+                                    ><span
+                                        v-if="thread.unread_count > 0"
+                                        class="unread-dot"
+                                        aria-label="Mensagens não lidas"
+                                    ></span></span></span
+                            ><small
+                                v-if="thread.last_message_type"
+                                class="message-preview"
+                                >{{ previewText(thread) }}</small
+                            >
+                            <span class="thread-bottom"
+                                ><small>{{
+                                    thread.assigned_to?.name ||
+                                    'Sem responsável'
+                                }}</small
+                                ><em
+                                    v-if="statusBadge(thread)"
+                                    :class="statusBadge(thread)?.className"
+                                    >{{ statusBadge(thread)?.label }}</em
+                                ></span
+                            ></span
                         >
+                    </button>
+                    <div v-if="threadsError" class="empty" role="alert">
+                        Não foi possível carregar as conversas.
+                        <button type="button" @click="loadThreads()">
+                            Tentar novamente
+                        </button>
                     </div>
-                    <div class="actions">
-                        <!--
+                    <div
+                        v-else-if="loadingThreads && !threadsReady"
+                        class="skeleton-list"
+                        role="status"
+                        aria-label="Carregando conversas"
+                    >
+                        <template v-if="showThreadSkeleton"
+                            ><span v-for="n in 5" :key="n"></span
+                        ></template>
+                    </div>
+                    <p
+                        v-else-if="threadsReady && !threads.length"
+                        class="empty"
+                    >
+                        {{
+                            activeFilterCount || search
+                                ? 'Nenhuma conversa encontrada.'
+                                : 'As conversas aparecerão após a primeira mensagem recebida.'
+                        }}
+                    </p>
+                </div>
+            </section>
+            <section
+                class="chat-pane"
+                :class="{ 'mobile-hidden': mobilePane !== 'chat' }"
+            >
+                <template v-if="selected">
+                    <header class="chat-heading">
+                        <button
+                            class="back"
+                            type="button"
+                            aria-label="Voltar para conversas"
+                            title="Voltar para conversas"
+                            @click="mobilePane = 'list'"
+                        >
+                            <ArrowLeft :size="20" /></button
+                        ><span class="avatar mini">
+                            {{ initials(selected.contact.display_name)
+                            }}<img
+                                v-if="messageAvatar(selected)"
+                                :src="messageAvatar(selected)!"
+                                alt=""
+                                @error="avatarError(selected)"
+                            />
+                        </span>
+                        <div class="title">
+                            <b>{{
+                                selected.contact.display_name ||
+                                selected.contact.phone
+                            }}</b
+                            ><small>{{ selected.contact.phone }}</small>
+                            <small class="service-state"
+                                >{{ humanStatus }} ·
+                                {{
+                                    selected.assigned_to?.name ||
+                                    'Sem responsável'
+                                }}</small
+                            >
+                        </div>
+                        <div class="actions">
+                            <!--
                         <em
                             v-if="statusBadge(selected)"
                             :class="statusBadge(selected)?.className"
                             >{{ statusBadge(selected)?.label }}</em
                         >
                         -->
-                        <button
-                            class="profile-trigger"
+                            <button
+                                class="profile-trigger"
+                                type="button"
+                                :aria-label="
+                                    profileCollapsed
+                                        ? 'Abrir perfil do contato'
+                                        : 'Recolher perfil do contato'
+                                "
+                                :aria-expanded="
+                                    !profileCollapsed ||
+                                    mobilePane === 'profile'
+                                "
+                                title="Perfil do contato"
+                                @click="toggleContactProfile"
+                            >
+                                <ContactRound :size="20" />
+                            </button>
+                        </div>
+                    </header>
+                    <p class="retention">Histórico dos útimos 7 dias.</p>
+                    <div
+                        ref="messagesElement"
+                        class="messages"
+                        @scroll.passive="updateLatestPosition"
+                    >
+                        <AppButton
+                            v-if="historyNextOffset !== null"
                             type="button"
-                            :aria-label="
-                                profileCollapsed
-                                    ? 'Abrir perfil do contato'
-                                    : 'Recolher perfil do contato'
-                            "
-                            :aria-expanded="
-                                !profileCollapsed || mobilePane === 'profile'
-                            "
-                            title="Perfil do contato"
-                            @click="toggleContactProfile"
+                            variant="secondary"
+                            :disabled="loadingOlder"
+                            @click="loadOlderMessages"
+                            >{{
+                                loadingOlder
+                                    ? 'Carregando…'
+                                    : 'Carregar mensagens anteriores'
+                            }}</AppButton
                         >
-                            <ContactRound :size="20" />
-                        </button>
-                    </div>
-                </header>
-                <p class="retention">Histórico dos útimos 7 dias.</p>
-                <div
-                    ref="messagesElement"
-                    class="messages"
-                    @scroll.passive="updateLatestPosition"
-                >
-                    <AppButton
-                        v-if="historyNextOffset !== null"
-                        type="button"
-                        variant="secondary"
-                        :disabled="loadingOlder"
-                        @click="loadOlderMessages"
-                        >{{
-                            loadingOlder
-                                ? 'Carregando…'
-                                : 'Carregar mensagens anteriores'
-                        }}</AppButton
-                    >
-                    <div
-                        v-if="historyLoading"
-                        class="skeleton-messages"
-                        role="status"
-                        aria-label="Carregando mensagens"
-                    >
-                        <template v-if="showSkeleton"
-                            ><span v-for="n in 4" :key="n"></span
-                        ></template>
-                    </div>
-                    <div
-                        v-else-if="historyError"
-                        class="history-warning"
-                        role="alert"
-                    >
-                        Não foi possível carregar as mensagens.
-                        <button type="button" @click="loadHistory()">
-                            Tentar novamente
-                        </button>
-                    </div>
-                    <div v-else-if="historyLimited" class="history-warning">
-                        A UAZAPI não disponibilizou este histórico. Mensagens
-                        antigas podem ter expirado ou não terem sido
-                        sincronizadas pelo aparelho.
-                    </div>
-                    <p v-else-if="!messages.length" class="no-messages">
-                        As mensagens desta conversa aparecerão aqui.
-                    </p>
-                    <div
-                        v-for="message in messages"
-                        :key="message.id"
-                        class="message-row"
-                        :class="message.from_me ? 'mine' : 'theirs'"
-                    >
-                        <article class="bubble">
-                            <div v-if="isAudio(message)" class="audio-message">
-                                <span
-                                    >{{
-                                        message.is_voice
-                                            ? 'Mensagem de voz'
-                                            : 'Áudio'
-                                    }}<template v-if="message.duration_seconds">
-                                        ·
-                                        {{
-                                            durationLabel(
-                                                message.duration_seconds,
-                                            )
-                                        }}</template
-                                    ></span
+                        <div
+                            v-if="historyLoading"
+                            class="skeleton-messages"
+                            role="status"
+                            aria-label="Carregando mensagens"
+                        >
+                            <template v-if="showSkeleton"
+                                ><span v-for="n in 4" :key="n"></span
+                            ></template>
+                        </div>
+                        <div
+                            v-else-if="historyError"
+                            class="history-warning"
+                            role="alert"
+                        >
+                            Não foi possível carregar as mensagens.
+                            <button type="button" @click="loadHistory()">
+                                Tentar novamente
+                            </button>
+                        </div>
+                        <div v-else-if="historyLimited" class="history-warning">
+                            A UAZAPI não disponibilizou este histórico.
+                            Mensagens antigas podem ter expirado ou não terem
+                            sido sincronizadas pelo aparelho.
+                        </div>
+                        <p v-else-if="!messages.length" class="no-messages">
+                            As mensagens desta conversa aparecerão aqui.
+                        </p>
+                        <div
+                            v-for="message in messages"
+                            :key="message.id"
+                            class="message-row"
+                            :class="message.from_me ? 'mine' : 'theirs'"
+                        >
+                            <article class="bubble">
+                                <div
+                                    v-if="isAudio(message)"
+                                    class="audio-message"
                                 >
-                                <audio
-                                    v-if="message.media_url"
-                                    :src="message.media_url"
-                                    controls
-                                    preload="none"
-                                    aria-label="Reproduzir áudio da conversa"
-                                    @error="renewMedia(message)"
-                                />
-                                <p v-else-if="message.media_unavailable">
-                                    Áudio indisponível
+                                    <span
+                                        >{{
+                                            message.is_voice
+                                                ? 'Mensagem de voz'
+                                                : 'Áudio'
+                                        }}<template
+                                            v-if="message.duration_seconds"
+                                        >
+                                            ·
+                                            {{
+                                                durationLabel(
+                                                    message.duration_seconds,
+                                                )
+                                            }}</template
+                                        ></span
+                                    >
+                                    <audio
+                                        v-if="message.media_url"
+                                        :src="message.media_url"
+                                        controls
+                                        preload="none"
+                                        aria-label="Reproduzir áudio da conversa"
+                                        @error="renewMedia(message)"
+                                    />
+                                    <p v-else-if="message.media_unavailable">
+                                        Áudio indisponível
+                                    </p>
+                                    <AppButton
+                                        v-else-if="message.media_endpoint"
+                                        type="button"
+                                        variant="secondary"
+                                        :disabled="message.media_loading"
+                                        @click="renewMedia(message, false)"
+                                    >
+                                        {{
+                                            message.media_loading
+                                                ? 'Carregando áudio…'
+                                                : 'Carregar áudio'
+                                        }}
+                                    </AppButton>
+                                </div>
+                                <button
+                                    v-else-if="
+                                        isImage(message) && message.media_url
+                                    "
+                                    class="image-preview"
+                                    @click="
+                                        expandedImage = message.media_url || ''
+                                    "
+                                >
+                                    <img
+                                        :src="message.media_url"
+                                        alt="Imagem enviada na conversa"
+                                        @error="renewMedia(message)"
+                                    />
+                                </button>
+                                <p
+                                    v-else-if="
+                                        isImage(message) &&
+                                        message.media_unavailable
+                                    "
+                                >
+                                    Imagem indisponível
                                 </p>
+                                <a
+                                    v-else-if="message.media_url"
+                                    :href="message.media_url"
+                                    target="_blank"
+                                    rel="noopener"
+                                    >Ver anexo</a
+                                >
+                                <p v-if="message.caption || message.text">
+                                    {{ message.caption || message.text }}
+                                </p>
+                                <small
+                                    >{{ messageDate(message.timestamp)
+                                    }}<span
+                                        v-if="
+                                            message.sending_status === 'sending'
+                                        "
+                                    >
+                                        · Enviando</span
+                                    ><span
+                                        v-else-if="
+                                            message.sending_status ===
+                                            'confirmation_pending'
+                                        "
+                                    >
+                                        · Aguardando confirmação</span
+                                    ><span
+                                        v-else-if="
+                                            message.sending_status === 'failed'
+                                        "
+                                    >
+                                        · Falhou</span
+                                    ></small
+                                >
+                            </article>
+                        </div>
+                        <button
+                            v-if="hasNewMessages"
+                            class="new-messages-button"
+                            type="button"
+                            @click="retryReadFromLatestButton"
+                        >
+                            <ArrowDown :size="16" /> Novas mensagens
+                        </button>
+                    </div>
+                    <div class="composer-area">
+                        <p v-if="!canCompose" class="composer-hint">
+                            Responsável: {{ selected.assigned_to?.name }}.
+                            Altere a atribuição no Perfil do contato para
+                            responder.
+                        </p>
+                        <p
+                            v-else-if="
+                                selected.status !== 'in_progress' ||
+                                !selected.assigned_to
+                            "
+                            class="composer-hint"
+                        >
+                            Ao enviar, você assume o atendimento e pausa a
+                            automação.
+                        </p>
+                        <div
+                            v-if="voiceActive"
+                            class="voice-composer"
+                            aria-live="polite"
+                        >
+                            <span v-if="voiceState === 'requesting'"
+                                >Aguardando permissão do microfone…</span
+                            >
+                            <template
+                                v-else-if="
+                                    voiceState === 'recording' ||
+                                    voiceState === 'stopping'
+                                "
+                            >
+                                <span class="recording-indicator"
+                                    >● Gravando
+                                    {{ durationLabel(voiceSeconds) }} /
+                                    2:00</span
+                                >
                                 <AppButton
-                                    v-else-if="message.media_endpoint"
                                     type="button"
                                     variant="secondary"
-                                    :disabled="message.media_loading"
-                                    @click="renewMedia(message, false)"
+                                    :disabled="voiceState === 'stopping'"
+                                    @click="stopVoice"
                                 >
-                                    {{
-                                        message.media_loading
-                                            ? 'Carregando áudio…'
-                                            : 'Carregar áudio'
-                                    }}
+                                    Parar
                                 </AppButton>
-                            </div>
-                            <button
-                                v-else-if="
-                                    isImage(message) && message.media_url
-                                "
-                                class="image-preview"
-                                @click="expandedImage = message.media_url || ''"
-                            >
-                                <img
-                                    :src="message.media_url"
-                                    alt="Imagem enviada na conversa"
-                                    @error="renewMedia(message)"
+                            </template>
+                            <template v-else-if="voiceState === 'preview'">
+                                <span
+                                    >Prévia ·
+                                    {{ durationLabel(voiceSeconds) }}</span
+                                >
+                                <audio
+                                    :src="voicePreviewUrl"
+                                    controls
+                                    preload="metadata"
+                                    aria-label="Ouvir gravação antes de enviar"
                                 />
-                            </button>
-                            <p
-                                v-else-if="
-                                    isImage(message) &&
-                                    message.media_unavailable
-                                "
-                            >
-                                Imagem indisponível
-                            </p>
-                            <a
-                                v-else-if="message.media_url"
-                                :href="message.media_url"
-                                target="_blank"
-                                rel="noopener"
-                                >Ver anexo</a
-                            >
-                            <p v-if="message.caption || message.text">
-                                {{ message.caption || message.text }}
-                            </p>
-                            <small
-                                >{{ messageDate(message.timestamp)
-                                }}<span
-                                    v-if="message.sending_status === 'sending'"
+                                <AppButton
+                                    type="button"
+                                    :disabled="!canRecord"
+                                    @click="sendVoice"
+                                    variant="primary"
                                 >
-                                    · Enviando</span
-                                ><span
-                                    v-else-if="
-                                        message.sending_status ===
-                                        'confirmation_pending'
-                                    "
-                                >
-                                    · Aguardando confirmação</span
-                                ><span
-                                    v-else-if="
-                                        message.sending_status === 'failed'
-                                    "
-                                >
-                                    · Falhou</span
-                                ></small
-                            >
-                        </article>
-                    </div>
-                    <button
-                        v-if="hasNewMessages"
-                        class="new-messages-button"
-                        type="button"
-                        @click="retryReadFromLatestButton"
-                    >
-                        <ArrowDown :size="16" /> Novas mensagens
-                    </button>
-                </div>
-                <div class="composer-area">
-                    <p v-if="!canCompose" class="composer-hint">
-                        Responsável: {{ selected.assigned_to?.name }}. Altere a
-                        atribuição no Perfil do contato para responder.
-                    </p>
-                    <p
-                        v-else-if="
-                            selected.status !== 'in_progress' ||
-                            !selected.assigned_to
-                        "
-                        class="composer-hint"
-                    >
-                        Ao enviar, você assume o atendimento e pausa a
-                        automação.
-                    </p>
-                    <div
-                        v-if="voiceActive"
-                        class="voice-composer"
-                        aria-live="polite"
-                    >
-                        <span v-if="voiceState === 'requesting'"
-                            >Aguardando permissão do microfone…</span
-                        >
-                        <template
-                            v-else-if="
-                                voiceState === 'recording' ||
-                                voiceState === 'stopping'
-                            "
-                        >
-                            <span class="recording-indicator"
-                                >● Gravando {{ durationLabel(voiceSeconds) }} /
-                                2:00</span
-                            >
+                                    Enviar áudio
+                                </AppButton>
+                            </template>
                             <AppButton
                                 type="button"
                                 variant="secondary"
-                                :disabled="voiceState === 'stopping'"
-                                @click="stopVoice"
+                                @click="discardVoice"
                             >
-                                Parar
+                                Descartar
                             </AppButton>
-                        </template>
-                        <template v-else-if="voiceState === 'preview'">
-                            <span
-                                >Prévia ·
-                                {{ durationLabel(voiceSeconds) }}</span
-                            >
-                            <audio
-                                :src="voicePreviewUrl"
-                                controls
-                                preload="metadata"
-                                aria-label="Ouvir gravação antes de enviar"
-                            />
-                            <AppButton
-                                type="button"
-                                :disabled="!canRecord"
-                                @click="sendVoice"
-                                variant="primary"
-                            >
-                                Enviar áudio
-                            </AppButton>
-                        </template>
-                        <AppButton
-                            type="button"
-                            variant="secondary"
-                            @click="discardVoice"
-                        >
-                            Descartar
-                        </AppButton>
-                    </div>
-                    <p v-if="voiceError" role="alert" class="voice-error">
-                        {{ voiceError }}
-                    </p>
-                    <form class="composer" @submit="sendMessage">
-                        <label class="attach" aria-label="Anexar arquivo"
-                            ><Plus :size="20" /><input
-                                type="file"
+                        </div>
+                        <p v-if="voiceError" role="alert" class="voice-error">
+                            {{ voiceError }}
+                        </p>
+                        <form class="composer" @submit="sendMessage">
+                            <label class="attach" aria-label="Anexar arquivo"
+                                ><Plus :size="20" /><input
+                                    type="file"
+                                    :disabled="composerBlocked"
+                                    accept="image/*,video/mp4,video/quicktime,.pdf,.doc,.docx"
+                                    @change="sendFile"
+                            /></label>
+                            <Textarea
+                                v-model="draft"
+                                rows="1"
                                 :disabled="composerBlocked"
-                                accept="image/*,video/mp4,video/quicktime,.pdf,.doc,.docx"
-                                @change="sendFile"
-                        /></label>
-                        <Textarea
-                            v-model="draft"
-                            rows="1"
-                            :disabled="composerBlocked"
-                            aria-label="Mensagem para o contato"
-                            placeholder="Mensagem…"
-                            @keydown.enter.exact.prevent="sendMessage"
-                        />
-                        <button
-                            type="button"
-                            class="voice-button"
-                            :disabled="composerBlocked"
-                            aria-label="Gravar mensagem de voz"
-                            title="Gravar mensagem de voz"
-                            @click="startVoice"
-                        >
-                            <Mic :size="18" />
-                        </button>
-                        <button
-                            class="send"
-                            :disabled="composerBlocked || !draft.trim()"
-                            aria-label="Enviar mensagem"
-                        >
-                            <Send :size="18" />
-                        </button>
-                    </form>
-                </div>
-            </template>
-            <div v-else class="empty-chat">
-                <h2>Selecione uma conversa</h2>
-                <p>Escolha um contato na lista para começar o atendimento.</p>
-            </div>
-        </section>
-        <aside
-            v-if="selected"
-            class="profile-pane"
-            :class="{ 'profile-mobile-open': mobilePane === 'profile' }"
-        >
-            <header class="profile-heading">
-                <button
-                    class="back"
-                    aria-label="Voltar para conversa"
-                    title="Voltar para conversa"
-                    @click="mobilePane = 'chat'"
-                >
-                    <ArrowLeft :size="20" /></button
-                ><b>Perfil do contato</b
-                ><button
-                    class="profile-collapse"
-                    title="Recolher perfil do contato"
-                    aria-label="Recolher perfil do contato"
-                    @click="profileCollapsed = true"
-                >
-                    <PanelRightClose :size="18" />
-                </button>
-            </header>
-            <div class="identity">
-                <span class="avatar big"
-                    >{{ initials(selected.contact.display_name)
-                    }}<img
-                        v-if="messageAvatar(selected)"
-                        :src="messageAvatar(selected)!"
-                        alt=""
-                        @error="avatarError(selected)" /></span
-                ><b>{{ selected.contact.display_name || 'Contato sem nome' }}</b
-                ><small>{{ selected.contact.phone }}</small>
-            </div>
-            <section class="service-controls" aria-labelledby="service-heading">
-                <h3 id="service-heading">Atendimento</h3>
-                <p><strong>Estado:</strong> {{ humanStatus }}</p>
-                <p>
-                    <strong>Responsável:</strong>
-                    {{ selected.assigned_to?.name || 'Sem responsável' }}
-                </p>
-                <AppButton
-                    v-if="
-                        !selected.assigned_to &&
-                        (selected.status === 'bot' ||
-                            selected.status === 'completed')
-                    "
-                    variant="secondary"
-                    class="full"
-                    :disabled="busy"
-                    @click="action('open')"
-                    >Abrir atendimento</AppButton
-                >
-                <AppButton
-                    v-if="
-                        selected.assigned_to?.id !== me.id ||
-                        selected.status !== 'in_progress'
-                    "
-                    variant="primary"
-                    class="full"
-                    :disabled="busy"
-                    @click="action('claim')"
-                    >Assumir para mim</AppButton
-                >
-                <div
-                    v-if="isAdmin && page.props.assignableMembers?.length"
-                    class="assignment-picker"
-                >
-                    <AppSelect
-                        v-model="assignUserId"
-                        aria-label="Atribuir a membro da equipe"
-                    >
-                        <option value="">Escolher membro da equipe</option>
-                        <option
-                            v-for="member in page.props.assignableMembers"
-                            :key="member.id"
-                            :value="String(member.id)"
-                        >
-                            {{ member.name }}
-                        </option>
-                    </AppSelect>
-                    <AppButton
-                        variant="secondary"
-                        :disabled="busy || !assignUserId"
-                        @click="assignContact"
-                        >Atribuir</AppButton
-                    >
-                </div>
-                <AppButton
-                    v-if="
-                        ['open', 'in_progress'].includes(selected.status) &&
-                        (selected.assigned_to?.id === me.id || isAdmin)
-                    "
-                    variant="secondary"
-                    class="full"
-                    :disabled="busy"
-                    @click="action('finish')"
-                    >Finalizar atendimento</AppButton
-                >
-            </section>
-            <form class="profile-form" @submit.prevent="saveContact">
-                <label>Nome<Input v-model="contactForm.display_name" /></label
-                ><label
-                    >E-mail<Input
-                        v-model="contactForm.email"
-                        type="email" /></label
-                ><label
-                    >CPF<Input
-                        v-model="contactForm.cpf"
-                        inputmode="numeric" /></label
-                ><AppButton
-                    type="submit"
-                    variant="secondary"
-                    class="full"
-                    :disabled="busy"
-                    >Salvar perfil</AppButton
-                >
-            </form>
-            <section
-                v-if="
-                    selected.contact.tags?.length ||
-                    selected.contact.custom_fields?.length
-                "
-                class="profile-data"
-            >
-                <h3>Dados do contato</h3>
-                <p v-if="selected.contact.tags?.length">
-                    <b>Etiquetas:</b>
-                    {{
-                        selected.contact.tags.map((tag) => tag.name).join(', ')
-                    }}
-                </p>
-                <p
-                    v-for="field in selected.contact.custom_fields"
-                    :key="field.id"
-                >
-                    <b>{{ field.name }}:</b> {{ field.value || '—' }}
-                </p>
-            </section>
-            <section
-                ref="automationRegion"
-                class="automation-pause"
-                aria-labelledby="automation-heading"
-            >
-                <div class="automation-heading">
-                    <h3 id="automation-heading">Automação</h3>
-                    <span
-                        data-automation-status
-                        tabindex="-1"
-                        class="automation-status"
-                        :class="`automation-status-${selected.automation?.state || 'allowed'}`"
-                        role="status"
-                        aria-live="polite"
-                    >
-                        <CirclePause
-                            v-if="selected.automation?.state === 'paused'"
-                            :size="14"
-                            aria-hidden="true"
-                        />
-                        <CircleOff
-                            v-else-if="
-                                selected.automation?.state === 'unavailable'
-                            "
-                            :size="14"
-                            aria-hidden="true"
-                        />
-                        <CircleCheck v-else :size="14" aria-hidden="true" />
-                        {{ automationStatus }}
-                    </span>
-                </div>
-                <div class="automation-summary" aria-live="polite">
-                    <p v-if="selected.automation?.state === 'unavailable'">
-                        Indisponível sem uma conexão do WhatsApp.
+                                aria-label="Mensagem para o contato"
+                                placeholder="Mensagem…"
+                                @keydown.enter.exact.prevent="sendMessage"
+                            />
+                            <button
+                                type="button"
+                                class="voice-button"
+                                :disabled="composerBlocked"
+                                aria-label="Gravar mensagem de voz"
+                                title="Gravar mensagem de voz"
+                                @click="startVoice"
+                            >
+                                <Mic :size="18" />
+                            </button>
+                            <button
+                                class="send"
+                                :disabled="composerBlocked || !draft.trim()"
+                                aria-label="Enviar mensagem"
+                            >
+                                <Send :size="18" />
+                            </button>
+                        </form>
+                    </div>
+                </template>
+                <div v-else class="empty-chat">
+                    <h2>Selecione uma conversa</h2>
+                    <p>
+                        Escolha um contato na lista para começar o atendimento.
                     </p>
-                    <template v-else>
-                        <template v-if="automationPauseLabel">
-                            <p class="automation-deadline">
-                                {{ automationPauseLabel }}
+                </div>
+            </section>
+            <aside
+                v-if="selected"
+                class="profile-pane"
+                :class="{ 'profile-mobile-open': mobilePane === 'profile' }"
+            >
+                <header class="profile-heading">
+                    <button
+                        class="back"
+                        aria-label="Voltar para conversa"
+                        title="Voltar para conversa"
+                        @click="mobilePane = 'chat'"
+                    >
+                        <ArrowLeft :size="20" /></button
+                    ><b>Perfil do contato</b
+                    ><button
+                        class="profile-collapse"
+                        title="Recolher perfil do contato"
+                        aria-label="Recolher perfil do contato"
+                        @click="profileCollapsed = true"
+                    >
+                        <PanelRightClose :size="18" />
+                    </button>
+                </header>
+                <div class="identity">
+                    <span class="avatar big"
+                        >{{ initials(selected.contact.display_name)
+                        }}<img
+                            v-if="messageAvatar(selected)"
+                            :src="messageAvatar(selected)!"
+                            alt=""
+                            @error="avatarError(selected)" /></span
+                    ><b>{{
+                        selected.contact.display_name || 'Contato sem nome'
+                    }}</b
+                    ><small>{{ selected.contact.phone }}</small>
+                </div>
+                <section
+                    class="service-controls"
+                    aria-labelledby="service-heading"
+                >
+                    <h3 id="service-heading">Atendimento</h3>
+                    <p><strong>Estado:</strong> {{ humanStatus }}</p>
+                    <p>
+                        <strong>Responsável:</strong>
+                        {{ selected.assigned_to?.name || 'Sem responsável' }}
+                    </p>
+                    <AppButton
+                        v-if="
+                            !selected.assigned_to &&
+                            (selected.status === 'bot' ||
+                                selected.status === 'completed')
+                        "
+                        variant="secondary"
+                        class="full"
+                        :disabled="busy"
+                        @click="action('open')"
+                        >Abrir atendimento</AppButton
+                    >
+                    <AppButton
+                        v-if="
+                            selected.assigned_to?.id !== me.id ||
+                            selected.status !== 'in_progress'
+                        "
+                        variant="primary"
+                        class="full"
+                        :disabled="busy"
+                        @click="action('claim')"
+                        >Assumir para mim</AppButton
+                    >
+                    <div
+                        v-if="isAdmin && page.props.assignableMembers?.length"
+                        class="assignment-picker"
+                    >
+                        <AppSelect
+                            v-model="assignUserId"
+                            aria-label="Atribuir a membro da equipe"
+                        >
+                            <option value="">Escolher membro da equipe</option>
+                            <option
+                                v-for="member in page.props.assignableMembers"
+                                :key="member.id"
+                                :value="String(member.id)"
+                            >
+                                {{ member.name }}
+                            </option>
+                        </AppSelect>
+                        <AppButton
+                            variant="secondary"
+                            :disabled="busy || !assignUserId"
+                            @click="assignContact"
+                            >Atribuir</AppButton
+                        >
+                    </div>
+                    <AppButton
+                        v-if="
+                            ['open', 'in_progress'].includes(selected.status) &&
+                            (selected.assigned_to?.id === me.id || isAdmin)
+                        "
+                        variant="secondary"
+                        class="full"
+                        :disabled="busy"
+                        @click="action('finish')"
+                        >Finalizar atendimento</AppButton
+                    >
+                </section>
+                <form class="profile-form" @submit.prevent="saveContact">
+                    <label
+                        >Nome<Input v-model="contactForm.display_name" /></label
+                    ><label
+                        >E-mail<Input
+                            v-model="contactForm.email"
+                            type="email" /></label
+                    ><label
+                        >CPF<Input
+                            v-model="contactForm.cpf"
+                            inputmode="numeric" /></label
+                    ><AppButton
+                        type="submit"
+                        variant="secondary"
+                        class="full"
+                        :disabled="busy"
+                        >Salvar perfil</AppButton
+                    >
+                </form>
+                <section
+                    v-if="
+                        selected.contact.tags?.length ||
+                        selected.contact.custom_fields?.length
+                    "
+                    class="profile-data"
+                >
+                    <h3>Dados do contato</h3>
+                    <p v-if="selected.contact.tags?.length">
+                        <b>Etiquetas:</b>
+                        {{
+                            selected.contact.tags
+                                .map((tag) => tag.name)
+                                .join(', ')
+                        }}
+                    </p>
+                    <p
+                        v-for="field in selected.contact.custom_fields"
+                        :key="field.id"
+                    >
+                        <b>{{ field.name }}:</b> {{ field.value || '—' }}
+                    </p>
+                </section>
+                <section
+                    ref="automationRegion"
+                    class="automation-pause"
+                    aria-labelledby="automation-heading"
+                >
+                    <div class="automation-heading">
+                        <h3 id="automation-heading">Automação</h3>
+                        <span
+                            data-automation-status
+                            tabindex="-1"
+                            class="automation-status"
+                            :class="`automation-status-${selected.automation?.state || 'allowed'}`"
+                            role="status"
+                            aria-live="polite"
+                        >
+                            <CirclePause
+                                v-if="selected.automation?.state === 'paused'"
+                                :size="14"
+                                aria-hidden="true"
+                            />
+                            <CircleOff
+                                v-else-if="
+                                    selected.automation?.state === 'unavailable'
+                                "
+                                :size="14"
+                                aria-hidden="true"
+                            />
+                            <CircleCheck v-else :size="14" aria-hidden="true" />
+                            {{ automationStatus }}
+                        </span>
+                    </div>
+                    <div class="automation-summary" aria-live="polite">
+                        <p v-if="selected.automation?.state === 'unavailable'">
+                            Indisponível sem uma conexão do WhatsApp.
+                        </p>
+                        <template v-else>
+                            <template v-if="automationPauseLabel">
+                                <p class="automation-deadline">
+                                    {{ automationPauseLabel }}
+                                </p>
+                                <p
+                                    v-if="selected.automation?.expires_at"
+                                    class="automation-helper"
+                                >
+                                    Fuso: {{ automationTimezone }}
+                                </p>
+                                <p>
+                                    Ao liberar, a automação aguarda um novo
+                                    gatilho.
+                                </p>
+                            </template>
+                            <p
+                                v-if="
+                                    selected.automation?.pause_reasons.includes(
+                                        'human',
+                                    )
+                                "
+                                class="automation-human"
+                            >
+                                Finalize o atendimento humano para liberar a
+                                automação.
                             </p>
                             <p
-                                v-if="selected.automation?.expires_at"
-                                class="automation-helper"
+                                v-if="
+                                    selected.automation?.execution_status ===
+                                    'running'
+                                "
                             >
-                                Fuso: {{ automationTimezone }}
+                                Execução em andamento.
                             </p>
-                            <p>
-                                Ao liberar, a automação aguarda um novo gatilho.
+                            <p
+                                v-else-if="
+                                    selected.automation?.execution_status ===
+                                    'waiting_reply'
+                                "
+                            >
+                                Aguardando resposta do contato.
+                            </p>
+                            <p
+                                v-else-if="
+                                    selected.automation?.execution_status ===
+                                    'waiting_menu'
+                                "
+                            >
+                                Aguardando escolha no menu.
+                            </p>
+                            <p
+                                v-else-if="
+                                    selected.automation?.execution_status ===
+                                    'waiting_ai'
+                                "
+                            >
+                                Atendimento com IA em andamento.
+                            </p>
+                            <p class="automation-helper">
+                                Apenas este contato nesta conexão do WhatsApp.
                             </p>
                         </template>
-                        <p
+                    </div>
+                    <template
+                        v-if="selected.automation?.state !== 'unavailable'"
+                    >
+                        <AppButton
                             v-if="
-                                selected.automation?.pause_reasons.includes(
-                                    'human',
-                                )
+                                selected.automation?.can_pause && !pauseFormOpen
                             "
-                            class="automation-human"
+                            data-pause-trigger
+                            data-automation-action
+                            type="button"
+                            variant="secondary"
+                            class="full"
+                            :disabled="automationBusy"
+                            @click="openPauseForm"
+                            >Pausar automação</AppButton
                         >
-                            Finalize o atendimento humano para liberar a
-                            automação.
-                        </p>
-                        <p
+                        <form
                             v-if="
-                                selected.automation?.execution_status ===
-                                'running'
+                                pauseFormOpen && selected.automation?.can_pause
                             "
+                            class="automation-form"
+                            @submit.prevent="changeAutomation('pause')"
                         >
-                            Execução em andamento.
-                        </p>
+                            <fieldset :disabled="automationBusy">
+                                <legend>Por quanto tempo?</legend>
+                                <div
+                                    v-for="choice in pauseChoices"
+                                    :key="choice.value"
+                                    class="automation-choice"
+                                >
+                                    <label
+                                        class="automation-option"
+                                        :class="{
+                                            'automation-option-selected':
+                                                pauseForm.choice ===
+                                                choice.value,
+                                        }"
+                                    >
+                                        <input
+                                            v-model="pauseForm.choice"
+                                            type="radio"
+                                            :value="choice.value"
+                                            :aria-label="choice.label"
+                                            name="automation-pause-mode"
+                                            :aria-describedby="`pause-description-${choice.value}`"
+                                        />
+                                        <span
+                                            ><strong>{{ choice.label }}</strong
+                                            ><span
+                                                :id="`pause-description-${choice.value}`"
+                                                class="automation-helper"
+                                                >{{ choice.description }}</span
+                                            ></span
+                                        >
+                                    </label>
+                                    <div
+                                        v-if="
+                                            choice.value === 'custom' &&
+                                            pauseForm.choice === 'custom'
+                                        "
+                                        class="automation-custom"
+                                    >
+                                        <div class="automation-date-fields">
+                                            <label
+                                                >Data<Input
+                                                    v-model="pauseForm.date"
+                                                    type="date"
+                                                    required
+                                                    aria-describedby="automation-timezone automation-error"
+                                            /></label>
+                                            <label
+                                                >Horário<Input
+                                                    v-model="pauseForm.time"
+                                                    type="time"
+                                                    required
+                                                    aria-describedby="automation-timezone automation-error"
+                                            /></label>
+                                        </div>
+                                        <p
+                                            id="automation-timezone"
+                                            class="automation-helper"
+                                        >
+                                            Fuso: {{ automationTimezone }}
+                                        </p>
+                                    </div>
+                                </div>
+                                <p class="automation-impact">
+                                    A execução atual será interrompida. Quando a
+                                    pausa terminar, a automação poderá iniciar
+                                    com um novo gatilho.
+                                </p>
+                                <div class="automation-actions">
+                                    <AppButton
+                                        type="button"
+                                        variant="secondary"
+                                        @click="cancelPauseForm"
+                                        >Cancelar</AppButton
+                                    >
+                                    <AppButton
+                                        type="submit"
+                                        variant="primary"
+                                        :loading="automationBusy"
+                                        >{{
+                                            automationBusy
+                                                ? 'Pausando…'
+                                                : 'Confirmar pausa'
+                                        }}</AppButton
+                                    >
+                                </div>
+                            </fieldset>
+                        </form>
+                        <AppButton
+                            v-if="selected.automation?.can_resume"
+                            data-automation-action
+                            type="button"
+                            variant="secondary"
+                            class="full"
+                            :loading="automationBusy"
+                            @click="changeAutomation('resume')"
+                            >{{
+                                automationBusy
+                                    ? 'Retomando…'
+                                    : 'Retomar automação'
+                            }}</AppButton
+                        >
                         <p
-                            v-else-if="
-                                selected.automation?.execution_status ===
-                                'waiting_reply'
-                            "
+                            id="automation-error"
+                            class="automation-error"
+                            role="alert"
+                            tabindex="-1"
+                            :hidden="!automationError"
                         >
-                            Aguardando resposta do contato.
-                        </p>
-                        <p
-                            v-else-if="
-                                selected.automation?.execution_status ===
-                                'waiting_menu'
-                            "
-                        >
-                            Aguardando escolha no menu.
-                        </p>
-                        <p
-                            v-else-if="
-                                selected.automation?.execution_status ===
-                                'waiting_ai'
-                            "
-                        >
-                            Atendimento com IA em andamento.
-                        </p>
-                        <p class="automation-helper">
-                            Apenas este contato nesta conexão do WhatsApp.
+                            {{ automationError }}
                         </p>
                     </template>
-                </div>
-                <template v-if="selected.automation?.state !== 'unavailable'">
-                    <AppButton
-                        v-if="selected.automation?.can_pause && !pauseFormOpen"
-                        data-pause-trigger
-                        data-automation-action
-                        type="button"
+                </section>
+                <section class="note-area">
+                    <ContactSequence
+                        v-if="workspace && selected"
+                        :key="`${workspace.id}:${selected.contact.id}`"
+                        :workspace-id="workspace.id"
+                        :contact-id="selected.contact.id"
+                    />
+                    <h3>Notas internas</h3>
+                    <div
+                        v-for="note in selected.notes || []"
+                        :key="note.id"
+                        class="note"
+                    >
+                        <p>{{ note.body }}</p>
+                        <small
+                            >{{ note.author }} ·
+                            {{ time(note.created_at) }}</small
+                        >
+                    </div>
+                    <Textarea
+                        v-model="noteDraft"
+                        rows="3"
+                        placeholder="Adicionar nota interna"
+                    /><AppButton
                         variant="secondary"
                         class="full"
-                        :disabled="automationBusy"
-                        @click="openPauseForm"
-                        >Pausar automação</AppButton
+                        :disabled="!noteDraft.trim()"
+                        @click="addNote"
                     >
-                    <form
-                        v-if="pauseFormOpen && selected.automation?.can_pause"
-                        class="automation-form"
-                        @submit.prevent="changeAutomation('pause')"
-                    >
-                        <fieldset :disabled="automationBusy">
-                            <legend>Por quanto tempo?</legend>
-                            <div
-                                v-for="choice in pauseChoices"
-                                :key="choice.value"
-                                class="automation-choice"
-                            >
-                                <label
-                                    class="automation-option"
-                                    :class="{
-                                        'automation-option-selected':
-                                            pauseForm.choice === choice.value,
-                                    }"
-                                >
-                                    <input
-                                        v-model="pauseForm.choice"
-                                        type="radio"
-                                        :value="choice.value"
-                                        :aria-label="choice.label"
-                                        name="automation-pause-mode"
-                                        :aria-describedby="`pause-description-${choice.value}`"
-                                    />
-                                    <span
-                                        ><strong>{{ choice.label }}</strong
-                                        ><span
-                                            :id="`pause-description-${choice.value}`"
-                                            class="automation-helper"
-                                            >{{ choice.description }}</span
-                                        ></span
-                                    >
-                                </label>
-                                <div
-                                    v-if="
-                                        choice.value === 'custom' &&
-                                        pauseForm.choice === 'custom'
-                                    "
-                                    class="automation-custom"
-                                >
-                                    <div class="automation-date-fields">
-                                        <label
-                                            >Data<Input
-                                                v-model="pauseForm.date"
-                                                type="date"
-                                                required
-                                                aria-describedby="automation-timezone automation-error"
-                                        /></label>
-                                        <label
-                                            >Horário<Input
-                                                v-model="pauseForm.time"
-                                                type="time"
-                                                required
-                                                aria-describedby="automation-timezone automation-error"
-                                        /></label>
-                                    </div>
-                                    <p
-                                        id="automation-timezone"
-                                        class="automation-helper"
-                                    >
-                                        Fuso: {{ automationTimezone }}
-                                    </p>
-                                </div>
-                            </div>
-                            <p class="automation-impact">
-                                A execução atual será interrompida. Quando a
-                                pausa terminar, a automação poderá iniciar com
-                                um novo gatilho.
-                            </p>
-                            <div class="automation-actions">
-                                <AppButton
-                                    type="button"
-                                    variant="secondary"
-                                    @click="cancelPauseForm"
-                                    >Cancelar</AppButton
-                                >
-                                <AppButton
-                                    type="submit"
-                                    variant="primary"
-                                    :loading="automationBusy"
-                                    >{{
-                                        automationBusy
-                                            ? 'Pausando…'
-                                            : 'Confirmar pausa'
-                                    }}</AppButton
-                                >
-                            </div>
-                        </fieldset>
-                    </form>
-                    <AppButton
-                        v-if="selected.automation?.can_resume"
-                        data-automation-action
-                        type="button"
-                        variant="secondary"
-                        class="full"
-                        :loading="automationBusy"
-                        @click="changeAutomation('resume')"
-                        >{{
-                            automationBusy ? 'Retomando…' : 'Retomar automação'
-                        }}</AppButton
-                    >
-                    <p
-                        id="automation-error"
-                        class="automation-error"
-                        role="alert"
-                        tabindex="-1"
-                        :hidden="!automationError"
-                    >
-                        {{ automationError }}
-                    </p>
-                </template>
-            </section>
-            <section class="note-area">
-                <ContactSequence
-                    v-if="workspace && selected"
-                    :key="`${workspace.id}:${selected.contact.id}`"
-                    :workspace-id="workspace.id"
-                    :contact-id="selected.contact.id"
-                    @dialog-open-change="sequenceDialogOpen = $event"
-                />
-                <h3>Notas internas</h3>
-                <div
-                    v-for="note in selected.notes || []"
-                    :key="note.id"
-                    class="note"
-                >
-                    <p>{{ note.body }}</p>
-                    <small
-                        >{{ note.author }} · {{ time(note.created_at) }}</small
-                    >
-                </div>
-                <Textarea
-                    v-model="noteDraft"
-                    rows="3"
-                    placeholder="Adicionar nota interna"
-                /><AppButton
-                    variant="secondary"
-                    class="full"
-                    :disabled="!noteDraft.trim()"
-                    @click="addNote"
-                >
-                    Adicionar nota
-                </AppButton>
-            </section>
-        </aside>
-        <aside v-else class="profile-pane empty-profile">
-            O perfil do contato aparece aqui.
-        </aside>
-        <div
-            v-if="expandedImage"
-            class="image-modal"
-            @click.self="expandedImage = ''"
-            @keydown.esc="expandedImage = ''"
-        >
-            <button
-                class="image-modal-close"
-                aria-label="Fechar imagem"
-                title="Fechar imagem"
-                @click="expandedImage = ''"
+                        Adicionar nota
+                    </AppButton>
+                </section>
+            </aside>
+            <aside v-else class="profile-pane empty-profile">
+                O perfil do contato aparece aqui.
+            </aside>
+            <div
+                v-if="expandedImage"
+                class="image-modal"
+                @click.self="expandedImage = ''"
+                @keydown.esc="expandedImage = ''"
             >
-                <X :size="20" /></button
-            ><img :src="expandedImage" alt="Imagem ampliada" />
-        </div>
-    </main>
+                <button
+                    class="image-modal-close"
+                    aria-label="Fechar imagem"
+                    title="Fechar imagem"
+                    @click="expandedImage = ''"
+                >
+                    <X :size="20" /></button
+                ><img :src="expandedImage" alt="Imagem ampliada" />
+            </div>
+        </main>
+    </div>
     <Dialog :open="filterOpen" @update:open="filterOpen = $event">
         <DialogContent
             class="conversation-filter-dialog max-h-[calc(100dvh-2rem)] w-[min(380px,calc(100vw-2rem))] overflow-y-auto p-5"
@@ -2747,33 +2774,76 @@ onUnmounted(() => {
             </DialogFooter>
         </DialogContent>
     </Dialog>
-    <Dialog v-model:open="connectionDialogOpen">
-        <DialogContent @close-auto-focus="restoreConnectionFocus">
-            <DialogHeader class="pr-8 text-left">
-                <DialogTitle>Problema de conexão</DialogTitle>
-                <DialogDescription>
-                    {{ connectionNoticeMessages.join(' ') }}
-                </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-                <a
-                    v-if="isAdmin && connectionWarning"
-                    href="/settings/whatsapp"
-                    class="self-center text-sm font-medium underline"
-                    >Configurar conexão</a
-                >
-                <AppButton @click="connectionDialogOpen = false"
-                    >Entendi</AppButton
-                >
-            </DialogFooter>
-        </DialogContent>
-    </Dialog>
     <AppDialog :dialog="dialog" @resolve="finish" />
 </template>
 
 <style scoped>
 * {
     box-sizing: border-box;
+}
+.connection-setup {
+    display: grid;
+    place-items: center;
+    min-height: 100%;
+    padding: 32px 20px;
+    color: var(--foreground);
+}
+.connection-setup-content {
+    width: 100%;
+    max-width: 480px;
+    text-align: center;
+}
+.connection-setup-icon {
+    display: grid;
+    place-items: center;
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 24px;
+    border-radius: 20px;
+    background: var(--muted);
+    color: var(--primary);
+}
+.connection-setup h1 {
+    margin: 0 0 12px;
+    font-size: clamp(22px, 3vw, 28px);
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.025em;
+}
+.connection-setup p {
+    color: var(--muted-foreground);
+    font-size: 15px;
+    line-height: 1.65;
+}
+.connection-setup-guidance {
+    margin-top: 16px;
+}
+.connection-setup-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 24px;
+}
+.realtime-notice {
+    padding: 10px 20px;
+    background: var(--muted);
+    color: var(--muted-foreground);
+    font-size: 13px;
+    line-height: 1.5;
+}
+.connected-chat {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+.connected-chat > .chat-shell {
+    flex: 1;
+    height: auto;
+}
+.realtime-notice {
+    flex: none;
 }
 .chat-shell {
     height: 100%;

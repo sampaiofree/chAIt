@@ -96,7 +96,7 @@
 .leads-list-head,
 .leads-list-row {
     display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1.5fr) 150px 110px;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1.5fr) 150px 190px;
     gap: 20px;
     padding: 16px 20px;
     align-items: center;
@@ -187,6 +187,11 @@
 .leads-date {
     color: var(--muted-foreground);
     font-size: 13px;
+}
+.leads-row-action > a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
 }
 .leads-row-action {
     display: flex;

@@ -7,6 +7,7 @@ use App\Models\ContactChannel;
 use App\Models\Thread;
 use App\Models\UazapiConnection;
 use App\Services\Contacts\ContactIdentity;
+use App\Services\Contacts\ContactReset;
 use App\Services\Flows\FlowExecutionManager;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -38,6 +39,15 @@ class ChatProjection
         }
 
         return DB::transaction(function () use ($connection, $chat, $message, $external, $allowCreate) {
+            $reset = app(ContactReset::class);
+            $reset->lock($connection->workspace_id, $external);
+            $cutoff = $reset->cutoff($connection->workspace_id, $external);
+            if ($message && $cutoff) {
+                $timestamp = $this->timestamp($message['messageTimestamp'] ?? $message['timestamp'] ?? null);
+                if (! $timestamp || $timestamp->lte($cutoff)) {
+                    return null;
+                }
+            }
             $thread = Thread::where('workspace_id', $connection->workspace_id)->where('uazapi_connection_id', $connection->id)->where('external_chat_id', $external)->first();
             if (! $thread && ! $allowCreate) {
                 return null;

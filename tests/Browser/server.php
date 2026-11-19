@@ -21,6 +21,7 @@ if ($app->environment('testing') && getenv('CHAIT_BROWSER_WHATSAPP_CHECK') === '
     config(['services.uazapi.base_url' => 'https://uazapi.browser.test', 'inertia.ssr.enabled' => false]);
     Http::preventStrayRequests();
     Http::fake([
+        'https://uazapi.browser.test/instance/status' => Http::response(['status' => 'connected']),
         'https://uazapi.browser.test/chat/check' => function ($request) {
             $phone = $request['numbers'][0];
             if ($phone === '5511987654323') {

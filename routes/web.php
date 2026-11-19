@@ -69,6 +69,8 @@ Route::middleware(['auth', 'verified', RequireConnectedChat::class])->group(func
     Route::get('workspaces/{workspace}/leads', [LeadController::class, 'index'])->name('workspaces.leads.index');
     Route::post('workspaces/{workspace}/leads', [LeadController::class, 'store'])->name('workspaces.leads.store');
     Route::get('workspaces/{workspace}/leads/{lead}', [LeadController::class, 'show'])->name('workspaces.leads.show');
+    Route::delete('workspaces/{workspace}/leads/{lead}', [LeadController::class, 'destroy'])->name('workspaces.leads.destroy');
+    Route::post('workspaces/{workspace}/conversations/leads/{lead}/open', [LeadController::class, 'openConversation'])->name('workspaces.leads.conversation');
     Route::patch('workspaces/{workspace}/leads/{lead}', [LeadController::class, 'update'])->name('workspaces.leads.update');
     Route::post('workspaces/{workspace}/uazapi/import', [ChatController::class, 'import'])->name('workspaces.uazapi.import');
     Route::post('workspaces/{workspace}/uazapi/diagnose', [UazapiChatController::class, 'diagnose'])->name('workspaces.uazapi.diagnose');

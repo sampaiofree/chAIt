@@ -11,8 +11,11 @@ use App\Models\FlowExecution;
 use App\Models\Thread;
 use App\Models\User;
 use App\Queue\Middleware\WorkspaceCapacity;
+use App\Services\Chat\ChatConnectionAccess;
+use App\Services\Chat\ChatProjection;
 use App\Services\Chat\ChatPublisher;
 use App\Services\Chat\TransportContext;
+use App\Services\Contacts\ContactReset;
 use App\Services\Flows\FlowExecutionManager;
 use App\Services\Flows\FlowMedia;
 use App\Services\Flows\FlowRuntime;
@@ -26,6 +29,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -54,6 +58,22 @@ class ProcessChatOperation implements ShouldQueue
     }
 
     public function handle(UazapiClient $client, ChatPublisher $publisher): void
+    {
+        DB::transaction(function () use ($client, $publisher) {
+            $operation = ChatOperation::find($this->operationId);
+            $thread = $operation ? Thread::find($operation->thread_id) : null;
+            if (! $thread) {
+                return;
+            }
+            app(ContactReset::class)->lock($thread->workspace_id, (string) $thread->external_chat_id);
+            if (! $thread->contact()->lockForUpdate()->first()) {
+                return;
+            }
+            $this->process($client, $publisher);
+        }, 3);
+    }
+
+    private function process(UazapiClient $client, ChatPublisher $publisher): void
     {
         $lock = Cache::lock('chat-operation:'.$this->operationId, 200);
         if (! $lock->get()) {
@@ -112,8 +132,8 @@ class ProcessChatOperation implements ShouldQueue
                 return;
             }
             $user = User::findOrFail($operation->user_id);
-            $access = app(\App\Services\Chat\ChatConnectionAccess::class)->state($thread->workspace);
-            abort_unless($access['allowed'],409,'WhatsApp desconectado ou indisponível.');
+            $access = app(ChatConnectionAccess::class)->state($thread->workspace);
+            abort_unless($access['allowed'], 409, 'WhatsApp desconectado ou indisponível.');
             abort_unless($user->canAccessWorkspace($thread->workspace), 403);
             $request = Request::create('/', in_array($operation->kind, ['send', 'send_file', 'read'], true) ? 'POST' : 'GET', $payload);
             $request->headers->set('Accept', 'application/json');
@@ -136,6 +156,17 @@ class ProcessChatOperation implements ShouldQueue
                     abort_unless(collect($items)->contains(fn ($item) => (string) ($item['id'] ?? $item['messageid'] ?? '') === $messageId && (string) ($item['chatid'] ?? data_get($item, 'key.remoteJid') ?? '') === $thread->external_chat_id), 404);
                     $payload['media_verified'] = true;
                     $operation->update(['payload' => $payload]);
+                }
+                $cutoff = app(ContactReset::class)->cutoff($thread->workspace_id, (string) $thread->external_chat_id);
+                if ($cutoff) {
+                    $found = $client->findMessage($thread->uazapiConnection, $messageId);
+                    $items = $found['messages'] ?? $found['data'] ?? $found['items'] ?? [];
+                    abort_unless(collect($items)->contains(function ($item) use ($messageId, $thread, $cutoff) {
+                        $time = app(ChatProjection::class)->timestamp($item['messageTimestamp'] ?? $item['timestamp'] ?? null);
+
+                        return (string) ($item['id'] ?? $item['messageid'] ?? '') === $messageId
+                            && (string) ($item['chatid'] ?? data_get($item, 'key.remoteJid') ?? '') === $thread->external_chat_id && $time && $time->gt($cutoff);
+                    }), 404);
                 }
                 $download = $client->downloadMessage($thread->uazapiConnection, $messageId);
                 $this->settle($operation, 'completed', ['data' => ['url' => $download['fileURL'] ?? null]], $publisher);

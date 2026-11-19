@@ -23,6 +23,9 @@ type MockThread = Omit<typeof thread, 'assigned_to'> & {
     assigned_to: { id: number; name: string } | null;
 };
 async function mockChat(page: Page, activeThread: MockThread = thread) {
+    await page.route('**/workspaces/*/chat-access', (route) =>
+        route.fulfill({ json: { allowed: true, status: 'connected' } }),
+    );
     await page.route('**/workspaces/*/uazapi/status', (route) =>
         route.fulfill({
             json: {
@@ -771,42 +774,191 @@ test('conversation search and filter button share a row across themes and widths
     }
 });
 
-test('connection warning appears only when disconnected or provider is unavailable', async ({
+test('connection setup guides administrators and recovers without a modal', async ({
     page,
 }) => {
     await login(page);
+    await page.clock.install();
+    await page.route('**/workspaces/*/chat-access', (route) =>
+        route.fulfill({ json: { allowed: false, status: 'disconnected' } }),
+    );
+    await page.route('**/workspaces/*/uazapi/status', (route) =>
+        route.fulfill({ json: { data: null } }),
+    );
+    await page.reload();
+    await expect(
+        page.getByRole('heading', {
+            name: 'Conecte seu WhatsApp para começar',
+        }),
+    ).toBeVisible();
+    await expect(
+        page.getByText('Em Configurações → WhatsApp', { exact: false }),
+    ).toBeVisible();
     await expect(
         page.getByRole('dialog', { name: 'Problema de conexão' }),
     ).toHaveCount(0);
-    await page.route('**/workspaces/*/uazapi/status', (route) =>
-        route.fulfill({
-            json: { data: { status: 'disconnected', phone: null } },
+    await expect(page.locator('.chat-shell')).toHaveCount(0);
+    await expect(
+        page.getByText('As conversas locais continuam disponíveis.', {
+            exact: false,
         }),
-    );
-    await page.reload();
+    ).toHaveCount(0);
+    const shortcut = page.getByRole('link', {
+        name: 'Conectar WhatsApp',
+        exact: true,
+    });
+    await expect(shortcut).toHaveAttribute('href', '/settings/whatsapp');
+    await shortcut.click();
+    await expect(page).toHaveURL(/\/settings\/whatsapp$/);
     await expect(
-        page.getByRole('dialog', { name: 'Problema de conexão' }),
-    ).toContainText('WhatsApp desconectado');
-    await expect(
-        page
-            .getByRole('dialog', { name: 'Problema de conexão' })
-            .getByRole('link', { name: 'Configurar conexão' }),
+        page.getByRole('button', { name: 'Conectar com QR Code' }),
     ).toBeVisible();
-    await page.route('**/workspaces/*/uazapi/status', (route) =>
-        route.fulfill({
-            json: {
-                data: {
-                    status: 'connected',
-                    phone: null,
-                    provider_available: false,
-                },
-            },
-        }),
+    await page.goto('/dashboard');
+    await expect(shortcut).toBeVisible();
+    await mockChat(page);
+    await page.clock.fastForward(15000);
+    await expect(page.locator('.chat-shell')).toBeVisible();
+    await expect(page.locator('.connection-setup')).toHaveCount(0);
+});
+
+test('connection setup directs agents to their administrator', async ({
+    page,
+}) => {
+    await login(page, 'agent@example.test');
+    await page.route('**/workspaces/*/chat-access', (route) =>
+        route.fulfill({ json: { allowed: false, status: 'disconnected' } }),
     );
     await page.reload();
     await expect(
+        page.getByText(
+            'Peça ao administrador do workspace para conectar o WhatsApp.',
+        ),
+    ).toBeVisible();
+    await expect(
+        page.getByRole('link', { name: 'Conectar WhatsApp', exact: true }),
+    ).toHaveCount(0);
+    await expect(
         page.getByRole('dialog', { name: 'Problema de conexão' }),
-    ).toContainText('WhatsApp indisponível');
+    ).toHaveCount(0);
+});
+
+for (const failure of ['unavailable', 'network', 'checking']) {
+    test(`temporary connection check (${failure}) offers retry without asking to pair`, async ({
+        page,
+    }) => {
+        await login(page);
+        await page.clock.install();
+        await page.route('**/workspaces/*/chat-access', (route) =>
+            failure === 'network'
+                ? route.abort('failed')
+                : route.fulfill({ json: { allowed: false, status: failure } }),
+        );
+        await page.reload();
+        await expect(
+            page.getByRole('heading', {
+                name:
+                    failure === 'checking'
+                        ? 'Preparando suas conversas…'
+                        : 'Estamos verificando sua conexão',
+            }),
+        ).toBeVisible();
+        await expect(
+            page.getByRole('link', { name: 'Conectar WhatsApp', exact: true }),
+        ).toHaveCount(0);
+        await expect(
+            page.getByRole('dialog', { name: 'Problema de conexão' }),
+        ).toHaveCount(0);
+
+        if (failure === 'checking') {
+            await mockChat(page);
+            await page.clock.fastForward(15000);
+        } else {
+            await mockChat(page);
+            await page
+                .getByRole('button', { name: 'Verificar novamente' })
+                .click();
+        }
+
+        await expect(page.locator('.chat-shell')).toBeVisible();
+    });
+}
+
+test('initial connection check stays neutral while pending', async ({
+    page,
+}) => {
+    await login(page);
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    await page.route('**/workspaces/*/chat-access', async (route) => {
+        await gate;
+        await route.fulfill({
+            json: { allowed: false, status: 'disconnected' },
+        });
+    });
+    await page.reload();
+    await expect(
+        page.getByRole('heading', { name: 'Preparando suas conversas…' }),
+    ).toBeVisible();
+    await expect(
+        page.getByRole('link', { name: 'Conectar WhatsApp', exact: true }),
+    ).toHaveCount(0);
+    release();
+    await expect(
+        page.getByRole('heading', {
+            name: 'Conecte seu WhatsApp para começar',
+        }),
+    ).toBeVisible();
+});
+
+test('connection setup fits mobile iPad and desktop in both themes', async ({
+    page,
+}, testInfo) => {
+    await login(page);
+    await page.route('**/workspaces/*/chat-access', (route) =>
+        route.fulfill({ json: { allowed: false, status: 'disconnected' } }),
+    );
+    await page.reload();
+
+    for (const theme of ['light', 'dark'] as const) {
+        await page.emulateMedia({ colorScheme: theme });
+        await page.evaluate(
+            (value) =>
+                document.documentElement.classList.toggle(
+                    'dark',
+                    value === 'dark',
+                ),
+            theme,
+        );
+
+        for (const viewport of [
+            { width: 390, height: 844 },
+            { width: 820, height: 1180 },
+            { width: 1180, height: 820 },
+            { width: 1440, height: 900 },
+        ]) {
+            await page.setViewportSize(viewport);
+            await expect(
+                page.getByRole('heading', {
+                    name: 'Conecte seu WhatsApp para começar',
+                }),
+            ).toBeVisible();
+            await expect(
+                page.getByRole('link', {
+                    name: 'Conectar WhatsApp',
+                    exact: true,
+                }),
+            ).toBeInViewport();
+            await noOverflow(page);
+            await page.screenshot({
+                path: testInfo.outputPath(
+                    `connection-setup-${theme}-${viewport.width}.png`,
+                ),
+                animations: 'disabled',
+            });
+        }
+    }
 });
 
 test('message composer aligns controls and highlights the text field across layouts and themes', async ({
@@ -1723,8 +1875,10 @@ test('settings use available width across sections and screen sizes', async ({
 
     for (const width of [390, 1440, 1920]) {
         await page.setViewportSize({ width, height: 900 });
+
         for (const path of paths) {
             await page.goto(path);
+
             if (page.url().includes('/user/confirm-password')) {
                 await page
                     .getByLabel('Senha', { exact: true })
@@ -1733,14 +1887,17 @@ test('settings use available width across sections and screen sizes', async ({
                     .getByRole('button', { name: 'Confirmar', exact: true })
                     .click();
             }
+
             const layout = page.locator('.settings-page');
             await expect(layout).toBeVisible();
+
             for (let state = 0; state < (width >= 1024 ? 2 : 1); state++) {
                 await noOverflow(page);
                 const sizes = await layout.evaluate((element) => {
                     const section = element.querySelector(':scope > section');
                     const card = element.querySelector('.settings-card');
                     const style = getComputedStyle(element);
+
                     return {
                         available:
                             element.clientWidth -
@@ -1751,8 +1908,11 @@ test('settings use available width across sections and screen sizes', async ({
                     };
                 });
                 expect(sizes.section).toBeCloseTo(sizes.available, 0);
-                if (sizes.card !== undefined)
+
+                if (sizes.card !== undefined) {
                     expect(sizes.card).toBeCloseTo(sizes.available, 0);
+                }
+
                 if (width >= 1024) {
                     await page
                         .getByRole('button', {

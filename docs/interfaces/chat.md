@@ -63,6 +63,8 @@ Da esquerda para a direita:
 
 - Exibe as conversas do **workspace selecionado** que o usuário tem permissão para visualizar.
 - Busca por nome e telefone e botão de filtros aparecem na mesma linha. O cabeçalho visual da lista foi removido; falhas de conexão aparecem em aviso próprio.
+- Conversas permanece como tela inicial após login e troca de workspace. Sem WhatsApp conectado, a tela orienta a configuração com o título **Conecte seu WhatsApp para começar** e, para administradores, botão **Conectar WhatsApp** para Configurações → WhatsApp. Atendentes são orientados a procurar o administrador. Não há modal automático de conexão nem promessa de acesso a conversas locais nesse estado.
+- A consulta inicial mostra **Preparando suas conversas…**. Indisponibilidade temporária mostra **Estamos verificando sua conexão**, com nova verificação automática e botão **Verificar novamente**, sem pedir novo pareamento. Ao confirmar a conexão, o chat reaparece automaticamente. Falhas apenas no tempo real usam aviso discreto dentro do chat, sem interromper a navegação ou outros modais.
 - O painel de filtros reúne atribuição (**Todos**, **Meus chats**, **Não atribuídos**), **Atendimentos abertos** e etiquetas do contato. Abertos inclui `open` e `in_progress`. Várias etiquetas usam correspondência por qualquer uma; os grupos de critérios e a busca se combinam.
 - Os filtros são aplicados na API antes do limite e da paginação e preservam a autorização por papel, atribuição e `can_view_unassigned`, descrita em Chat e multiatendimento §4; **Todos** não amplia esse conjunto. O backend ainda aceita `status=completed`, embora Concluídos não apareça no painel.
 - Selecionar uma conversa atualiza a área central, mantendo a navegação no desktop.

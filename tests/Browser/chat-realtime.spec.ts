@@ -11,6 +11,8 @@ async function setup(page: Page, holdHistory = false, holdConnection = false) {
     let socket: WebSocketRoute | undefined;
     let channel = '';
     let allowConnection = true;
+    let access = { allowed: true, status: 'connected' };
+    let workspaceId = 0;
     let historyCalls = 0;
     let statusCalls = 0;
     let listCalls = 0;
@@ -39,6 +41,13 @@ async function setup(page: Page, holdHistory = false, holdConnection = false) {
         },
         notes: [],
     };
+    await page.route('**/workspaces/*/chat-access', (route) => {
+        workspaceId = Number(
+            new URL(route.request().url()).pathname.split('/')[2],
+        );
+
+        return route.fulfill({ json: access });
+    });
     await page.route('**/broadcasting/auth', (route) =>
         route.fulfill({ json: { auth: 'browser-test-key:fixture-signature' } }),
     );
@@ -121,7 +130,7 @@ async function setup(page: Page, holdHistory = false, holdConnection = false) {
             return route.fulfill({
                 json: {
                     data: {
-                        url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/ZV8AAAAASUVORK5CYII=',
+                        url: '/brand/app-icon.png',
                     },
                 },
             });
@@ -161,13 +170,25 @@ async function setup(page: Page, holdHistory = false, holdConnection = false) {
     await expect.poll(() => channel).not.toBe('');
     await expect.poll(() => historyCalls).toBe(1);
     function emit(type: string, data: any) {
+        if (type === 'connection.changed') {
+            access = {
+                allowed:
+                    data.status === 'connected' &&
+                    data.provider_available !== false,
+                status:
+                    data.provider_available === false
+                        ? 'unavailable'
+                        : data.status,
+            };
+        }
+
         socket!.send(
             JSON.stringify({
                 event: 'chat.update',
                 channel,
                 data: JSON.stringify({
                     type,
-                    workspace_id: 1,
+                    workspace_id: workspaceId,
                     thread_id: 1,
                     data,
                 }),
@@ -307,175 +328,114 @@ test('a message arriving while history opens survives the snapshot and is shown 
     expect(state.counts().historyCalls).toBe(1);
 });
 
-test('loss of realtime is visible and does not query the provider for history', async ({
+const realtimeNotice = (page: Page) => page.locator('.realtime-notice');
+const connectionModal = (page: Page) =>
+    page.getByRole('dialog', { name: 'Problema de conexão' });
+
+test('loss of realtime shows an inline notice without reloading history or taking focus', async ({
     page,
 }) => {
     const state = await setup(page);
     await expect(
         page.getByText('Mensagem do histórico', { exact: true }),
     ).toBeVisible();
-    state.disconnect();
-    await expect(
-        page.getByRole('dialog', { name: 'Problema de conexão' }),
-    ).toContainText('Atualizações em tempo real indisponíveis');
+    const search = page.getByRole('textbox', {
+        name: 'Buscar por nome ou telefone',
+    });
+    await search.focus();
+    state.realtimeUnavailable();
+    await expect(realtimeNotice(page)).toContainText(
+        'As atualizações em tempo real serão retomadas automaticamente',
+    );
+    await expect(connectionModal(page)).toHaveCount(0);
+    await expect(search).toBeFocused();
     expect(state.counts().historyCalls).toBe(1);
+    state.realtimeRecovered();
+    await expect(realtimeNotice(page)).toHaveCount(0);
 });
 
-const connectionModal = (page: Page) =>
-    page.getByRole('dialog', { name: 'Problema de conexão' });
-
-for (const close of ['Entendi', 'Fechar', 'Escape', 'outside']) {
-    test(`connection modal closes with ${close} and stays dismissed for the visit`, async ({
-        page,
-    }) => {
-        const state = await setup(page);
-        const search = page.getByRole('textbox', {
-            name: 'Buscar por nome ou telefone',
-        });
-        await search.focus();
-        state.realtimeUnavailable();
-        await expect(connectionModal(page)).toBeVisible();
-        await expect(
-            connectionModal(page).getByRole('button', {
-                name: 'Entendi',
-                exact: true,
-            }),
-        ).toBeFocused();
-
-        if (close === 'Escape') {
-            await page.keyboard.press('Escape');
-        } else if (close === 'outside') {
-            await page.mouse.click(10, 10);
-        } else {
-            await connectionModal(page)
-                .getByRole('button', { name: close, exact: true })
-                .click();
-        }
-
-        await expect(connectionModal(page)).toHaveCount(0);
-        await expect(search).toBeFocused();
-        state.realtimeRecovered();
-        state.emit('connection.changed', { status: 'disconnected' });
-        await expect(
-            page.getByRole('textbox', { name: 'Mensagem para o contato' }),
-        ).toBeDisabled();
-        await expect(connectionModal(page)).toHaveCount(0);
-        expect(state.counts().historyCalls).toBe(1);
-        await page.reload();
-        await expect(
-            page.getByText('Mensagem do histórico', { exact: true }),
-        ).toBeVisible();
-        state.emit('connection.changed', { status: 'disconnected' });
-        await expect(connectionModal(page)).toBeVisible();
-    });
-}
-
-test('connection modal combines failures, updates and closes on recovery', async ({
+test('connection events switch to setup or temporary checking and restore the chat', async ({
     page,
 }) => {
     const state = await setup(page);
     state.emit('connection.changed', { status: 'disconnected' });
-    await expect(connectionModal(page)).toContainText('WhatsApp desconectado');
     await expect(
-        connectionModal(page).getByRole('link', { name: 'Configurar conexão' }),
+        page.getByRole('heading', {
+            name: 'Conecte seu WhatsApp para começar',
+        }),
     ).toBeVisible();
-    state.realtimeUnavailable();
-    await expect(connectionModal(page)).toContainText(
-        'Atualizações em tempo real indisponíveis',
-    );
+    await expect(
+        page.getByRole('link', { name: 'Conectar WhatsApp' }),
+    ).toBeVisible();
+    await expect(page.locator('.chat-shell')).toHaveCount(0);
+    await expect(connectionModal(page)).toHaveCount(0);
     state.emit('connection.changed', {
         status: 'connected',
         provider_available: false,
     });
-    await expect(connectionModal(page)).toContainText('WhatsApp indisponível');
-    await expect(connectionModal(page)).not.toContainText(
-        'WhatsApp desconectado',
-    );
+    await expect(
+        page.getByRole('heading', { name: 'Estamos verificando sua conexão' }),
+    ).toBeVisible();
     state.emit('connection.changed', {
         status: 'connected',
         provider_available: true,
     });
-    await expect(
-        connectionModal(page).getByRole('link', { name: 'Configurar conexão' }),
-    ).toHaveCount(0);
-    await expect(connectionModal(page)).toBeVisible();
-    state.realtimeRecovered();
+    await expect(page.locator('.chat-shell')).toBeVisible();
+    await expect(page.locator('.connection-setup')).toHaveCount(0);
     await expect(connectionModal(page)).toHaveCount(0);
 });
 
-for (const recover of [false, true]) {
-    test(`connection warning waits for filters and rechecks recovery (${recover})`, async ({
-        page,
-    }) => {
+for (const other of [
+    'Filtrar conversas',
+    'Finalizar atendimento',
+    'Adicionar à sequência',
+]) {
+    test(`realtime notice leaves ${other} usable`, async ({ page }) => {
         const state = await setup(page);
-        await page
-            .getByRole('button', { name: 'Filtrar conversas', exact: true })
-            .click();
-        state.emit('connection.changed', { status: 'disconnected' });
-        await expect(
-            page.getByRole('dialog', { name: 'Filtrar conversas' }),
-        ).toBeVisible();
-        await expect(connectionModal(page)).toHaveCount(0);
 
-        if (recover) {
-            state.emit('connection.changed', {
-                status: 'connected',
-                provider_available: true,
-            });
+        if (other !== 'Filtrar conversas') {
+            await page
+                .getByRole('button', {
+                    name: 'Abrir perfil do contato',
+                    exact: true,
+                })
+                .click();
         }
 
-        await page.keyboard.press('Escape');
-
-        if (recover) {
-            await expect(connectionModal(page)).toHaveCount(0);
-            state.emit('connection.changed', { status: 'disconnected' });
-        }
-
-        await expect(connectionModal(page)).toBeVisible();
-    });
-}
-
-for (const other of ['Finalizar atendimento', 'Adicionar à sequência']) {
-    test(`connection notice waits for ${other}`, async ({ page }) => {
-        const state = await setup(page);
-        await page
-            .getByRole('button', {
-                name: 'Abrir perfil do contato',
-                exact: true,
-            })
-            .click();
         await page.getByRole('button', { name: other, exact: true }).click();
-        await expect(
-            page.getByRole('dialog', { name: other, exact: true }),
-        ).toBeVisible();
-        state.emit('connection.changed', { status: 'disconnected' });
-        await expect(
-            page.getByRole('textbox', {
-                name: 'Mensagem para o contato',
-                includeHidden: true,
-            }),
-        ).toBeDisabled();
+        const existingDialog = page.getByRole('dialog', {
+            name: other,
+            exact: true,
+        });
+        await expect(existingDialog).toBeVisible();
+        state.realtimeUnavailable();
+        await expect(realtimeNotice(page)).toHaveCount(1);
+        await expect(existingDialog).toBeVisible();
         await expect(connectionModal(page)).toHaveCount(0);
         await page.keyboard.press('Escape');
-        await expect(connectionModal(page)).toBeVisible();
+        await expect(existingDialog).toHaveCount(0);
+        await expect(realtimeNotice(page)).toBeVisible();
     });
 }
 
-test('connection modal fits mobile and desktop', async ({ page }, testInfo) => {
+test('inline realtime notice fits mobile iPad and desktop', async ({
+    page,
+}) => {
     const state = await setup(page);
-    state.emit('connection.changed', { status: 'disconnected' });
+    state.realtimeUnavailable();
 
-    for (const width of [390, 1440]) {
+    for (const width of [390, 820, 1440]) {
         await page.setViewportSize({ width, height: 844 });
-        const modal = connectionModal(page);
-        await expect(modal).toBeVisible();
-        const box = (await modal.boundingBox())!;
+        await expect(realtimeNotice(page)).toBeVisible();
+        const box = (await realtimeNotice(page).boundingBox())!;
         expect(box.x).toBeGreaterThanOrEqual(0);
         expect(box.x + box.width).toBeLessThanOrEqual(width);
-        await page.screenshot({
-            path: testInfo.outputPath(`connection-modal-${width}.png`),
-            animations: 'disabled',
-        });
+        expect(
+            await page.evaluate(
+                () => document.documentElement.scrollWidth <= innerWidth,
+            ),
+        ).toBe(true);
+        await expect(connectionModal(page)).toHaveCount(0);
     }
 });
 
@@ -485,18 +445,19 @@ test('initial realtime connection gets ten seconds without a warning', async ({
     const state = await setup(page);
     await page.clock.install();
     await page.clock.fastForward(11000);
-    await expect(connectionModal(page)).toHaveCount(0);
+    await expect(realtimeNotice(page)).toHaveCount(0);
     state.disconnect();
     await page.reload();
     await expect(
         page.getByRole('textbox', { name: 'Buscar por nome ou telefone' }),
     ).toBeVisible();
     await page.clock.fastForward(9000);
-    await expect(connectionModal(page)).toHaveCount(0);
+    await expect(realtimeNotice(page)).toHaveCount(0);
     await page.clock.fastForward(1000);
-    await expect(connectionModal(page)).toContainText(
-        'Atualizações em tempo real indisponíveis',
+    await expect(realtimeNotice(page)).toContainText(
+        'As atualizações em tempo real serão retomadas automaticamente',
     );
+    await expect(connectionModal(page)).toHaveCount(0);
 });
 
 test('filtered searches page through local conversations without importing chats', async ({
@@ -583,6 +544,7 @@ test('cached list and history appear after reload while the network is pending',
                     request.onsuccess = () => resolve(request.result);
                     request.onerror = () => reject(request.error);
                 });
+
                 return await new Promise<number>((resolve) => {
                     const request = db
                         .transaction('entries')

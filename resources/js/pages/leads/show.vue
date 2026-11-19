@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useForm, Link, Head } from '@inertiajs/vue3';
+import { useForm, Link, Head, router } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import AppButton from '@/components/AppButton.vue';
 import AppFormDialog from '@/components/AppFormDialog.vue';
@@ -21,10 +21,46 @@ const props = defineProps<{
     tags: any[];
     fields: any[];
     threadId: number | null;
+    canStartConversation: boolean;
     canEdit: boolean;
     canCreateTags: boolean;
     canCreateFields: boolean;
 }>();
+const opening = ref(false);
+const conversationError = ref('');
+async function openConversation() {
+    if (opening.value) return;
+    opening.value = true;
+    conversationError.value = '';
+    try {
+        const response = await fetch(
+            `/workspaces/${props.workspace.id}/conversations/leads/${props.lead.id}/open`,
+            {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN':
+                        document.querySelector<HTMLMetaElement>(
+                            'meta[name="csrf-token"]',
+                        )?.content || '',
+                },
+            },
+        );
+        const result = await response.json();
+        if (!response.ok)
+            throw new Error(
+                result.message || 'Não foi possível abrir a conversa.',
+            );
+        router.visit(`/dashboard?thread_id=${result.data.thread_id}`);
+    } catch (error) {
+        conversationError.value =
+            error instanceof Error
+                ? error.message
+                : 'Não foi possível abrir a conversa.';
+    } finally {
+        opening.value = false;
+    }
+}
 function fieldError(id: number): string | undefined {
     return (form.errors as Record<string, string>)[`values.${id}`];
 }
@@ -96,18 +132,31 @@ function save() {
                     ><Link :href="`/dashboard?thread_id=${threadId}`"
                         ><MessagesSquare :size="16" />Abrir conversa</Link
                     ></Button
+                ><AppButton
+                    v-else-if="!threadId && canStartConversation && connected"
+                    variant="secondary"
+                    :disabled="opening"
+                    @click="openConversation"
+                    ><MessagesSquare :size="16" />{{
+                        opening ? 'Abrindo…' : 'Abrir conversa'
+                    }}</AppButton
                 ><template v-else
                     ><AppButton variant="secondary" disabled
                         ><MessagesSquare :size="16" />Abrir conversa</AppButton
                     >
                     <p class="form-help">
                         {{
-                            !threadId
-                                ? 'Conversa indisponível ou sem permissão de acesso.'
-                                : 'Conecte o WhatsApp para abrir a conversa.'
+                            !connected
+                                ? 'Conecte o WhatsApp para abrir a conversa.'
+                                : !lead.phone
+                                  ? 'Contato sem WhatsApp válido.'
+                                  : 'Sem permissão para abrir esta conversa.'
                         }}
                     </p></template
                 >
+                <p v-if="conversationError" class="form-error" role="alert">
+                    {{ conversationError }}
+                </p>
             </div>
         </header>
         <p v-if="!canEdit" class="leads-readonly">

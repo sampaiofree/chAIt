@@ -9,9 +9,12 @@ use App\Models\Contact;
 use App\Models\Thread;
 use App\Models\UazapiConnection;
 use App\Models\Workspace;
+use App\Services\Chat\ChatProjection;
 use App\Services\Chat\ChatPublisher;
 use App\Services\Contacts\ContactIdentity;
+use App\Services\Contacts\ContactReset;
 use App\Services\Contacts\InternationalPhone;
+use App\Services\Contacts\LeadDeletion;
 use App\Services\Uazapi\WhatsAppNumberChecker;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -83,7 +86,43 @@ class LeadController extends Controller
             $threads->where('assigned_to_user_id', $r->user()->id);
         }
 
-        return Inertia::render('leads/show', ['workspace' => $workspace->only('id', 'name'), 'lead' => $lead->load(['tags', 'customFieldValues', 'channels']), 'tags' => $workspace->tags()->orderBy('name')->get(), 'fields' => $workspace->contactCustomFields()->orderBy('name')->get(), 'threadId' => $threads->latest('id')->value('id'), 'canEdit' => $r->user()->hasLeadPermission($workspace, 'can_edit_leads'), 'canCreateTags' => $r->user()->hasLeadPermission($workspace, 'can_create_tags'), 'canCreateFields' => $r->user()->hasLeadPermission($workspace, 'can_create_contact_fields')]);
+        return Inertia::render('leads/show', ['workspace' => $workspace->only('id', 'name'), 'lead' => $lead->load(['tags', 'customFieldValues', 'channels']), 'tags' => $workspace->tags()->orderBy('name')->get(), 'fields' => $workspace->contactCustomFields()->orderBy('name')->get(), 'canStartConversation' => ($r->user()->canAccessWorkspace($workspace, WorkspaceRole::Admin) || $member->can_view_unassigned) && (bool) $lead->phone, 'threadId' => $threads->latest('id')->value('id'), 'canEdit' => $r->user()->hasLeadPermission($workspace, 'can_edit_leads'), 'canCreateTags' => $r->user()->hasLeadPermission($workspace, 'can_create_tags'), 'canCreateFields' => $r->user()->hasLeadPermission($workspace, 'can_create_contact_fields')]);
+    }
+
+    public function openConversation(Request $r, Workspace $workspace, Contact $lead)
+    {
+        $this->access($r, $workspace);
+        abort_unless($lead->workspace_id === $workspace->id, 404);
+        $thread = DB::transaction(function () use ($r, $workspace, $lead) {
+            $phone = app(InternationalPhone::class)->normalize($lead->phone);
+            abort_unless($phone, 422, 'Contato sem WhatsApp válido.');
+            app(ContactReset::class)->lock($workspace->id, $phone.'@s.whatsapp.net');
+            $lead = Contact::whereKey($lead->id)->lockForUpdate()->firstOrFail();
+            $connection = UazapiConnection::where('workspace_id', $workspace->id)->firstOrFail();
+            $query = $lead->threads()->where('uazapi_connection_id', $connection->id);
+            $member = $r->user()->membershipFor($workspace);
+            $all = $r->user()->canAccessWorkspace($workspace, WorkspaceRole::Admin) || $member->can_view_unassigned;
+            $thread = (clone $query)->when(! $all, fn ($q) => $q->where('assigned_to_user_id', $r->user()->id))->latest('id')->first();
+            if ($thread) {
+                return $thread;
+            }
+            abort_unless($all && ! $query->exists(), 403, 'Sem permissão para abrir esta conversa.');
+            $thread = app(ChatProjection::class)->sync($connection, ['wa_chatid' => $phone.'@s.whatsapp.net'], null, true);
+            abort_unless($thread && $thread->contact_id === $lead->id, 409);
+
+            return $thread;
+        }, 3);
+
+        return response()->json(['data' => ['thread_id' => $thread->id]]);
+    }
+
+    public function destroy(Request $r, Workspace $workspace, Contact $lead)
+    {
+        $this->access($r, $workspace, true);
+        abort_unless($lead->workspace_id === $workspace->id, 404);
+        app(LeadDeletion::class)->delete($workspace, $lead, $r->user());
+
+        return back()->with('success', 'Lead excluído.');
     }
 
     private function validated(Request $r, Workspace $w): array
@@ -116,6 +155,7 @@ class LeadController extends Controller
             throw ValidationException::withMessages(['phone' => 'Não foi possível verificar este número. Confira a conexão do WhatsApp e tente novamente.'.$wait]);
         }
         $contact = DB::transaction(function () use ($workspace, $phone, $data) {
+            app(ContactReset::class)->lock($workspace->id, $phone.'@s.whatsapp.net');
             $inserted = DB::table('contacts')->insertOrIgnore(['workspace_id' => $workspace->id, 'phone' => $phone, 'created_at' => now(), 'updated_at' => now()]);
             if (! $inserted) {
                 throw ValidationException::withMessages(['phone' => 'Este WhatsApp já está cadastrado. Busque o número na lista de Leads.']);
