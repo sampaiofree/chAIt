@@ -119,11 +119,7 @@ function save() {
                 <div>
                     <h1>{{ lead.display_name || 'Sem nome' }}</h1>
                     <p>
-                        {{
-                            lead.phone ||
-                            lead.channels?.[0]?.external_id ||
-                            'WhatsApp não informado'
-                        }}
+                        {{ lead.phone || 'WhatsApp não informado' }}
                     </p>
                 </div>
             </div>
@@ -199,11 +195,7 @@ function save() {
                                 <label for="lead-phone">WhatsApp</label
                                 ><Input
                                     id="lead-phone"
-                                    :model-value="
-                                        lead.phone ||
-                                        lead.channels?.[0]?.external_id ||
-                                        ''
-                                    "
+                                    :model-value="lead.phone || ''"
                                     readonly
                                 />
                                 <p class="form-help">

@@ -1,19 +1,9 @@
 <script setup lang="ts">
 import { Link, router, usePage } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
-import {
-    MessagesSquare,
-    UsersRound,
-    Workflow,
-    Timer,
-    Settings,
-    ChevronsUpDown,
-    Check,
-    LoaderCircle,
-    LogOut,
-    ShieldCheck,
-} from '@lucide/vue';
+import { ref, watch } from 'vue';
+import { ChevronsUpDown, Check, LoaderCircle, LogOut } from '@lucide/vue';
 import AppBrand from '@/components/AppBrand.vue';
+import { useNavigationItems } from '@/composables/useNavigationItems';
 import {
     Tooltip,
     TooltipContent,
@@ -42,65 +32,9 @@ watch(
         switching.value = false;
     },
 );
-const workspace = computed(
-    () => page.props.currentWorkspace ?? page.props.workspace,
-);
+const { items, workspace } = useNavigationItems();
 const workspaceInitial = (name?: string) =>
     name?.trim().charAt(0).toUpperCase() || '?';
-const items = computed(() => [
-    ...(page.props.canViewLeads && workspace.value
-        ? [
-              {
-                  title: 'Leads',
-                  href: `/workspaces/${workspace.value.id}/leads`,
-                  icon: UsersRound,
-                  active: /\/leads(?:\/|\?|$)/.test(page.url),
-              },
-          ]
-        : []),
-    {
-        title: 'Conversas',
-        href: '/dashboard',
-        icon: MessagesSquare,
-        active: page.url.startsWith('/dashboard'),
-    },
-    ...(page.props.canManageFlows && workspace.value
-        ? [
-              {
-                  title: 'Fluxos',
-                  href: `/workspaces/${workspace.value.id}/flows`,
-                  icon: Workflow,
-                  active: /\/flows(?:\/|\?|$)/.test(page.url),
-              },
-              {
-                  title: 'Automação',
-                  href: `/workspaces/${workspace.value.id}/flow-triggers`,
-                  icon: Timer,
-                  active: /\/flow-triggers|\/sequences(?:\/|\?|$)/.test(
-                      page.url,
-                  ),
-              },
-          ]
-        : []),
-    {
-        title: 'Configurações',
-        href: '/settings/profile',
-        icon: Settings,
-        active:
-            page.url.startsWith('/settings/') ||
-            /\/workspaces\/\d+\/webhooks(?:\/|\?|$)/.test(page.url),
-    },
-    ...(page.props.isSystemAdmin
-        ? [
-              {
-                  title: 'Administração',
-                  href: '/admin/usuarios',
-                  icon: ShieldCheck,
-                  active: page.url.startsWith('/admin/'),
-              },
-          ]
-        : []),
-]);
 function switchWorkspace(id: number) {
     if (switching.value || id === workspace.value?.id) return;
     router.post(

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import { PanelLeft, ChevronRight } from '@lucide/vue';
 import AppNavigation from '@/components/AppNavigation.vue';
+import AppBottomNavigation from '@/components/AppBottomNavigation.vue';
 import { useNavigation } from '@/composables/useNavigation';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,7 +21,7 @@ import {
 } from '@/components/ui/tooltip';
 
 const page = usePage<any>();
-const { expanded, mobileOpen, toggle } = useNavigation(
+const { expanded, mobileOpen, mobileChatDetail, toggle } = useNavigation(
     page.props.sidebarOpen === true,
 );
 const title = computed(() =>
@@ -66,7 +67,10 @@ onBeforeUnmount(() => {
     <TooltipProvider :delay-duration="250">
         <div
             class="app-layout"
-            :class="{ 'sidebar-expanded': expanded }"
+            :class="{
+                'sidebar-expanded': expanded,
+                'mobile-chat-detail': mobileChatDetail,
+            }"
             :style="isMobile ? { height: `${viewportHeight}px` } : undefined"
         >
             <aside class="desktop-navigation">
@@ -102,6 +106,7 @@ onBeforeUnmount(() => {
                     >
                 </header>
                 <div class="app-page"><slot /></div>
+                <AppBottomNavigation />
             </div>
         </div>
         <Sheet v-model:open="mobileOpen">
@@ -185,6 +190,10 @@ onBeforeUnmount(() => {
     }
     .app-topbar {
         padding: 0 12px;
+    }
+    .mobile-chat-detail .app-topbar,
+    .mobile-chat-detail :deep(.bottom-navigation) {
+        display: none;
     }
 }
 </style>

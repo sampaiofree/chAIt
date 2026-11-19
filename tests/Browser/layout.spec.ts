@@ -7,7 +7,8 @@ const thread = {
     last_message_at: '2026-10-13T15:00:00Z',
     unread_count: 0,
     unread_version: 0,
-    assigned_to: { id: 1, name: 'Admin de teste' },
+    // The platform administrator is seeded first; the workspace admin is user 2.
+    assigned_to: { id: 2, name: 'Admin de teste' },
     contact: {
         id: 1,
         display_name: 'Contato com nome longo para revisão do atendimento',
@@ -147,9 +148,12 @@ test('conversation list and chat messages use workspace calendar labels', async 
         }),
     );
     await page.reload();
-    await expect(page.locator('.message-row .bubble small').first()).toHaveText(
-        '09:34 · Enviando',
-    );
+    await expect(
+        page
+            .locator('.message-row')
+            .filter({ hasText: 'Nova mensagem' })
+            .locator('.bubble small'),
+    ).toHaveText('09:34 · Enviando');
 });
 
 test('unassigned chat offers immediate reply while occupied chat requires explicit assignment', async ({
@@ -188,7 +192,7 @@ test('unassigned chat offers immediate reply while occupied chat requires explic
 
         const occupied = {
             ...thread,
-            assigned_to: { id: 2, name: 'Atendente de teste' },
+            assigned_to: { id: 3, name: 'Atendente de teste' },
         };
 
         return route.fulfill({
@@ -409,29 +413,314 @@ test('field and tag create/edit use modals and clean forms remain cancellable', 
     ).toBeVisible();
 });
 
-test('editor asks before leaving an unsaved draft via the shared menu', async ({
+for (const width of [390, 1440]) {
+    test(`editor preserves drafts when saving fails via navigation at ${width}px`, async ({
+        page,
+    }) => {
+        await page.setViewportSize({ width, height: 900 });
+        await login(page);
+        const flowsUrl = await page
+            .getByRole('link', { name: 'Fluxos', exact: true })
+            .getAttribute('href');
+        const editorUrl = `${flowsUrl}/1`;
+        await page.goto(editorUrl);
+        const name = page.getByLabel('Nome do fluxo', { exact: true });
+        const originalName = await name.inputValue();
+        let blockSave = true;
+        let failedSaves = 0;
+        await page.route('**/flows/*/editor-state', (route) => {
+            if (blockSave && route.request().method() === 'PUT') {
+                failedSaves++;
+                return route.fulfill({
+                    status: 503,
+                    json: { message: 'Falha de teste ao salvar.' },
+                });
+            }
+            return route.fallback();
+        });
+        await name.fill(`Rascunho alterado ${width}`);
+        const settings = page.getByRole('link', {
+            name: width < 1024 ? 'Ajustes' : 'Configurações',
+            exact: true,
+        });
+        await settings.click();
+        await expect.poll(() => failedSaves).toBeGreaterThan(0);
+        await expect(page).toHaveURL(new RegExp(`${editorUrl}$`));
+        await expect(name).toHaveValue(`Rascunho alterado ${width}`);
+        blockSave = false;
+        await settings.click();
+        await expect(page).toHaveURL(/\/settings\/profile$/);
+        await page.goto(editorUrl);
+        await expect(name).toHaveValue(`Rascunho alterado ${width}`);
+        await name.fill(originalName);
+        await settings.click();
+        await expect(page).toHaveURL(/\/settings\/profile$/);
+    });
+}
+
+test('bottom navigation fits compact screens and highlights destinations in both themes', async ({
+    page,
+}, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await login(page);
+    const navigation = page.getByRole('navigation', {
+        name: 'Navegação inferior',
+    });
+    const labels = ['Conversas', 'Leads', 'Fluxos', 'Automação', 'Ajustes'];
+    await expect(navigation.getByRole('link')).toHaveText(labels);
+    for (const theme of ['light', 'dark']) {
+        await page.evaluate(
+            (value) =>
+                document.documentElement.classList.toggle(
+                    'dark',
+                    value === 'dark',
+                ),
+            theme,
+        );
+        for (const width of [320, 390, 768, 1023]) {
+            await page.setViewportSize({ width, height: 844 });
+            await expect(navigation).toBeInViewport({ ratio: 1 });
+            const bounds = (await navigation.boundingBox())!;
+            const content = (await page.locator('.app-page').boundingBox())!;
+            expect(bounds.y + bounds.height).toBe(844);
+            expect(content.y + content.height).toBeLessThanOrEqual(bounds.y);
+            for (const link of await navigation.getByRole('link').all()) {
+                const target = (await link.boundingBox())!;
+                expect(target.width).toBeGreaterThanOrEqual(44);
+                expect(target.height).toBeGreaterThanOrEqual(44);
+            }
+            await noOverflow(page);
+            if (width === 390)
+                await page.screenshot({
+                    path: testInfo.outputPath(`bottom-navigation-${theme}.png`),
+                });
+        }
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const label of [
+        'Leads',
+        'Fluxos',
+        'Automação',
+        'Ajustes',
+        'Conversas',
+    ]) {
+        const link = navigation.getByRole('link', { name: label, exact: true });
+        const href = await link.getAttribute('href');
+        await link.click();
+        await expect(page).toHaveURL(new URL(href!, page.url()).href);
+        await expect(link).toHaveAttribute('aria-current', 'page');
+    }
+    await page.setViewportSize({ width: 1024, height: 844 });
+    await expect(navigation).toBeHidden();
+    await expect(page.locator('.desktop-navigation')).toBeVisible();
+});
+
+test('mobile conversation hides navigation and restores the filtered list after profile and resize', async ({
     page,
 }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
     await login(page);
-    await page.goto('/workspaces/1/flows/1');
+    await page.route('**/workspaces/*/conversations?**', (route) =>
+        route.fulfill({
+            json: {
+                data: Array.from({ length: 30 }, (_, index) => ({
+                    ...thread,
+                    id: index + 1,
+                })),
+                selected_thread: thread,
+            },
+        }),
+    );
+    const navigation = page.getByRole('navigation', {
+        name: 'Navegação inferior',
+    });
     await page
-        .getByLabel('Nome do fluxo', { exact: true })
-        .fill('Rascunho alterado');
+        .getByRole('button', { name: 'Filtrar conversas', exact: true })
+        .click();
+    const filters = page.getByRole('dialog', {
+        name: 'Filtrar conversas',
+        exact: true,
+    });
+    await filters
+        .getByRole('combobox', { name: 'Atribuição' })
+        .selectOption('mine');
+    await filters.getByRole('button', { name: 'Aplicar filtros' }).click();
+    const searched = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+            url.pathname.endsWith('/conversations') &&
+            url.searchParams.get('search') === 'Contato'
+        );
+    });
     await page
-        .getByRole('link', { name: 'Configurações', exact: true })
+        .getByRole('textbox', { name: 'Buscar por nome ou telefone' })
+        .fill('Contato');
+    await searched;
+    await expect(page.locator('.thread')).toHaveCount(30);
+    const chosen = page.locator('.thread').nth(20);
+    await chosen.scrollIntoViewIfNeeded();
+    const scrollTop = await page
+        .locator('.list-pane')
+        .evaluate((element) => element.scrollTop);
+    expect(scrollTop).toBeGreaterThan(0);
+    await chosen.click();
+    await expect(navigation).toBeHidden();
+    await expect(page.locator('.app-topbar')).toBeHidden();
+    await page
+        .getByRole('button', { name: 'Abrir perfil do contato', exact: true })
+        .click();
+    await expect(page.locator('.profile-pane')).toBeVisible();
+    await expect(navigation).toBeHidden();
+    await page
+        .getByRole('button', { name: 'Voltar para conversa', exact: true })
+        .click();
+    await expect(page.locator('.chat-pane')).toBeVisible();
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await expect(page.locator('.app-topbar')).toBeVisible();
+    await expect(page.locator('.desktop-navigation')).toBeVisible();
+    await expect(navigation).toBeHidden();
+    await page.setViewportSize({ width: 390, height: 500 });
+    await page.getByPlaceholder('Mensagem…').focus();
+    await expect(page.getByPlaceholder('Mensagem…')).toBeInViewport();
+    await expect(page.locator('.app-topbar')).toBeHidden();
+    await page
+        .getByRole('button', { name: 'Voltar para conversas', exact: true })
+        .click();
+    await expect(navigation).toBeVisible();
+    await expect(page.locator('.app-topbar')).toBeVisible();
+    await expect
+        .poll(() =>
+            page.locator('.list-pane').evaluate((element) => element.scrollTop),
+        )
+        .toBe(scrollTop);
+    await expect(
+        page.getByRole('textbox', { name: 'Buscar por nome ou telefone' }),
+    ).toHaveValue('Contato');
+    await page
+        .getByRole('button', { name: 'Filtrar conversas, 1 critérios ativos' })
         .click();
     await expect(
-        page.getByRole('dialog', { name: 'Descartar alterações', exact: true }),
-    ).toBeVisible();
-    await page.getByRole('button', { name: 'Cancelar', exact: true }).click();
-    await expect(page.getByLabel('Nome do fluxo', { exact: true })).toHaveValue(
-        'Rascunho alterado',
+        filters.getByRole('combobox', { name: 'Atribuição' }),
+    ).toHaveValue('mine');
+});
+
+test('mobile navigation recovers when access is lost inside a conversation', async ({
+    page,
+}) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.clock.install();
+    await login(page);
+    await page.locator('.thread').first().click();
+    const navigation = page.getByRole('navigation', {
+        name: 'Navegação inferior',
+    });
+    await expect(navigation).toBeHidden();
+    await page.route('**/workspaces/*/chat-access', (route) =>
+        route.fulfill({ json: { allowed: false, status: 'disconnected' } }),
     );
-    await page
-        .getByRole('link', { name: 'Configurações', exact: true })
+    await page.clock.fastForward(15000);
+    await expect(
+        page.getByRole('heading', {
+            name: 'Conecte seu WhatsApp para começar',
+        }),
+    ).toBeVisible();
+    await expect(navigation).toBeVisible();
+    await expect(page.locator('.app-topbar')).toBeVisible();
+    await mockChat(page);
+    await page.clock.fastForward(15000);
+    await expect(page.locator('.list-pane')).toBeVisible();
+    await expect(navigation).toBeVisible();
+    await navigation
+        .getByRole('link', { name: 'Ajustes', exact: true })
         .click();
-    await page.getByRole('button', { name: 'Confirmar', exact: true }).click();
     await expect(page).toHaveURL(/\/settings\/profile$/);
+    await expect(navigation).toBeVisible();
+    await navigation
+        .getByRole('link', { name: 'Conversas', exact: true })
+        .click();
+    await expect(navigation).toBeVisible();
+});
+
+test('mobile tabs respect agent permissions and the top menu retains workspace switching', async ({
+    page,
+}) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await login(page, 'agent@example.test');
+    const navigation = page.getByRole('navigation', {
+        name: 'Navegação inferior',
+    });
+    await expect(
+        navigation.getByRole('link', { name: 'Fluxos', exact: true }),
+    ).toHaveCount(0);
+    await expect(
+        navigation.getByRole('link', { name: 'Automação', exact: true }),
+    ).toHaveCount(0);
+    await expect(
+        navigation.getByRole('link', { name: 'Conversas', exact: true }),
+    ).toBeVisible();
+    await navigation
+        .getByRole('link', { name: 'Ajustes', exact: true })
+        .click();
+    await expect(
+        navigation.getByRole('link', { name: 'Ajustes', exact: true }),
+    ).toHaveAttribute('aria-current', 'page');
+    await page.getByRole('button', { name: 'Alternar menu principal' }).click();
+    const drawer = page.getByRole('dialog', {
+        name: 'Menu principal',
+        exact: true,
+    });
+    await drawer.getByRole('button', { name: /Workspace atual:/ }).click();
+    await expect(
+        page.getByRole('menuitem', { name: 'Sair da conta', exact: true }),
+    ).toBeVisible();
+    await expect(
+        page.getByRole('menuitem', {
+            name: /Workspace de revisão visual/,
+        }),
+    ).toBeVisible();
+});
+
+test('mobile workspace switching updates tab destinations', async ({
+    page,
+}) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await login(page);
+    const navigation = page.getByRole('navigation', {
+        name: 'Navegação inferior',
+    });
+    const leads = navigation.getByRole('link', { name: 'Leads', exact: true });
+    const previousHref = await leads.getAttribute('href');
+    const originalWorkspace = await page
+        .locator('.topbar-workspace')
+        .innerText();
+    await page.getByRole('button', { name: 'Alternar menu principal' }).click();
+    await page
+        .getByRole('dialog', { name: 'Menu principal', exact: true })
+        .getByRole('button', { name: /Workspace atual:/ })
+        .click();
+    await page.getByRole('menuitem', { name: /Outro workspace/ }).click();
+    await expect(page.locator('.topbar-workspace')).toHaveText(
+        'Outro workspace',
+    );
+    await expect(
+        page.getByRole('dialog', { name: 'Menu principal', exact: true }),
+    ).toBeHidden();
+    await expect(navigation).toBeVisible();
+    await expect(leads).not.toHaveAttribute('href', previousHref!);
+    await leads.click();
+    await expect(leads).toHaveAttribute('aria-current', 'page');
+    await page.getByRole('button', { name: 'Alternar menu principal' }).click();
+    await page
+        .getByRole('dialog', { name: 'Menu principal', exact: true })
+        .getByRole('button', { name: /Workspace atual:/ })
+        .click();
+    await page
+        .getByRole('menuitem')
+        .filter({ hasText: originalWorkspace })
+        .click();
+    await expect(page.locator('.topbar-workspace')).toHaveText(
+        originalWorkspace,
+    );
 });
 
 for (const width of [390, 768, 1024, 1280, 1440]) {
@@ -440,6 +729,15 @@ for (const width of [390, 768, 1024, 1280, 1440]) {
     }, testInfo) => {
         await page.setViewportSize({ width, height: 900 });
         await login(page);
+        const flowsUrl = await page
+            .locator('.desktop-navigation')
+            .getByRole('link', {
+                name: 'Fluxos',
+                exact: true,
+                includeHidden: true,
+            })
+            .getAttribute('href');
+        const workspaceRoot = flowsUrl!.replace(/\/flows$/, '');
 
         for (const theme of ['light', 'dark'] as const) {
             await page.goto('/settings/appearance');
@@ -467,9 +765,9 @@ for (const width of [390, 768, 1024, 1280, 1440]) {
                 '/settings/profile',
                 '/settings/security',
                 '/settings/openai',
-                '/workspaces/1/flows',
-                '/workspaces/1/flow-triggers',
-                '/workspaces/1/flows/1',
+                `${workspaceRoot}/flows`,
+                `${workspaceRoot}/flow-triggers`,
+                `${workspaceRoot}/flows/1`,
                 '/dashboard',
             ]) {
                 await page.goto(path);
@@ -529,6 +827,28 @@ for (const width of [390, 768, 1024, 1280, 1440]) {
         }
     });
 }
+
+test('contact profile displays the exact WhatsApp number without the provider suffix', async ({
+    page,
+}, testInfo) => {
+    await login(page, 'admin@example.test', {
+        ...thread,
+        contact: { ...thread.contact, phone: '556295772922' },
+    });
+    await expect(page.locator('.chat-heading .title small').first()).toHaveText(
+        '556295772922',
+    );
+    await page.getByRole('button', { name: 'Abrir perfil do contato' }).click();
+    await expect(page.locator('.profile-pane .identity small')).toHaveText(
+        '556295772922',
+    );
+    await expect(page.locator('.profile-pane')).not.toContainText(
+        '@s.whatsapp.net',
+    );
+    await page.screenshot({
+        path: testInfo.outputPath('whatsapp-profile.png'),
+    });
+});
 
 test('contact panel overlays when space is limited and mobile displays one pane at a time', async ({
     page,
@@ -633,9 +953,15 @@ test('conversation filters apply together, clear, and discard unapplied edits', 
 }) => {
     await login(page);
     await page.setViewportSize({ width: 390, height: 844 });
-    await page
-        .getByRole('button', { name: 'Voltar para conversas', exact: true })
-        .click();
+    const back = page.getByRole('button', {
+        name: 'Voltar para conversas',
+        exact: true,
+    });
+
+    if (await back.isVisible()) {
+        await back.click();
+    }
+
     const trigger = page.getByRole('button', { name: 'Filtrar conversas' });
     await expect(page.locator('.list-pane h1')).toHaveClass(/sr-only/);
     await expect(
@@ -1139,14 +1465,17 @@ test('agent navigation follows permissions and workspace switch stays available'
     ).toBeVisible();
 });
 
-test('workspace menu contains only workspaces and admin can rename the current one', async ({
+test('workspace menu lists workspaces and logout and admin can rename the current one', async ({
     page,
 }) => {
     await login(page);
     const navigation = page.locator('.desktop-navigation');
     await navigation.getByRole('button', { name: /Workspace atual:/ }).click();
     const menu = page.getByRole('menu');
-    await expect(menu.getByRole('menuitem')).toHaveCount(2);
+    await expect(menu.getByRole('menuitem')).toHaveCount(3);
+    await expect(
+        menu.getByRole('menuitem', { name: 'Sair da conta', exact: true }),
+    ).toBeVisible();
     await expect(menu).toContainText('Workspace de revisão visual');
     await expect(menu).toContainText('Outro workspace');
     await expect(menu).not.toContainText('Admin de teste');

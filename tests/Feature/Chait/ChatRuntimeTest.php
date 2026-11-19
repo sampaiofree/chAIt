@@ -52,6 +52,7 @@ function runtimeChat(): array
     $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id, 'status' => 'connected', 'activated_at' => now()->subMinute()]);
     $secret = hash_hmac('sha256', 'uazapi-webhook:'.$connection->id, (string) config('app.key'));
     $connection->update(['webhook_secret_hash' => hash('sha256', $secret)]);
+    Cache::put('chat-access:'.$connection->id, ['allowed' => true, 'status' => 'connected'], 15);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id, 'phone' => '5527999999999']);
     $thread = Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $contact->id, 'external_chat_id' => '5527999999999@s.whatsapp.net', 'status' => 'in_progress', 'assigned_to_user_id' => $user->id, 'unread_count' => 0]);
 
@@ -182,7 +183,7 @@ test('only new inbound messages discover a conversation in either chat mode', fu
     Http::assertNothingSent();
 })->with([true, false]);
 
-test('incoming Brazilian WhatsApp JIDs keep their address even when the digits are not a valid current phone', function (bool $realtime, string $jid, ?string $phone) {
+test('incoming Brazilian WhatsApp JIDs keep their exact digits even when they are not a valid current phone', function (bool $realtime, string $jid, string $phone) {
     config(['chat.enabled' => $realtime]);
     $f = runtimeChat();
     $f['thread']->delete();
@@ -202,13 +203,79 @@ test('incoming Brazilian WhatsApp JIDs keep their address even when the digits a
     expect(Contact::count())->toBe(1)->and(ContactChannel::count())->toBe(1)
         ->and(Thread::count())->toBe(1)->and(Thread::sole()->unread_count)->toBe(2);
     $this->actingAs($f['user'])->getJson(route('workspaces.conversations.index', $f['workspace']))
-        ->assertOk()->assertJsonCount(1, 'data');
+        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.contact.phone', $phone);
     Http::assertNothingSent();
 })->with([
     [false, '5511987654321@s.whatsapp.net', '5511987654321'],
     [true, '5511987654321@s.whatsapp.net', '5511987654321'],
-    [false, '551187654321@s.whatsapp.net', null],
-    [true, '551187654321@s.whatsapp.net', null],
+    [false, '551187654321@s.whatsapp.net', '551187654321'],
+    [true, '551187654321@s.whatsapp.net', '551187654321'],
+    [false, '556295772922@s.whatsapp.net', '556295772922'],
+    [true, '556295772922@s.whatsapp.net', '556295772922'],
+]);
+
+test('incoming messages reuse the exact lead number in their own workspace without overwriting its data', function (bool $realtime) {
+    config(['chat.enabled' => $realtime]);
+    $f = runtimeChat();
+    $f['thread']->delete();
+    $f['thread']->contact->delete();
+    $lead = Contact::factory()->create(['workspace_id' => $f['workspace']->id, 'phone' => '556295772922', 'display_name' => 'Nome cadastrado', 'email' => 'lead@example.test', 'observations' => 'Cadastro manual']);
+    $tag = $f['workspace']->tags()->create(['name' => 'Interessado', 'color' => '#16a34a']);
+    $lead->tags()->attach($tag, ['workspace_id' => $f['workspace']->id]);
+    $foreign = Contact::factory()->create(['phone' => $lead->phone]);
+    $jid = $lead->phone.'@s.whatsapp.net';
+    Http::fake();
+
+    foreach (['first-reply', 'second-reply'] as $id) {
+        receiveRuntimeWebhook($f, runtimeWebhook($f, $id, ['message' => ['chatid' => $jid, 'senderName' => 'Nome no WhatsApp']]))->assertOk();
+        app()->call([new ProcessInboundEvent(UazapiInbox::latest('id')->first()->id), 'handle']);
+    }
+
+    expect(Contact::where('workspace_id', $f['workspace']->id)->count())->toBe(1)
+        ->and(ContactChannel::sole()->contact_id)->toBe($lead->id)
+        ->and(Thread::sole()->contact_id)->toBe($lead->id)
+        ->and(Thread::sole()->unread_count)->toBe(2)
+        ->and($lead->fresh()->only(['phone', 'display_name', 'email', 'observations']))->toBe($lead->only(['phone', 'display_name', 'email', 'observations']))
+        ->and($lead->tags()->sole()->id)->toBe($tag->id)
+        ->and($foreign->fresh()->phone)->toBe('556295772922');
+    Http::assertNothingSent();
+})->with([true, false]);
+
+test('existing duplicate leads stay separate and display the WhatsApp digits without changing their stored phone', function (bool $realtime, ?string $storedPhone, bool $existingThread) {
+    config(['chat.enabled' => $realtime]);
+    $f = runtimeChat();
+    $jid = '556295772922@s.whatsapp.net';
+    $f['thread']->contact->update(['phone' => $storedPhone]);
+    $f['thread']->update(['external_chat_id' => $jid]);
+    ContactChannel::factory()->create(['workspace_id' => $f['workspace']->id, 'contact_id' => $f['thread']->contact_id, 'type' => 'whatsapp', 'external_id' => $jid]);
+    if (! $existingThread) {
+        $f['thread']->delete();
+    }
+    $original = Contact::factory()->create(['workspace_id' => $f['workspace']->id, 'phone' => '556295772922']);
+    Http::fake();
+
+    receiveRuntimeWebhook($f, runtimeWebhook($f))->assertOk();
+    app()->call([new ProcessInboundEvent(UazapiInbox::sole()->id), 'handle']);
+    $thread = Thread::sole();
+    $this->actingAs($f['user'])->getJson(route('workspaces.conversations.index', $f['workspace']))
+        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.contact.phone', '556295772922');
+    $this->putJson(route('workspaces.conversations.contact', [$f['workspace'], $thread]), ['display_name' => 'Nome atualizado'])
+        ->assertOk()->assertJsonPath('data.phone', '556295772922');
+
+    expect(Contact::where('workspace_id', $f['workspace']->id)->count())->toBe(2)
+        ->and($thread->contact_id)->toBe($f['thread']->contact_id)
+        ->and($thread->contact_id)->not->toBe($original->id)
+        ->and($thread->contact->fresh()->phone)->toBe($storedPhone);
+    Http::assertNothingSent();
+})->with([
+    [true, null, true],
+    [false, null, true],
+    [true, null, false],
+    [false, null, false],
+    [true, '556295772922@s.whatsapp.net', true],
+    [false, '556295772922@s.whatsapp.net', true],
+    [true, '556295772922@s.whatsapp.net', false],
+    [false, '556295772922@s.whatsapp.net', false],
 ]);
 
 test('only structurally supported individual phone JIDs can create a contact', function (string $jid) {
@@ -231,7 +298,7 @@ test('only structurally supported individual phone JIDs can create a contact', f
     '55118765432a@s.whatsapp.net',
 ]);
 
-test('history uses the original Brazilian WhatsApp JID when the contact has no normalized phone', function () {
+test('history uses the original Brazilian WhatsApp JID even when its digits are not a valid current phone', function () {
     config(['chat.enabled' => false]);
     $f = runtimeChat();
     $f['thread']->delete();
@@ -261,7 +328,7 @@ test('a legacy WhatsApp JID is not merged into a guessed ninth-digit contact', f
     expect(Contact::count())->toBe(2)
         ->and(ContactChannel::sole()->contact_id)->not->toBe($registered->id)
         ->and(Thread::sole()->contact_id)->toBe(ContactChannel::sole()->contact_id)
-        ->and(Thread::sole()->contact->phone)->toBeNull();
+        ->and(Thread::sole()->contact->phone)->toBe('551187654321');
 });
 
 test('message JID takes precedence over a provider-local chat record ID', function (bool $realtime) {
@@ -562,7 +629,7 @@ test('list query count stays bounded as the number of conversations grows', func
     $this->getJson($url)->assertOk();
     $small = count(DB::getQueryLog());
     DB::disableQueryLog();
-    Thread::withoutEvents(fn () => Thread::factory()->count(20)->create(['workspace_id' => $f['workspace']->id, 'uazapi_connection_id' => $f['connection']->id]));
+    Thread::withoutEvents(fn () => Thread::factory()->count(20)->create(['workspace_id' => $f['workspace']->id, 'uazapi_connection_id' => $f['connection']->id, 'contact_id' => Contact::factory()->state(['workspace_id' => $f['workspace']->id, 'phone' => null])]));
     DB::flushQueryLog();
     DB::enableQueryLog();
     $this->getJson($url)->assertOk()->assertJsonCount(21, 'data');

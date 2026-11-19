@@ -2,8 +2,6 @@
 
 namespace App\Services\Chat;
 
-use App\Services\Contacts\InternationalPhone;
-
 class WhatsAppJid
 {
     public function isIndividual(mixed $jid): bool
@@ -19,6 +17,6 @@ class WhatsAppJid
             return null;
         }
 
-        return app(InternationalPhone::class)->normalize(strstr($jid, '@', true));
+        return strstr($jid, '@', true);
     }
 }

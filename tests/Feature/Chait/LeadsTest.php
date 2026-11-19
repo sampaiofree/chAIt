@@ -5,6 +5,7 @@ use App\Jobs\ProcessAiTurn;
 use App\Jobs\ProcessFlowExecution;
 use App\Models\AiSession;
 use App\Models\Contact;
+use App\Models\ContactChannel;
 use App\Models\FlowExecution;
 use App\Models\Sequence;
 use App\Models\SequenceEnrollment;
@@ -15,9 +16,11 @@ use App\Models\WorkspaceMembership;
 use App\Services\Chat\ChatOperations;
 use App\Services\Chat\ChatProjection;
 use App\Services\Flows\FlowInboundProcessor;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Inertia\Testing\AssertableInertia as Assert;
 
 test('admin creates verified leads and edits and lists them without WhatsApp', function () {
     $user = User::factory()->create();
@@ -84,6 +87,8 @@ test('unauthorized invalid and duplicate lead submissions do not query the provi
     Http::fake();
     $this->actingAs($other)->post("/workspaces/{$workspace->id}/leads", ['phone' => '5511987654321'])->assertForbidden();
     $this->actingAs($user)->post("/workspaces/{$workspace->id}/leads", ['phone' => 'abc'])->assertSessionHasErrors('phone');
+    $this->post("/workspaces/{$workspace->id}/leads", ['phone' => '556295772922'])->assertSessionHasErrors('phone');
+    $this->post("/workspaces/{$workspace->id}/leads", ['phone' => '556295772922@s.whatsapp.net'])->assertSessionHasErrors('phone');
     Contact::factory()->create(['workspace_id' => $workspace->id, 'phone' => '5511987654321']);
     $this->post("/workspaces/{$workspace->id}/leads", ['phone' => '5511987654321'])->assertSessionHasErrors('phone');
     Http::assertNothingSent();
@@ -126,6 +131,81 @@ test('a lead conversation is created on demand and reused without starting atten
     $thread = Thread::findOrFail($id);
     expect($thread->status)->toBe('bot')->and($thread->assigned_to_user_id)->toBeNull()->and($thread->human_opened_at)->toBeNull();
     expect($lead->threads()->count())->toBe(1);
+});
+
+test('lead screens display digits from individual WhatsApp channels without rewriting old records', function (?string $phone) {
+    $user = User::factory()->create();
+    $workspace = $user->fresh()->currentWorkspace;
+    $lead = Contact::factory()->create(['workspace_id' => $workspace->id, 'phone' => $phone]);
+    foreach (['other@example.test' => 'email', '123456789012345@g.us' => 'whatsapp', '123456789012345@lid' => 'whatsapp', '556295772922@s.whatsapp.net' => 'whatsapp'] as $external => $type) {
+        ContactChannel::factory()->create(['workspace_id' => $workspace->id, 'contact_id' => $lead->id, 'type' => $type, 'external_id' => $external]);
+    }
+
+    $this->actingAs($user)->get(route('workspaces.leads.index', $workspace))
+        ->assertOk()->assertInertia(fn (Assert $page) => $page->component('leads/index')->where('leads.data.0.phone', '556295772922'));
+    $this->get(route('workspaces.leads.show', [$workspace, $lead]))
+        ->assertOk()->assertInertia(fn (Assert $page) => $page->component('leads/show')->where('lead.phone', '556295772922')->where('canStartConversation', true)->where('canCreateTags', true)->where('canCreateFields', true));
+
+    expect($lead->fresh()->phone)->toBe($phone)
+        ->and(Contact::where('workspace_id', $workspace->id)->count())->toBe(1);
+})->with([null, '556295772922@s.whatsapp.net']);
+
+test('legacy WhatsApp leads open their associated conversation or channel without a dialable phone', function (?string $phone, bool $existingThread) {
+    config(['chat.enabled' => true]);
+    $user = User::factory()->create();
+    $workspace = $user->fresh()->currentWorkspace;
+    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id, 'status' => 'connected']);
+    Cache::put('chat-access:'.$connection->id, ['allowed' => true, 'status' => 'connected'], 15);
+    $lead = Contact::factory()->create(['workspace_id' => $workspace->id, 'phone' => $phone]);
+    $jid = '556295772922@s.whatsapp.net';
+    ContactChannel::factory()->create(['workspace_id' => $workspace->id, 'contact_id' => $lead->id, 'type' => 'whatsapp', 'external_id' => $jid]);
+    $thread = $existingThread ? Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $lead->id, 'external_chat_id' => $jid]) : null;
+    Http::fake();
+
+    $url = "/workspaces/{$workspace->id}/conversations/leads/{$lead->id}/open";
+    $id = $this->actingAs($user)->postJson($url)->assertOk()->json('data.thread_id');
+    $this->postJson($url)->assertOk()->assertJsonPath('data.thread_id', $id);
+
+    expect(Thread::sole()->id)->toBe($thread?->id ?? $id)
+        ->and(Thread::sole()->contact_id)->toBe($lead->id)
+        ->and(Thread::sole()->external_chat_id)->toBe($jid)
+        ->and($lead->fresh()->phone)->toBe($phone)
+        ->and(Contact::where('workspace_id', $workspace->id)->count())->toBe(1);
+    Http::assertNothingSent();
+})->with([[null, true], [null, false], ['556295772922', true], ['556295772922', false]]);
+
+test('a legacy WhatsApp conversation remains restricted to authorized agents', function () {
+    config(['chat.enabled' => true]);
+    $owner = User::factory()->create();
+    $workspace = $owner->fresh()->currentWorkspace;
+    $agent = User::factory()->create();
+    WorkspaceMembership::factory()->create(['workspace_id' => $workspace->id, 'user_id' => $agent->id, 'role' => 'agent', 'can_view_leads' => true, 'can_view_unassigned' => false]);
+    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id, 'status' => 'connected']);
+    Cache::put('chat-access:'.$connection->id, ['allowed' => true, 'status' => 'connected'], 15);
+    $lead = Contact::factory()->create(['workspace_id' => $workspace->id, 'phone' => null]);
+    $thread = Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $lead->id, 'external_chat_id' => '556295772922@s.whatsapp.net', 'assigned_to_user_id' => $owner->id]);
+    Http::fake();
+
+    $url = "/workspaces/{$workspace->id}/conversations/leads/{$lead->id}/open";
+    $this->actingAs($agent)->postJson($url)->assertForbidden();
+    $thread->update(['assigned_to_user_id' => $agent->id]);
+    $this->postJson($url)->assertOk()->assertJsonPath('data.thread_id', $thread->id);
+    Http::assertNothingSent();
+});
+
+test('an unvalidated phone without an associated individual channel cannot start a conversation', function () {
+    config(['chat.enabled' => true]);
+    $user = User::factory()->create();
+    $workspace = $user->fresh()->currentWorkspace;
+    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id, 'status' => 'connected']);
+    Cache::put('chat-access:'.$connection->id, ['allowed' => true, 'status' => 'connected'], 15);
+    $lead = Contact::factory()->create(['workspace_id' => $workspace->id, 'phone' => '556295772922']);
+    ContactChannel::factory()->create(['workspace_id' => $workspace->id, 'contact_id' => $lead->id, 'type' => 'whatsapp', 'external_id' => '123456789012345@lid']);
+    Http::fake();
+
+    $this->actingAs($user)->postJson("/workspaces/{$workspace->id}/conversations/leads/{$lead->id}/open")->assertUnprocessable();
+    expect(Thread::count())->toBe(0);
+    Http::assertNothingSent();
 });
 
 test('deleting a lead resets its identity and rejects old messages while allowing a new contact', function () {

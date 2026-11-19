@@ -230,6 +230,21 @@ test('opening a lead on mobile shows its conversation pane', async ({
     );
     await expect(page.locator('.chat-pane')).toBeVisible();
     await expect(page.getByText('Histórico 1', { exact: true })).toBeVisible();
+    const navigation = page.getByRole('navigation', {
+        name: 'Navegação inferior',
+    });
+    await expect(navigation).toBeHidden();
+    await expect(page.locator('.app-topbar')).toBeHidden();
+    await page
+        .getByRole('button', { name: 'Voltar para conversas', exact: true })
+        .click();
+    await expect(navigation).toBeVisible();
+    await expect(page.locator('.list-pane')).toBeVisible();
+    await page.locator('.thread').first().click();
+    await expect(navigation).toBeHidden();
+    await page.goBack();
+    await expect(navigation).toBeVisible();
+    await expect(page.locator('.app-topbar')).toBeVisible();
 });
 
 test('a direct mobile link opens the requested conversation with an empty cache', async ({

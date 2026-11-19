@@ -2,7 +2,6 @@
 
 namespace App\Services\Chat;
 
-use App\Models\Contact;
 use App\Models\ContactChannel;
 use App\Models\Thread;
 use App\Models\UazapiConnection;
@@ -59,9 +58,10 @@ class ChatProjection
                 $channel = ContactChannel::where('workspace_id', $connection->workspace_id)->where('type', 'whatsapp')->where('external_id', $external)->first();
                 if (! $channel) {
                     $phone = app(WhatsAppJid::class)->phone($external);
-                    $contact = $phone === null
-                        ? Contact::create(['workspace_id' => $connection->workspace_id, 'phone' => null])
-                        : app(ContactIdentity::class)->locked($connection->workspace_id, $phone);
+                    if ($phone === null) {
+                        return null;
+                    }
+                    $contact = app(ContactIdentity::class)->locked($connection->workspace_id, $phone);
                     $channel = ContactChannel::firstOrCreate(['workspace_id' => $connection->workspace_id, 'type' => 'whatsapp', 'external_id' => $external], ['contact_id' => $contact->id]);
                 }
                 $contact = $channel->contact()->lockForUpdate()->firstOrFail();
@@ -126,7 +126,7 @@ class ChatProjection
     public function serialize(Collection $threads, ?int $detailId = null): Collection
     {
         $threads = new \Illuminate\Database\Eloquent\Collection($threads->all());
-        $threads->loadMissing(['contact.tags', 'contact.customFieldValues.field:id,name', 'assignedTo']);
+        $threads->loadMissing(['contact.tags', 'contact.channels', 'contact.customFieldValues.field:id,name', 'assignedTo']);
         if ($detailId && ($detail = $threads->firstWhere('id', $detailId))) {
             $detail->loadMissing('notes.user');
         }
@@ -152,7 +152,7 @@ class ChatProjection
                 'last_message_preview' => $thread->last_message_preview,
                 'unread_count' => $thread->unread_count, 'unread_version' => (int) $thread->unread_version,
                 'assigned_to' => $thread->assignedTo?->only(['id', 'name']), 'last_assigned_to_user_id' => $thread->last_assigned_to_user_id,
-                'contact' => array_merge($thread->contact->only(['id', 'display_name', 'phone', 'email', 'cpf']), ['avatar_url' => data_get($thread->contact->profile, 'imagePreview')]),
+                'contact' => array_merge($thread->contact->only(['id', 'display_name', 'phone', 'email', 'cpf']), ['phone' => $thread->contact->displayPhone($thread->external_chat_id), 'avatar_url' => data_get($thread->contact->profile, 'imagePreview')]),
                 'tags' => $thread->contact->tags->map->only(['id', 'name'])->values(),
                 'custom_fields' => $thread->contact->customFieldValues->map(fn ($v) => ['id' => $v->field_id, 'name' => $v->field?->name, 'value' => $v->value])->values(),
                 'automations_paused' => $hasManual,

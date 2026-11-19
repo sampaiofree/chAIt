@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import { Button } from '@/components/ui/button';
 import { useVoiceRecorder } from '@/composables/useVoiceRecorder';
+import { useNavigation } from '@/composables/useNavigation';
 import ContactSequence from '@/components/ContactSequence.vue';
 import AppDialog from '@/components/AppDialog.vue';
 import AppButton from '@/components/AppButton.vue';
@@ -1686,8 +1687,18 @@ watch(
         automationError.value = '';
     },
 );
+const { mobileChatDetail } = useNavigation();
+watch(chatAllowed, (allowed) => {
+    if (!allowed) mobilePane.value = 'list';
+});
+watch(
+    () => chatAllowed.value && !!selected.value && mobilePane.value !== 'list',
+    (detail) => {
+        mobileChatDetail.value = detail;
+    },
+    { immediate: true },
+);
 watch(mobilePane, (pane) => {
-    document.body.classList.toggle('mobile-chat-detail', pane !== 'list');
     if (pane === 'chat') void nextTick().then(updateLatestPosition);
 });
 onMounted(async () => {
@@ -1718,7 +1729,7 @@ onMounted(async () => {
 });
 onUnmounted(() => {
     clearInterval(accessTimer);
-    document.body.classList.remove('mobile-chat-detail');
+    mobileChatDetail.value = false;
     clearTimeout(skeletonTimer);
     clearTimeout(threadSkeletonTimer);
     clearTimeout(realtimeInitialTimer);
@@ -2826,6 +2837,7 @@ onUnmounted(() => {
     margin-top: 24px;
 }
 .realtime-notice {
+    flex: none;
     padding: 10px 20px;
     background: var(--muted);
     color: var(--muted-foreground);
@@ -2841,9 +2853,6 @@ onUnmounted(() => {
 .connected-chat > .chat-shell {
     flex: 1;
     height: auto;
-}
-.realtime-notice {
-    flex: none;
 }
 .chat-shell {
     height: 100%;
@@ -4060,9 +4069,6 @@ onUnmounted(() => {
 
 <style>
 @media (max-width: 1023px) {
-    body.mobile-chat-detail .app-topbar {
-        display: none;
-    }
     .conversation-filter-dialog {
         top: auto !important;
         bottom: max(
@@ -4073,6 +4079,8 @@ onUnmounted(() => {
             )
         ) !important;
         left: 0 !important;
+        --tw-translate-x: 0px !important;
+        --tw-translate-y: 0px !important;
         transform: none !important;
         width: 100% !important;
         max-width: none !important;

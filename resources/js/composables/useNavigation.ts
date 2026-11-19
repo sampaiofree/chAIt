@@ -2,6 +2,7 @@ import { ref } from 'vue';
 
 const expanded = ref(false);
 const mobileOpen = ref(false);
+const mobileChatDetail = ref(false);
 let initialized = false;
 
 export function useNavigation(initial = false) {
@@ -24,5 +25,5 @@ export function useNavigation(initial = false) {
         document.cookie = `sidebar_state=${expanded.value}; path=/; max-age=31536000; samesite=lax`;
     }
 
-    return { expanded, mobileOpen, toggle };
+    return { expanded, mobileOpen, mobileChatDetail, toggle };
 }

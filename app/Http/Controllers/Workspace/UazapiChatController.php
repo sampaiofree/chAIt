@@ -564,7 +564,7 @@ class UazapiChatController extends Controller
         ]));
         $audit->record($workspace, 'contact.updated', $request->user(), $contact);
 
-        return response()->json(['data' => $contact->only(['id', 'display_name', 'phone', 'email', 'cpf'])]);
+        return response()->json(['data' => array_merge($contact->only(['id', 'display_name', 'phone', 'email', 'cpf']), ['phone' => $contact->displayPhone($thread->external_chat_id)])]);
     }
 
     public function addNote(Request $request, Workspace $workspace, Thread $thread, AuditLogService $audit): JsonResponse
@@ -598,6 +598,7 @@ class UazapiChatController extends Controller
             'last_message_at' => $thread->last_message_at, 'unread_count' => $thread->unread_count,
             'unread_version' => (int) $thread->unread_version,
             'contact' => array_merge($thread->contact->only(['id', 'display_name', 'phone', 'email', 'cpf']), [
+                'phone' => $thread->contact->displayPhone($thread->external_chat_id),
                 'avatar_url' => data_get($thread->contact->profile, 'imagePreview') ?? data_get($thread->contact->profile, 'image') ?? null,
             ]),
             'assigned_to' => $thread->assignedTo?->only(['id', 'name']),

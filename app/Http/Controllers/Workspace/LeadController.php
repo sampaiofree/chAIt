@@ -34,7 +34,7 @@ class LeadController extends Controller
     {
         $this->access($r, $workspace);
         $data = $r->validate(['search' => 'nullable|string|max:255', 'tag_ids' => 'sometimes|array', 'tag_ids.*' => ['integer', Rule::exists('tags', 'id')->where('workspace_id', $workspace->id)], 'tag_mode' => 'nullable|in:and,or', 'untagged' => 'nullable|boolean', 'from' => 'nullable|date_format:Y-m-d', 'to' => 'nullable|date_format:Y-m-d|after_or_equal:from', 'order' => 'nullable|in:asc,desc']);
-        $q = Contact::where('workspace_id', $workspace->id)->with('tags:id,name,color');
+        $q = Contact::where('workspace_id', $workspace->id)->with(['tags:id,name,color', 'channels']);
         if ($search = trim($data['search'] ?? '')) {
             $q->where(function ($q) use ($search) {
                 $q->where('display_name', 'ilike', '%'.$search.'%');
@@ -73,7 +73,10 @@ class LeadController extends Controller
             }
         }
 
-        return Inertia::render('leads/index', ['workspace' => $workspace->only('id', 'name'), 'leads' => $q->orderBy('created_at', $data['order'] ?? 'desc')->orderBy('id', $data['order'] ?? 'desc')->paginate(25)->withQueryString(), 'filters' => $data, 'tags' => $workspace->tags()->orderBy('name')->get(), 'canEdit' => $r->user()->hasLeadPermission($workspace, 'can_edit_leads'), 'canCreateTags' => $r->user()->hasLeadPermission($workspace, 'can_create_tags'), 'canCreateFields' => $r->user()->hasLeadPermission($workspace, 'can_create_contact_fields')]);
+        $leads = $q->orderBy('created_at', $data['order'] ?? 'desc')->orderBy('id', $data['order'] ?? 'desc')->paginate(25)->withQueryString()
+            ->through(fn (Contact $lead) => array_merge($lead->makeHidden('channels')->toArray(), ['phone' => $lead->displayPhone()]));
+
+        return Inertia::render('leads/index', ['workspace' => $workspace->only('id', 'name'), 'leads' => $leads, 'filters' => $data, 'tags' => $workspace->tags()->orderBy('name')->get(), 'canEdit' => $r->user()->hasLeadPermission($workspace, 'can_edit_leads'), 'canCreateTags' => $r->user()->hasLeadPermission($workspace, 'can_create_tags'), 'canCreateFields' => $r->user()->hasLeadPermission($workspace, 'can_create_contact_fields')]);
     }
 
     public function show(Request $r, Workspace $workspace, Contact $lead)
@@ -86,7 +89,9 @@ class LeadController extends Controller
             $threads->where('assigned_to_user_id', $r->user()->id);
         }
 
-        return Inertia::render('leads/show', ['workspace' => $workspace->only('id', 'name'), 'lead' => $lead->load(['tags', 'customFieldValues', 'channels']), 'tags' => $workspace->tags()->orderBy('name')->get(), 'fields' => $workspace->contactCustomFields()->orderBy('name')->get(), 'canStartConversation' => ($r->user()->canAccessWorkspace($workspace, WorkspaceRole::Admin) || $member->can_view_unassigned) && (bool) $lead->phone, 'threadId' => $threads->latest('id')->value('id'), 'canEdit' => $r->user()->hasLeadPermission($workspace, 'can_edit_leads'), 'canCreateTags' => $r->user()->hasLeadPermission($workspace, 'can_create_tags'), 'canCreateFields' => $r->user()->hasLeadPermission($workspace, 'can_create_contact_fields')]);
+        $lead->load(['tags', 'customFieldValues', 'channels']);
+
+        return Inertia::render('leads/show', ['workspace' => $workspace->only('id', 'name'), 'lead' => array_merge($lead->toArray(), ['phone' => $lead->displayPhone()]), 'tags' => $workspace->tags()->orderBy('name')->get(), 'fields' => $workspace->contactCustomFields()->orderBy('name')->get(), 'canStartConversation' => ($r->user()->canAccessWorkspace($workspace, WorkspaceRole::Admin) || $member->can_view_unassigned) && (bool) $lead->whatsAppAddress(), 'threadId' => $threads->latest('id')->value('id'), 'canEdit' => $r->user()->hasLeadPermission($workspace, 'can_edit_leads'), 'canCreateTags' => $r->user()->hasLeadPermission($workspace, 'can_create_tags'), 'canCreateFields' => $r->user()->hasLeadPermission($workspace, 'can_create_contact_fields')]);
     }
 
     public function openConversation(Request $r, Workspace $workspace, Contact $lead)
@@ -94,12 +99,12 @@ class LeadController extends Controller
         $this->access($r, $workspace);
         abort_unless($lead->workspace_id === $workspace->id, 404);
         $thread = DB::transaction(function () use ($r, $workspace, $lead) {
-            $phone = app(InternationalPhone::class)->normalize($lead->phone);
-            abort_unless($phone, 422, 'Contato sem WhatsApp válido.');
-            app(ContactReset::class)->lock($workspace->id, $phone.'@s.whatsapp.net');
-            $lead = Contact::whereKey($lead->id)->lockForUpdate()->firstOrFail();
             $connection = UazapiConnection::where('workspace_id', $workspace->id)->firstOrFail();
             $query = $lead->threads()->where('uazapi_connection_id', $connection->id);
+            $external = (clone $query)->latest('id')->value('external_chat_id') ?? $lead->whatsAppAddress();
+            abort_unless($external, 422, 'Contato sem WhatsApp válido.');
+            app(ContactReset::class)->lock($workspace->id, $external);
+            $lead = Contact::whereKey($lead->id)->lockForUpdate()->firstOrFail();
             $member = $r->user()->membershipFor($workspace);
             $all = $r->user()->canAccessWorkspace($workspace, WorkspaceRole::Admin) || $member->can_view_unassigned;
             $thread = (clone $query)->when(! $all, fn ($q) => $q->where('assigned_to_user_id', $r->user()->id))->latest('id')->first();
@@ -107,7 +112,7 @@ class LeadController extends Controller
                 return $thread;
             }
             abort_unless($all && ! $query->exists(), 403, 'Sem permissão para abrir esta conversa.');
-            $thread = app(ChatProjection::class)->sync($connection, ['wa_chatid' => $phone.'@s.whatsapp.net'], null, true);
+            $thread = app(ChatProjection::class)->sync($connection, ['wa_chatid' => $external], null, true);
             abort_unless($thread && $thread->contact_id === $lead->id, 409);
 
             return $thread;
