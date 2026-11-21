@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppFieldHelp from '@/components/AppFieldHelp.vue';
+import AppNotice from '@/components/AppNotice.vue';
 import { Head, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import { Plus, Users, ShieldCheck } from '@lucide/vue';
@@ -19,6 +21,8 @@ type Member = {
     can_create_tags: boolean;
     can_create_contact_fields: boolean;
     can_view_unassigned: boolean;
+    can_view_own: boolean;
+    can_view_all: boolean;
     can_manage_flows: boolean;
     can_use_flow_assistant: boolean;
 };
@@ -28,6 +32,8 @@ type Permission =
     | 'can_create_tags'
     | 'can_create_contact_fields'
     | 'can_view_unassigned'
+    | 'can_view_own'
+    | 'can_view_all'
     | 'can_manage_flows'
     | 'can_use_flow_assistant';
 const props = defineProps<{
@@ -43,6 +49,8 @@ const form = useForm({
     password: '',
     password_confirmation: '',
     can_view_unassigned: false,
+    can_view_own: true,
+    can_view_all: false,
     can_manage_flows: false,
     can_use_flow_assistant: false,
 });
@@ -56,6 +64,12 @@ function setOpen(value: boolean) {
         form.reset();
         form.clearErrors();
     }
+}
+function openMemberForm(event: MouseEvent) {
+    if (event.currentTarget instanceof HTMLElement) {
+        event.currentTarget.focus({ preventScroll: true });
+    }
+    setOpen(true);
 }
 function addMember() {
     if (form.processing) return;
@@ -111,16 +125,20 @@ const roleName = (role: string) =>
                         {{ workspace.name }}.
                     </p>
                 </div>
-                <AppButton v-if="isAdmin" @click="open = true"
+                <AppButton v-if="isAdmin" @click="openMemberForm"
                     ><Plus :size="16" />Adicionar usuário</AppButton
                 >
             </header>
-            <p v-if="success" class="notice success" role="status">
+            <AppNotice v-if="success" :key="success" variant="success">
                 {{ success }}
-            </p>
-            <p v-if="permissionError" class="notice error" role="alert">
+            </AppNotice>
+            <AppNotice
+                v-if="permissionError"
+                :key="permissionError"
+                variant="error"
+            >
                 {{ permissionError }}
-            </p>
+            </AppNotice>
             <div class="members-card">
                 <div class="members-caption">
                     <Users :size="18" />
@@ -159,6 +177,38 @@ const roleName = (role: string) =>
                         class="member-permissions"
                         :aria-busy="savingMembers.has(member.id)"
                     >
+                        <fieldset class="chat-permissions">
+                            <legend>Conversas</legend>
+                            <label
+                                v-for="permission in [
+                                    ['can_view_own', 'Ver próprias conversas'],
+                                    [
+                                        'can_view_unassigned',
+                                        'Ver conversas não atribuídas',
+                                    ],
+                                    ['can_view_all', 'Ver todas as conversas'],
+                                ] as const"
+                                :key="permission[0]"
+                                class="form-checkbox"
+                                :for="`${permission[0]}-${member.id}`"
+                            >
+                                <Checkbox
+                                    :id="`${permission[0]}-${member.id}`"
+                                    :model-value="member[permission[0]]"
+                                    :disabled="
+                                        !isAdmin || savingMembers.has(member.id)
+                                    "
+                                    @update:model-value="
+                                        update(member, permission[0], $event)
+                                    "
+                                />
+                                {{ permission[1] }}
+                            </label>
+                            <small
+                                >Todas inclui próprias, não atribuídas e de
+                                outros atendentes.</small
+                            >
+                        </fieldset>
                         <label
                             v-for="permission in [
                                 ['can_view_leads', 'Visualizar leads'],
@@ -170,36 +220,20 @@ const roleName = (role: string) =>
                                 ],
                             ] as const"
                             :key="permission[0]"
-                            ><input
-                                type="checkbox"
-                                :checked="member[permission[0]]"
-                                @change="
-                                    update(
-                                        member,
-                                        permission[0],
-                                        ($event.target as HTMLInputElement)
-                                            .checked,
-                                    )
-                                "
-                            />{{ permission[1] }}</label
-                        ><label
                             class="form-checkbox"
-                            :for="`unassigned-${member.id}`"
-                            ><Checkbox
-                                :id="`unassigned-${member.id}`"
-                                :model-value="member.can_view_unassigned"
+                            :for="`${permission[0]}-${member.id}`"
+                        >
+                            <Checkbox
+                                :id="`${permission[0]}-${member.id}`"
+                                :model-value="member[permission[0]]"
                                 :disabled="
                                     !isAdmin || savingMembers.has(member.id)
                                 "
                                 @update:model-value="
-                                    update(
-                                        member,
-                                        'can_view_unassigned',
-                                        $event,
-                                    )
+                                    update(member, permission[0], $event)
                                 "
-                            />Ver conversas não atribuídas</label
-                        >
+                            />{{ permission[1] }}
+                        </label>
                         <label class="form-checkbox" :for="`flows-${member.id}`"
                             ><Checkbox
                                 :id="`flows-${member.id}`"
@@ -260,8 +294,8 @@ const roleName = (role: string) =>
                         autocomplete="name"
                         :aria-invalid="!!form.errors.name"
                         aria-describedby="member-name-help member-name-error"
-                    /><small id="member-name-help" class="form-help"
-                        >Obrigatório para uma nova conta.</small
+                    /><AppFieldHelp id="member-name-help" label="Ajuda"
+                        >Obrigatório para uma nova conta.</AppFieldHelp
                     ><small
                         id="member-name-error"
                         v-if="form.errors.name"
@@ -302,9 +336,9 @@ const roleName = (role: string) =>
                                 : 'member-phone-help'
                         "
                     />
-                    <small id="member-phone-help" class="form-help"
+                    <AppFieldHelp id="member-phone-help" label="Ajuda"
                         >Obrigatório para novas contas. Informe DDI + número,
-                        somente dígitos. Ex.: 5511999999999.</small
+                        somente dígitos. Ex.: 5511999999999.</AppFieldHelp
                     >
                     <small
                         v-if="form.errors.phone"
@@ -323,8 +357,8 @@ const roleName = (role: string) =>
                         autocomplete="new-password"
                         :aria-invalid="!!form.errors.password"
                         aria-describedby="member-password-help member-password-error"
-                    /><small id="member-password-help" class="form-help"
-                        >Obrigatória para uma nova conta.</small
+                    /><AppFieldHelp id="member-password-help" label="Ajuda"
+                        >Obrigatória para uma nova conta.</AppFieldHelp
                     ><small
                         id="member-password-error"
                         v-if="form.errors.password"
@@ -360,13 +394,33 @@ const roleName = (role: string) =>
                 :disabled="form.processing"
             >
                 <legend>Permissões</legend>
-                <label class="form-checkbox" for="member-unassigned"
-                    ><Checkbox
-                        id="member-unassigned"
-                        v-model="form.can_view_unassigned"
-                        :disabled="form.processing"
-                    />Ver conversas não atribuídas</label
-                ><label class="form-checkbox" for="member-flows"
+                <fieldset class="chat-permissions">
+                    <legend>Conversas</legend>
+                    <small
+                        >Todas inclui próprias, não atribuídas e de outros
+                        atendentes.</small
+                    >
+                    <label class="form-checkbox" for="member-own"
+                        ><Checkbox
+                            id="member-own"
+                            v-model="form.can_view_own"
+                        />Ver próprias conversas</label
+                    >
+                    <label class="form-checkbox" for="member-all"
+                        ><Checkbox
+                            id="member-all"
+                            v-model="form.can_view_all"
+                        />Ver todas as conversas</label
+                    >
+                    <label class="form-checkbox" for="member-unassigned"
+                        ><Checkbox
+                            id="member-unassigned"
+                            v-model="form.can_view_unassigned"
+                            :disabled="form.processing"
+                        />Ver conversas não atribuídas</label
+                    >
+                </fieldset>
+                <label class="form-checkbox" for="member-flows"
                     ><Checkbox
                         id="member-flows"
                         v-model="form.can_manage_flows"
@@ -399,8 +453,8 @@ const roleName = (role: string) =>
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 20px;
-    margin-bottom: 28px;
+    gap: 16px;
+    margin-bottom: var(--section-gap);
 }
 .team-header p {
     color: var(--muted-foreground);
@@ -412,22 +466,22 @@ const roleName = (role: string) =>
 }
 .members-card {
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius-card);
     background: var(--card);
     overflow: hidden;
 }
 .members-caption {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 18px 24px;
+    gap: 12px;
+    padding: 16px var(--card-padding);
     border-bottom: 1px solid var(--border);
 }
 .members-caption svg {
     color: var(--muted-foreground);
 }
 .members-caption h2 {
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 600;
 }
 .members-caption > span {
@@ -441,8 +495,8 @@ const roleName = (role: string) =>
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 24px;
-    gap: 24px;
+    padding: var(--card-padding);
+    gap: 16px;
     border-bottom: 1px solid var(--border);
 }
 .member-row:last-child {
@@ -487,6 +541,20 @@ const roleName = (role: string) =>
     padding: 2px 7px;
     border: 1px solid var(--border);
     border-radius: 5px;
+    color: var(--muted-foreground);
+}
+.chat-permissions {
+    display: grid;
+    gap: 8px;
+    border: 0;
+    padding: 0;
+    margin: 0;
+}
+.chat-permissions legend {
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+.chat-permissions small {
     color: var(--muted-foreground);
 }
 .member-permissions {
@@ -538,13 +606,9 @@ const roleName = (role: string) =>
     .member-row {
         align-items: flex-start;
         flex-direction: column;
-        padding: 20px;
     }
     .team-fields {
         grid-template-columns: 1fr;
-    }
-    .members-caption {
-        padding: 18px 20px;
     }
     .form-checkbox {
         min-height: 44px;

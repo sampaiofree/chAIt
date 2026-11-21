@@ -23,7 +23,7 @@ class AiInitialContext
         });
     }
 
-    public function input(AiSession $session, mixed $template, string $key, AiTurnBudget $budget): ?array
+    public function input(AiSession $session, mixed $template, string $key, AiTurnBudget $budget, ?string &$includedMessageId = null): ?array
     {
         if (trim(ContactTemplate::display($template)) === '') {
             return null;
@@ -54,7 +54,10 @@ class AiInitialContext
                         return [['type' => 'input_text', 'text' => 'O lead enviou um vídeo, formato não suportado. Peça que envie texto, áudio, imagem ou documento.']];
                     }
                 }
-                $parts = [...$parts, ...$message['content']];
+                if ($message['content'] !== []) {
+                    $includedMessageId = $ref['message_id'];
+                    $parts = [...$parts, ...$message['content']];
+                }
             } else {
                 $text = $templates->render(['parts' => [$part]], $snapshot);
                 if ($text !== '') {

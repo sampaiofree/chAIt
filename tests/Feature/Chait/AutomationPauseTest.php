@@ -25,6 +25,7 @@ function automationPauseFixture(): array
     $workspace = $user->fresh()->currentWorkspace;
     $workspace->update(['timezone' => 'America/Sao_Paulo']);
     $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    \Illuminate\Support\Facades\Cache::put('chat-access:'.$connection->id, ['allowed' => true, 'status' => 'connected'], 86400);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create([
         'workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id,
@@ -90,6 +91,7 @@ test('an indefinite pause stays active and duplicate requests do not change it',
     expect(DB::table('automation_pauses')->count())->toBe(1)
         ->and(DB::table('automation_pauses')->value('expires_at'))->toBeNull();
     $this->travel(2)->days();
+    \Illuminate\Support\Facades\Cache::put('chat-access:'.$connection->id, ['allowed' => true, 'status' => 'connected'], 60);
     $this->getJson(route('workspaces.conversations.index', $workspace).'?thread_id='.$thread->id)
         ->assertOk()->assertJsonPath('selected_thread.automation.state', 'paused')
         ->assertJsonPath('selected_thread.automation.can_resume', true);

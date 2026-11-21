@@ -278,7 +278,7 @@ async function deleteFolder(folder: FlowFolder) {
         '? ' +
         count +
         ' fluxo(s) serão movidos para Área principal.';
-    if (!(await confirm(message, 'Excluir pasta'))) return;
+    if (!(await confirm(message, 'Excluir pasta', 'danger'))) return;
     try {
         await request(
             '/workspaces/' + props.workspace.id + '/flow-folders/' + folder.id,
@@ -341,6 +341,7 @@ async function deleteFlow(flow: FlowSummary) {
                 flow.name +
                 '”? As versões, execuções e o histórico de sequências vinculado serão apagados permanentemente. Esta ação não pode ser desfeita.',
             'Excluir fluxo',
+            'danger',
         ))
     )
         return;
@@ -729,7 +730,7 @@ async function deleteFlow(flow: FlowSummary) {
 .flows-content {
     width: 100%;
     margin: 0 auto;
-    padding: 46px 56px;
+    padding: var(--page-block-padding) var(--page-gutter);
     min-width: 0;
 }
 .page-header,
@@ -755,7 +756,7 @@ async function deleteFlow(flow: FlowSummary) {
 }
 .page-header p {
     margin: 0;
-    color: var(--muted-foreground);
+    color: var(--text-secondary);
     font-size: 13px;
 }
 
@@ -764,7 +765,7 @@ async function deleteFlow(flow: FlowSummary) {
     align-items: center;
     flex-wrap: wrap;
     gap: 8px;
-    margin-top: 28px;
+    margin-top: var(--section-gap);
     color: var(--muted-foreground);
     font-size: 12px;
 }
@@ -782,12 +783,12 @@ async function deleteFlow(flow: FlowSummary) {
 .flow-search {
     display: flex;
     align-items: center;
-    gap: 9px;
+    gap: 8px;
     flex: 1;
-    height: 43px;
-    padding: 0 13px;
+    height: var(--control-height);
+    padding: 0 12px;
     border: 1px solid var(--border);
-    border-radius: 9px;
+    border-radius: var(--radius);
     background: var(--card);
     color: var(--muted-foreground);
 }
@@ -800,7 +801,7 @@ async function deleteFlow(flow: FlowSummary) {
 }
 .library-list {
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius-card);
     background: var(--card);
 }
 .library-row {
@@ -809,7 +810,7 @@ async function deleteFlow(flow: FlowSummary) {
     align-items: center;
     min-height: 72px;
     gap: 12px;
-    padding: 12px 15px;
+    padding: 12px var(--card-padding);
     border-bottom: 1px solid var(--border);
 }
 .library-row:last-child {
@@ -905,9 +906,9 @@ async function deleteFlow(flow: FlowSummary) {
     right: 0;
     top: calc(100% + 4px);
     width: min(235px, 80vw);
-    padding: 5px;
+    padding: 4px;
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-card);
     background: var(--card);
     box-shadow: 0 14px 30px rgba(0, 0, 0, 0.16);
 }
@@ -934,7 +935,7 @@ async function deleteFlow(flow: FlowSummary) {
     cursor: default;
 }
 .action-menu .danger-action {
-    color: var(--destructive, #dc2626);
+    color: var(--danger);
 }
 .destination-menu {
     max-height: 225px;
@@ -951,9 +952,9 @@ async function deleteFlow(flow: FlowSummary) {
 .empty-library {
     display: grid;
     justify-items: center;
-    padding: 72px 20px;
+    padding: var(--card-padding);
     border: 1px dashed var(--border);
-    border-radius: 13px;
+    border-radius: var(--radius-card);
     background: var(--card);
     text-align: center;
 }
@@ -971,9 +972,6 @@ async function deleteFlow(flow: FlowSummary) {
     font-size: 12px;
 }
 @media (max-width: 700px) {
-    .flows-content {
-        padding: 28px 16px;
-    }
     .page-header {
         align-items: flex-start;
     }
@@ -982,9 +980,6 @@ async function deleteFlow(flow: FlowSummary) {
     }
     .header-actions {
         flex-wrap: wrap;
-    }
-    .library-row {
-        padding: 10px;
     }
     .status-pill {
         display: none;

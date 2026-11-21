@@ -2,6 +2,7 @@ import { nextTick, reactive } from 'vue';
 
 export type AppDialogMode = 'alert' | 'confirm' | 'prompt';
 export type AppDialogResult = boolean | string | null;
+type ConfirmVariant = 'primary' | 'danger';
 
 export type AppDialogState = {
     open: boolean;
@@ -11,6 +12,7 @@ export type AppDialogState = {
     value: string;
     placeholder: string;
     confirmLabel: string;
+    confirmVariant: ConfirmVariant;
     cancelLabel: string;
 };
 
@@ -23,17 +25,20 @@ export function useAppDialog() {
         value: '',
         placeholder: '',
         confirmLabel: 'Entendi',
+        confirmVariant: 'primary',
         cancelLabel: 'Cancelar',
     });
+    type DialogOptions = {
+        title?: string;
+        value?: string;
+        placeholder?: string;
+        confirmLabel?: string;
+        confirmVariant?: ConfirmVariant;
+    };
     type DialogRequest = {
         mode: AppDialogMode;
         message: string;
-        options: {
-            title?: string;
-            value?: string;
-            placeholder?: string;
-            confirmLabel?: string;
-        };
+        options: DialogOptions;
         resolve: (result: AppDialogResult) => void;
     };
     const queue: DialogRequest[] = [];
@@ -52,6 +57,7 @@ export function useAppDialog() {
         dialog.message = request.message;
         dialog.value = request.options.value || '';
         dialog.placeholder = request.options.placeholder || '';
+        dialog.confirmVariant = request.options.confirmVariant ?? 'primary';
         dialog.confirmLabel =
             request.options.confirmLabel ||
             (request.mode === 'alert' ? 'Entendi' : 'Confirmar');
@@ -62,12 +68,7 @@ export function useAppDialog() {
     function ask(
         mode: AppDialogMode,
         message: string,
-        options: {
-            title?: string;
-            value?: string;
-            placeholder?: string;
-            confirmLabel?: string;
-        } = {},
+        options: DialogOptions = {},
     ): Promise<AppDialogResult> {
         return new Promise((resolve) => {
             queue.push({ mode, message, options, resolve });
@@ -91,8 +92,12 @@ export function useAppDialog() {
         dialog,
         alert: (message: string, title?: string) =>
             ask('alert', message, { title }).then(() => undefined),
-        confirm: (message: string, title?: string) =>
-            ask('confirm', message, { title }).then(
+        confirm: (
+            message: string,
+            title?: string,
+            confirmVariant: ConfirmVariant = 'primary',
+        ) =>
+            ask('confirm', message, { title, confirmVariant }).then(
                 (result) => result === true,
             ),
         prompt: (title: string, value = '', placeholder = '') =>

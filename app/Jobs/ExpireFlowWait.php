@@ -4,11 +4,14 @@ namespace App\Jobs;
 
 use App\Models\Contact;
 use App\Models\FlowExecution;
+use App\Models\FlowMessageBatch;
+use App\Services\Flows\FlowMessageGrouping;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Queue\SyncQueue;
 use Illuminate\Support\Facades\DB;
 
 class ExpireFlowWait implements ShouldQueue
@@ -37,6 +40,20 @@ class ExpireFlowWait implements ShouldQueue
             }
             $wait = DB::table('flow_waits')->where('id', $this->waitId)->lockForUpdate()->first();
             if (! $wait || $wait->status !== 'waiting' || now()->lt($wait->expires_at)) {
+                return null;
+            }
+            $grouping = app(FlowMessageGrouping::class);
+            $batch = FlowMessageBatch::where('flow_wait_id', $wait->id)->first();
+            if ($batch) {
+                $grouping->dispatch($batch);
+
+                return null;
+            }
+            if ($grouping->pendingInbound($execution, $wait->expires_at, $wait->created_at)) {
+                if (! (app('queue')->connection() instanceof SyncQueue)) {
+                    self::dispatch($this->waitId)->delay(1)->afterCommit();
+                }
+
                 return null;
             }
             DB::table('flow_waits')->where('id', $wait->id)->update(['status' => 'timed_out', 'completed_at' => now(), 'updated_at' => now()]);

@@ -1,7 +1,7 @@
 .leads-page {
     width: 100%;
     min-width: 0;
-    padding: 24px;
+    padding: var(--page-block-padding) var(--page-gutter);
 }
 .leads-header {
     display: flex;
@@ -60,9 +60,9 @@
 .leads-card {
     min-width: 0;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-card);
     background: var(--card);
-    padding: 24px;
+    padding: var(--card-padding);
 }
 .leads-filter-panel {
     display: grid;
@@ -89,7 +89,7 @@
 }
 .leads-list {
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-card);
     overflow: hidden;
     background: var(--card);
 }
@@ -98,7 +98,7 @@
     display: grid;
     grid-template-columns: minmax(0, 2fr) minmax(0, 1.5fr) 150px 190px;
     gap: 20px;
-    padding: 16px 20px;
+    padding: 16px var(--card-padding);
     align-items: center;
 }
 .leads-list-head {
@@ -363,12 +363,6 @@
     }
 }
 @media (max-width: 640px) {
-    .leads-page {
-        padding: 16px;
-    }
-    .leads-card {
-        padding: 16px;
-    }
     .leads-header {
         align-items: start;
     }

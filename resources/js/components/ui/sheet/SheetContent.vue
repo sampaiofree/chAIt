@@ -38,7 +38,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
       data-slot="sheet-content"
       :data-side="side"
       :class="cn(
-        'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500',
+        'bg-card data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 shadow-[var(--shadow-popover)] transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500',
         side === 'right'
           && 'data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full w-3/4 border-l sm:max-w-sm',
         side === 'left'
@@ -53,7 +53,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
       <slot />
 
       <DialogClose
-        class="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-3 right-3 size-10 flex items-center justify-center rounded-lg opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none"
+        class="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-3 right-3 size-[var(--control-height)] flex items-center justify-center rounded-lg opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none"
       >
         <X class="size-4" />
         <span class="sr-only">Fechar</span>

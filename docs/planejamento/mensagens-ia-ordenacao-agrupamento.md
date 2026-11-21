@@ -2,7 +2,7 @@
 
 > **Data:** 17/11/2026
 >
-> **Status:** planejado — não implementado. As proteções existentes e as melhorias propostas estão distinguidas abaixo.
+> **Status do diagnóstico original:** planejado em 17/11/2026. A implementação posterior reúne textos e ordena a preparação de mídias no bloco IA. O comportamento entregue está no [contrato do bloco IA](../modulos/bloco-ia.md). O roteiro abaixo registra também etapas de recuperação e capacidade mais amplas.
 >
 > **Base:** comparação do código local do Chait e do Facilitai, testes existentes do Chait e reprodução isolada com chamadas externas simuladas. Não representa homologação em produção.
 

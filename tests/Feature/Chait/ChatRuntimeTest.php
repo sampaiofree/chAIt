@@ -13,6 +13,7 @@ use App\Models\Contact;
 use App\Models\ContactChannel;
 use App\Models\Flow;
 use App\Models\FlowExecution;
+use App\Models\FlowMessageBatch;
 use App\Models\Thread;
 use App\Models\UazapiConnection;
 use App\Models\UazapiInbox;
@@ -27,6 +28,7 @@ use App\Services\Chat\ChatPublisher;
 use App\Services\Chat\TransportContext;
 use App\Services\Chat\WhatsAppJid;
 use App\Services\Flows\FlowInboundProcessor;
+use App\Services\Flows\FlowMessageGrouping;
 use App\Services\Uazapi\UazapiClient;
 use App\Services\Uazapi\UazapiDeferredException;
 use App\Services\Uazapi\UazapiGate;
@@ -112,17 +114,18 @@ test('an empty workspace lists no provider chats in either mode', function (bool
     Http::assertNothingSent();
 })->with([true, false]);
 
-test('existing conversations remain local after stale reconciliation state and disconnection', function (bool $realtime) {
+test('disconnection blocks the API while preserving local conversations', function (bool $realtime) {
     config(['chat.enabled' => $realtime]);
     $f = runtimeChat();
     $f['connection']->update(['status' => 'disconnected', 'chat_import_status' => 'failed', 'chat_last_reconciled_at' => now()->subDays(2)]);
-    Http::fake();
+    Http::fake(['*/instance/status' => Http::response(['status' => 'disconnected'])]);
 
     $this->actingAs($f['user'])->getJson(route('workspaces.conversations.index', $f['workspace']))
-        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $f['thread']->id);
+        ->assertStatus(409);
+    expect($f['thread']->fresh())->not->toBeNull();
     app(ChatMaintenance::class)->recover();
     Queue::assertNotPushed(ImportChats::class);
-    Http::assertNothingSent();
+    Http::assertSentCount(1);
 })->with([true, false]);
 
 test('retired import endpoint and jobs never scan the provider', function () {
@@ -179,6 +182,7 @@ test('only new inbound messages discover a conversation in either chat mode', fu
     $this->postJson($url, $message('second', ['text' => 'Outra']))->assertOk();
     app()->call([new ProcessInboundEvent(UazapiInbox::latest('id')->first()->id), 'handle']);
     expect(Contact::count())->toBe(1)->and(Thread::count())->toBe(1)->and(Thread::sole()->unread_count)->toBe(2);
+    Cache::put('chat-access:'.$connection->id, ['allowed' => true, 'status' => 'connected'], 15);
     $this->actingAs($user)->getJson(route('workspaces.conversations.index', $workspace))->assertOk()->assertJsonCount(1, 'data');
     Http::assertNothingSent();
 })->with([true, false]);
@@ -208,10 +212,10 @@ test('incoming Brazilian WhatsApp JIDs keep their exact digits even when they ar
 })->with([
     [false, '5511987654321@s.whatsapp.net', '5511987654321'],
     [true, '5511987654321@s.whatsapp.net', '5511987654321'],
-    [false, '551187654321@s.whatsapp.net', '551187654321'],
-    [true, '551187654321@s.whatsapp.net', '551187654321'],
-    [false, '556295772922@s.whatsapp.net', '556295772922'],
-    [true, '556295772922@s.whatsapp.net', '556295772922'],
+    [false, '551187654321@s.whatsapp.net', '5511987654321'],
+    [true, '551187654321@s.whatsapp.net', '5511987654321'],
+    [false, '556295772922@s.whatsapp.net', '5562995772922'],
+    [true, '556295772922@s.whatsapp.net', '5562995772922'],
 ]);
 
 test('incoming messages reuse the exact lead number in their own workspace without overwriting its data', function (bool $realtime) {
@@ -315,7 +319,7 @@ test('history uses the original Brazilian WhatsApp JID even when its digits are 
     Http::assertSent(fn ($request) => str_ends_with($request->url(), '/message/find') && $request['chatid'] === $jid);
 });
 
-test('a legacy WhatsApp JID is not merged into a guessed ninth-digit contact', function () {
+test('a legacy WhatsApp JID reuses its ninth-digit contact', function () {
     $f = runtimeChat();
     $f['thread']->delete();
     $f['thread']->contact->delete();
@@ -325,10 +329,10 @@ test('a legacy WhatsApp JID is not merged into a guessed ninth-digit contact', f
     receiveRuntimeWebhook($f, runtimeWebhook($f, 'legacy-separate', ['message' => ['chatid' => $jid]]))->assertOk();
     app()->call([new ProcessInboundEvent(UazapiInbox::sole()->id), 'handle']);
 
-    expect(Contact::count())->toBe(2)
-        ->and(ContactChannel::sole()->contact_id)->not->toBe($registered->id)
+    expect(Contact::count())->toBe(1)
+        ->and(ContactChannel::sole()->contact_id)->toBe($registered->id)
         ->and(Thread::sole()->contact_id)->toBe(ContactChannel::sole()->contact_id)
-        ->and(Thread::sole()->contact->phone)->toBe('551187654321');
+        ->and(Thread::sole()->contact->phone)->toBe('5511987654321');
 });
 
 test('message JID takes precedence over a provider-local chat record ID', function (bool $realtime) {
@@ -528,7 +532,7 @@ test('first realtime send opens, assigns and queues each message type', function
 test('realtime send cannot silently take a conversation from another user', function () {
     $f = runtimeChat();
     $other = User::factory()->create();
-    WorkspaceMembership::factory()->create(['workspace_id' => $f['workspace']->id, 'user_id' => $other->id, 'role' => 'agent', 'can_view_unassigned' => true]);
+    WorkspaceMembership::factory()->create(['workspace_id' => $f['workspace']->id, 'user_id' => $other->id, 'role' => 'agent', 'can_view_unassigned' => true, 'can_view_all' => true]);
 
     $this->actingAs($other)->postJson(route('workspaces.conversations.send', [$f['workspace'], $f['thread']]), ['text' => 'não tomar'])->assertConflict();
     expect(ChatOperation::count())->toBe(0);
@@ -652,7 +656,7 @@ test('message broadcasting recalculates current thread permissions for each reci
     app(ChatPublisher::class)->send($f['workspace']->id, 'message.received', ['text' => 'authorized-only'], $f['thread']->id);
     Event::assertDispatched(ChatUpdate::class, fn ($event) => (string) $event->broadcastOn()[0] === 'private-chat.user.'.$f['user']->id && $event->broadcastWith()['type'] === 'message.received');
     Event::assertNotDispatched(ChatUpdate::class, fn ($event) => (string) $event->broadcastOn()[0] === 'private-chat.user.'.$agent->id && $event->broadcastWith()['type'] === 'message.received');
-    $membership->update(['can_view_unassigned' => true]);
+    $membership->update(['can_view_unassigned' => true, 'can_view_all' => true]);
     $membership->delete();
     app(ChatPublisher::class)->send($f['workspace']->id, 'message.received', ['text' => 'after-removal'], $f['thread']->id);
     Event::assertNotDispatched(ChatUpdate::class, fn ($event) => (string) $event->broadcastOn()[0] === 'private-chat.user.'.$agent->id && data_get($event->broadcastWith(), 'data.text') === 'after-removal');
@@ -840,4 +844,73 @@ test('latest lead message releases replaced content and ignores outgoing message
     receiveRuntimeWebhook($f, runtimeWebhook($f, 'outbound', ['message' => ['fromMe' => true]]))->assertOk();
     app()->call([new ProcessInboundEvent(UazapiInbox::latest('id')->value('id')), 'handle']);
     expect($f['thread']->fresh()->metadata['last_lead_message']['message_id'])->toBe('second');
+});
+
+test('AI groups accepted texts and keeps media ahead of later text', function () {
+    $this->freezeSecond();
+    $f = runtimeChat();
+    runtimeAi($f);
+    Http::fake(['https://api.openai.com/v1/responses' => Http::response(['status' => 'completed', 'output' => [['type' => 'message', 'content' => [['type' => 'output_text', 'text' => 'AI answer']]]]])]);
+    $receive = function (string $id, array $message) use ($f): void {
+        receiveRuntimeWebhook($f, runtimeWebhook($f, $id, ['message' => $message]))->assertOk();
+        app()->call([new ProcessInboundEvent(UazapiInbox::latest('id')->value('id')), 'handle']);
+    };
+    $receive('group-1', ['text' => 'Primeira parte']);
+    $this->travel(2)->seconds();
+    $receive('group-2', ['text' => 'Segunda parte']);
+    $receive('group-2', ['text' => 'Segunda parte']);
+    $receive('group-media', ['messageType' => 'image']);
+    $receive('group-3', ['text' => 'Depois da imagem']);
+
+    $ids = FlowMessageBatch::orderBy('id')->pluck('id');
+    expect($ids)->toHaveCount(3);
+    $grouping = app(FlowMessageGrouping::class);
+    $this->travel(6)->seconds();
+    $grouping->process($ids[2]);
+    Http::assertNothingSent();
+
+    (new WorkspaceCapacity('ai'))->handle(new \App\Jobs\ProcessFlowMessageBatch($ids[0], true), fn ($job) => app()->call([$job, 'handle']));
+    Http::assertSent(fn ($request) => data_get($request->data(), 'input.0.content.0.text') === "Primeira parte\nSegunda parte");
+    expect(AiSession::sole()->message_count)->toBe(2);
+
+    $transport = ChatOperation::where('kind', 'transport')->sole();
+    Http::fake([
+        '*/send/text' => Http::response(['id' => 'sent-group', 'status' => 'Sent']),
+        '*/message/find' => Http::response(['messages' => [['id' => 'sent-group', 'status' => 'Sent', 'track_id' => $transport->track_id]]]),
+    ]);
+    app()->call([new ProcessChatOperation($transport->id), 'handle']);
+    Cache::forget('chat-provider:connection:'.$f['connection']->id.':pace');
+    app(\App\Services\Flows\AiSessionService::class)->reconcileSend(AiSession::sole()->id);
+    expect(AiSession::sole()->execution->context)->not->toHaveKey('ai_pending_send');
+    $grouping->process($ids[2]);
+    $grouping->process($ids[1]);
+    Queue::assertPushedOn('media', PrepareAiInput::class);
+    Http::assertNotSent(fn ($request) => str_ends_with($request->url(), '/responses'));
+});
+
+it('counts each assignment before pagination and independently of the selected tab', function () {
+    $f = runtimeChat();
+    Thread::factory()->create(['workspace_id' => $f['workspace']->id, 'uazapi_connection_id' => $f['connection']->id, 'contact_id' => $f['thread']->contact_id, 'assigned_to_user_id' => null, 'status' => 'open']);
+    $request = Illuminate\Http\Request::create('/', 'GET', ['assignment' => 'mine', 'status' => 'open']);
+    $request->setUserResolver(fn () => $f['user']);
+    $response = app(App\Http\Controllers\Chat\ChatController::class)->index($request, $f['workspace'], app(ChatProjection::class));
+    $data = $response->getData(true);
+    expect($data['counts'])->toBe(['all' => 2, 'mine' => 1, 'unassigned' => 1]);
+    expect($data['data'])->toHaveCount(1);
+});
+
+it('counts conversations beyond the page and applies the search to every tab', function () {
+    $f = runtimeChat();
+    $f['thread']->contact->update(['display_name' => 'BuscaUnica']);
+    $otherContact = Contact::factory()->create(['workspace_id' => $f['workspace']->id, 'display_name' => 'Outro contato']);
+    Thread::factory()->count(201)->create(['workspace_id' => $f['workspace']->id, 'uazapi_connection_id' => $f['connection']->id, 'contact_id' => $otherContact->id, 'assigned_to_user_id' => null]);
+    $request = Illuminate\Http\Request::create('/', 'GET');
+    $request->setUserResolver(fn () => $f['user']);
+    $controller = app(App\Http\Controllers\Chat\ChatController::class);
+    $data = $controller->index($request, $f['workspace'], app(ChatProjection::class))->getData(true);
+    expect($data['counts'])->toBe(['all' => 202, 'mine' => 1, 'unassigned' => 201]);
+    expect($data['data'])->toHaveCount(200);
+    $request->query->set('search', 'BuscaUnica');
+    $data = $controller->index($request, $f['workspace'], app(ChatProjection::class))->getData(true);
+    expect($data['counts'])->toBe(['all' => 1, 'mine' => 1, 'unassigned' => 0]);
 });

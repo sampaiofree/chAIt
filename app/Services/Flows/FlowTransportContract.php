@@ -153,7 +153,12 @@ class FlowTransportContract
             if (($prefix !== '' && ! str_starts_with($path, $prefix.'.')) || str_contains($key = $prefix === '' ? $path : substr($path, strlen($prefix) + 1), '.')) {
                 continue;
             }
-            $type = in_array('integer', $constraints, true) ? 'integer' : (in_array('numeric', $constraints, true) ? 'number' : (in_array('boolean', $constraints, true) ? 'boolean' : 'string'));
+            $type = match (true) {
+                in_array('integer', $constraints, true) => 'integer',
+                in_array('numeric', $constraints, true) => 'number',
+                in_array('boolean', $constraints, true), in_array('boolean:strict', $constraints, true) => 'boolean',
+                default => 'string',
+            };
             $schema = ['type' => $type];
             if (in_array('array', $constraints, true)) {
                 $list = collect(array_keys($rules))->contains(fn ($candidate) => str_starts_with($candidate, $path.'.*.'));

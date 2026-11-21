@@ -246,9 +246,9 @@ test('transport exports media hints without private identifiers and resets only 
     $asset = FlowAsset::create(['workspace_id' => $f['workspace']->id, 'flow_id' => $f['flow']->id, 'disk' => 'local', 'path' => 'private/secret.pdf', 'original_name' => 'Catálogo.pdf', 'mime_type' => 'application/pdf', 'size' => 100]);
     $graph = $f['flow']->graph;
     $graph['nodes'][] = ['id' => 'ai', 'type' => 'ai', 'position' => ['x' => 0, 'y' => 500], 'data' => ['label' => 'Consultor', ...FlowCapabilities::aiDefaults(), 'ai_prompt' => 'Atenda com cuidado.', 'ai_model' => 'gpt-6-astra', 'ai_inactivity_seconds' => 900, 'ai_expiry_action' => 'human', 'ai_max_messages' => 5, 'ai_limit_action' => 'continue',
-        'ai_media' => [['id' => 'catalogo', 'asset_id' => $asset->id, 'instruction' => 'Envie quando solicitado.']],
+        'ai_media' => [['id' => 'catalogo', 'title' => 'Catálogo comercial', 'asset_id' => $asset->id, 'instruction' => 'Envie quando solicitado.']],
         'ai_tags' => [['id' => 'vip', 'tag_id' => $tag->id, 'instruction' => 'Clientes prioritários.']],
-        'ai_fields' => [['id' => 'interesse', 'field_id' => $field->id, 'instruction' => 'Registre o interesse.', 'allow_overwrite' => true]],
+        'ai_fields' => [['id' => 'interesse', 'title' => 'Interesse de compra', 'field_id' => $field->id, 'instruction' => 'Registre o interesse.', 'allow_overwrite' => true]],
         'api_key' => 'must-not-export',
     ]];
     $f['flow']->update(['graph' => $graph]);
@@ -262,7 +262,10 @@ test('transport exports media hints without private identifiers and resets only 
     $ai = $f['flow']->fresh()->graph['nodes'][1]['data'];
     expect($ai['ai_prompt'])->toBe('Atenda com cuidado.')->and($ai['ai_model'])->toBe('gpt-6.1-sol')->and($ai['ai_inactivity_seconds'])->toBe(900)->and($ai['ai_max_messages'])->toBe(5)
         ->and($ai['ai_expiry_action'])->toBe('end')->and($ai['ai_limit_action'])->toBe('human')->and($ai['ai_fields'][0]['allow_overwrite'])->toBeFalse()
-        ->and($ai['ai_fields'][0]['field_id'])->toBe($field->id)->and($ai['ai_tags'][0]['tag_id'])->toBe($tag->id)->and($ai['ai_media'][0]['instruction'])->toBe('Envie quando solicitado.');
+        ->and($ai['ai_fields'][0]['field_id'])->toBe($field->id)->and($ai['ai_tags'][0]['tag_id'])->toBe($tag->id)->and($ai['ai_media'][0]['instruction'])->toBe('Envie quando solicitado.')
+        ->and($ai['ai_media'][0]['title'])->toBe('Catálogo comercial')->and($ai['ai_fields'][0]['title'])->toBe('Interesse de compra');
+    $runtimeInstructions = app(\App\Services\Flows\AiActionService::class)->instructions($ai);
+    expect($runtimeInstructions)->toContain('Envie quando solicitado.')->not->toContain('Catálogo comercial', 'Interesse de compra');
     expect($asset->fresh())->toBeNull();
 });
 
@@ -295,4 +298,41 @@ test('transport guide examples are importable and guide excludes AI construction
     expect($schema['properties']['nodes']['items']['oneOf'])->toHaveCount(count(FlowCapabilities::FIELDS));
     expect(json_decode(file_get_contents(base_path('docs/modulos/chait-flow.schema.json')), true))->toBe(json_decode(json_encode($schema), true));
     $this->get(transportUrl($f, '/export'))->assertOk();
+});
+
+test('transport preserves the AI history preference as an optional boolean', function () {
+    $f = transportFixture();
+    $service = app(FlowTransport::class);
+    $graph = $f['flow']->graph;
+    $graph['nodes'][] = ['id' => 'ai', 'type' => 'ai', 'position' => ['x' => 0, 'y' => 150], 'data' => ['label' => 'IA', 'ai_load_history' => true]];
+    $f['flow']->update(['graph' => $graph]);
+    $document = $service->export($f['flow'], 'draft');
+    expect($document['nodes'][1]['data']['ai_load_history'])->toBeTrue();
+    $imported = $service->graph($service->decode(json_encode($document)), $f['workspace']);
+    expect($imported['nodes'][1]['data']['ai_load_history'])->toBeTrue();
+
+    $document['nodes'][1]['data']['ai_load_history'] = '1';
+    $this->actingAs($f['user'])->postJson(transportUrl($f, '/import/validate'), transportInput($f, $document))->assertUnprocessable();
+    unset($document['nodes'][1]['data']['ai_load_history']);
+    $legacy = $service->graph($service->decode(json_encode($document)), $f['workspace']);
+    expect($legacy['nodes'][1]['data']['ai_load_history'])->toBeFalse()
+        ->and($legacy['nodes'][1]['position'])->toBe(['x' => 0.0, 'y' => 150.0])
+        ->and($legacy['nodes'][2]['position'])->toBe(['x' => 320.0, 'y' => 390.0]);
+});
+
+test('message grouping intervals round trip through the portable flow format', function () {
+    $f = transportFixture();
+    $service = app(FlowTransport::class);
+    $document = transportDocument();
+    $waitIndex = array_search('wait_reply', array_column($document['nodes'], 'type'), true);
+    $document['nodes'][$waitIndex]['data']['reply_grouping_seconds'] = 1;
+    $document['nodes'][] = ['id' => 'ai', 'type' => 'ai', 'data' => ['label' => 'IA', 'ai_grouping_seconds' => 90]];
+    $this->actingAs($f['user'])->postJson(transportUrl($f, '/import'), transportInput($f, $document))->assertOk();
+    $exported = collect($service->export($f['flow']->fresh(), 'draft')['nodes'])->keyBy('type');
+    expect($exported['wait_reply']['data']['reply_grouping_seconds'])->toBe(1)
+        ->and($exported['ai']['data']['ai_grouping_seconds'])->toBe(90);
+
+    $document['nodes'][$waitIndex]['data']['reply_grouping_seconds'] = 0;
+    $document['nodes'][array_key_last($document['nodes'])]['data']['ai_grouping_seconds'] = 91;
+    $this->postJson(transportUrl($f, '/import/validate'), transportInput($f, $document))->assertUnprocessable();
 });

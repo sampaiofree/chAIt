@@ -24,7 +24,7 @@ type MockThread = Omit<typeof thread, 'assigned_to'> & {
     assigned_to: { id: number; name: string } | null;
 };
 async function mockChat(page: Page, activeThread: MockThread = thread) {
-    await page.route('**/workspaces/*/chat-access', (route) =>
+    await page.route('**/workspaces/*/chat-access*', (route) =>
         route.fulfill({ json: { allowed: true, status: 'connected' } }),
     );
     await page.route('**/workspaces/*/uazapi/status', (route) =>
@@ -615,7 +615,7 @@ test('mobile navigation recovers when access is lost inside a conversation', asy
         name: 'Navegação inferior',
     });
     await expect(navigation).toBeHidden();
-    await page.route('**/workspaces/*/chat-access', (route) =>
+    await page.route('**/workspaces/*/chat-access*', (route) =>
         route.fulfill({ json: { allowed: false, status: 'disconnected' } }),
     );
     await page.clock.fastForward(15000);
@@ -963,7 +963,9 @@ test('conversation filters apply together, clear, and discard unapplied edits', 
     }
 
     const trigger = page.getByRole('button', { name: 'Filtrar conversas' });
-    await expect(page.locator('.list-pane h1')).toHaveClass(/sr-only/);
+    await expect(
+        page.getByRole('heading', { name: 'Conversas', exact: true }),
+    ).toBeVisible();
     await expect(
         page.getByRole('dialog', { name: 'Problema de conexão' }),
     ).toHaveCount(0);
@@ -1026,6 +1028,17 @@ test('conversation filters apply together, clear, and discard unapplied edits', 
     expect(clearedUrl.searchParams.get('status')).toBe('all');
     expect(clearedUrl.searchParams.getAll('tag_ids[]')).toHaveLength(0);
     await expect(trigger).toBeVisible();
+    const segments = page.getByRole('group', { name: 'Atribuição das conversas' });
+    const mine = segments.getByRole('button', { name: 'Meus', exact: true });
+    const assignmentRequest = page.waitForRequest((request) => {
+        const url = new URL(request.url());
+        return url.pathname.endsWith('/conversations') &&
+            url.searchParams.get('assignment') === 'mine';
+    });
+    await mine.click();
+    await assignmentRequest;
+    await expect(mine).toHaveAttribute('aria-pressed', 'true');
+
     await noOverflow(page);
 });
 
@@ -1105,7 +1118,7 @@ test('connection setup guides administrators and recovers without a modal', asyn
 }) => {
     await login(page);
     await page.clock.install();
-    await page.route('**/workspaces/*/chat-access', (route) =>
+    await page.route('**/workspaces/*/chat-access*', (route) =>
         route.fulfill({ json: { allowed: false, status: 'disconnected' } }),
     );
     await page.route('**/workspaces/*/uazapi/status', (route) =>
@@ -1151,7 +1164,7 @@ test('connection setup directs agents to their administrator', async ({
     page,
 }) => {
     await login(page, 'agent@example.test');
-    await page.route('**/workspaces/*/chat-access', (route) =>
+    await page.route('**/workspaces/*/chat-access*', (route) =>
         route.fulfill({ json: { allowed: false, status: 'disconnected' } }),
     );
     await page.reload();
@@ -1174,7 +1187,7 @@ for (const failure of ['unavailable', 'network', 'checking']) {
     }) => {
         await login(page);
         await page.clock.install();
-        await page.route('**/workspaces/*/chat-access', (route) =>
+        await page.route('**/workspaces/*/chat-access*', (route) =>
             failure === 'network'
                 ? route.abort('failed')
                 : route.fulfill({ json: { allowed: false, status: failure } }),
@@ -1217,7 +1230,7 @@ test('initial connection check stays neutral while pending', async ({
     const gate = new Promise<void>((resolve) => {
         release = resolve;
     });
-    await page.route('**/workspaces/*/chat-access', async (route) => {
+    await page.route('**/workspaces/*/chat-access*', async (route) => {
         await gate;
         await route.fulfill({
             json: { allowed: false, status: 'disconnected' },
@@ -1242,7 +1255,7 @@ test('connection setup fits mobile iPad and desktop in both themes', async ({
     page,
 }, testInfo) => {
     await login(page);
-    await page.route('**/workspaces/*/chat-access', (route) =>
+    await page.route('**/workspaces/*/chat-access*', (route) =>
         route.fulfill({ json: { allowed: false, status: 'disconnected' } }),
     );
     await page.reload();
@@ -1640,11 +1653,34 @@ test('block name editing is internal, validated and reversible; descriptions per
     await expect(start).not.toContainText('Observação interna preservada');
 });
 
+async function openPreviewFlow(page: Page) {
+    const flowsUrl = await page
+        .getByRole('link', { name: 'Fluxos', exact: true })
+        .getAttribute('href');
+    expect(flowsUrl).toMatch(/\/workspaces\/\d+\/flows$/);
+    const lockUrl = `${flowsUrl}/2/edit-lock`;
+    const acquiring = page.waitForRequest((request) =>
+        request.url().endsWith(lockUrl) && request.method() === 'POST',
+    );
+    await page.goto(`${flowsUrl}/2`);
+    await expect(page.getByLabel('Nome do fluxo', { exact: true })).toBeEnabled();
+    const { token } = (await acquiring).postDataJSON();
+    const csrf = await page.locator('meta[name="csrf-token"]').getAttribute('content');
+
+    return async () => {
+        const released = await page.request.delete(lockUrl, {
+            headers: { 'X-CSRF-TOKEN': csrf || '', Accept: 'application/json' },
+            data: { token },
+        });
+        expect(released.ok()).toBe(true);
+    };
+}
+
 test('canvas distinguishes messages, media and waits, limits previews and never shows internal descriptions', async ({
     page,
 }) => {
     await login(page);
-    await page.goto('/workspaces/1/flows/2');
+    const release = await openPreviewFlow(page);
     const content = page.locator('.flow-node.node-content');
     await expect(content.locator('.preview-item')).toHaveCount(2);
     await expect(content.locator('.message-preview')).toContainText(
@@ -1676,64 +1712,61 @@ test('canvas distinguishes messages, media and waits, limits previews and never 
     await expect(content.locator('.preview-label').last()).toHaveText('Espera');
     await expect(content).toContainText('Aguardar 7 segundos');
     await expect(content).toContainText('+ 1 item na sequência');
+    await expect(page.getByText('Todas as alterações salvas')).toBeVisible();
+    await release();
 });
 
-for (const width of [390, 1440]) {
+for (const width of [390, 768, 1024, 1440]) {
     test(`block hierarchy is clear in both themes at ${width}px`, async ({
         page,
     }, testInfo) => {
         await page.setViewportSize({ width, height: 900 });
         await login(page);
-
-        for (const theme of ['light', 'dark'] as const) {
-            await page.goto('/settings/appearance');
-            const option = page.getByRole('radio', {
-                name:
-                    theme === 'light'
-                        ? 'Claro Sempre usar o tema claro'
-                        : 'Escuro Sempre usar o tema escuro',
-            });
-
-            if (!(await option.isChecked())) {
-                await option.check();
-                await expect(
-                    page.getByText('Preferência salva.', { exact: true }),
-                ).toBeVisible();
-            }
-
-            await page.goto('/workspaces/1/flows/2');
-            await page
-                .getByRole('button', {
-                    name: 'Ajustar visualização',
-                    exact: true,
-                })
-                .click();
+        const release = await openPreviewFlow(page);
+        try {
+            await page.getByRole('button', { name: 'Ajustar visualização', exact: true }).click();
             const content = page.locator('.flow-node.node-content');
-            await content.click();
-            await expect(
-                page.getByRole('heading', {
-                    name: 'Mensagens para o contato',
-                    exact: true,
-                }),
-            ).toBeVisible();
-            await expect(
-                page.getByLabel('Descrição interna — opcional', {
-                    exact: true,
-                }),
-            ).toBeHidden();
-            await noOverflow(page);
-            await page.screenshot({
-                animations: 'disabled',
-                path: testInfo.outputPath(`block-panel-${theme}-${width}.png`),
-            });
-            await page
-                .getByRole('button', { name: 'Fechar painel', exact: true })
-                .click();
-            await expect(content).toBeVisible();
-            await page.screenshot({
-                animations: 'disabled',
-                path: testInfo.outputPath(`block-canvas-${theme}-${width}.png`),
-            });
+
+            for (const theme of ['light', 'dark'] as const) {
+                await page.evaluate((dark) => {
+                    document.documentElement.classList.toggle('dark', dark);
+                }, theme === 'dark');
+                await content.click();
+                await expect(
+                    page.getByRole('heading', {
+                        name: 'Mensagens para o contato',
+                        exact: true,
+                    }),
+                ).toBeVisible();
+                await expect(
+                    page.getByLabel('Descrição interna — opcional', {
+                        exact: true,
+                    }),
+                ).toBeHidden();
+                await noOverflow(page);
+                const panel = await page.locator('.settings-panel').boundingBox();
+                const canvas = await page.locator('.flow-canvas').boundingBox();
+                expect(panel!.width).toBeGreaterThanOrEqual(300);
+                if (width < 768) {
+                    expect(panel!.width).toBeCloseTo(canvas!.width, 0);
+                } else if (width >= 1200) {
+                    expect(panel!.x).toBeCloseTo(canvas!.x + canvas!.width, 0);
+                }
+                await page.screenshot({
+                    animations: 'disabled',
+                    path: testInfo.outputPath(`block-panel-${theme}-${width}.png`),
+                });
+                await page
+                    .getByRole('button', { name: 'Fechar painel', exact: true })
+                    .click();
+                await expect(content).toBeVisible();
+                await page.screenshot({
+                    animations: 'disabled',
+                    path: testInfo.outputPath(`block-canvas-${theme}-${width}.png`),
+                });
+            }
+        } finally {
+            await release();
         }
     });
 }
@@ -1742,7 +1775,7 @@ test('empty blocks and configured actions show useful summaries instead of descr
     page,
 }) => {
     await login(page);
-    await page.goto('/workspaces/1/flows/2');
+    const release = await openPreviewFlow(page);
     async function add(kind: string) {
         await page
             .getByRole('button', { name: 'Adicionar bloco', exact: true })
@@ -1775,16 +1808,21 @@ test('empty blocks and configured actions show useful summaries instead of descr
     await expect(page.locator('.flow-node.node-condition')).toContainText(
         'Adicione uma verificação.',
     );
+    for (const label of ['Sim', 'Não']) {
+        await expect(page.locator('.node-condition').getByRole('button', { name: `Adicionar bloco após ${label}`, exact: true })).toBeVisible();
+    }
     await add('Ir para Fluxo');
     await expect(page.locator('.flow-node.node-jump_flow')).toContainText(
         'Escolha o fluxo de destino.',
     );
+    await add('Menu');
+    await expect(page.locator('.node-menu')).toContainText('Adicione uma pergunta para o contato');
     await add('IA');
     await expect(page.locator('.flow-node.node-ai')).toContainText(
         'Defina as instruções para a conversa com IA.',
     );
     await page
-        .getByLabel('Instruções da IA')
+        .getByRole('textbox', { name: 'O que a IA deve fazer?' })
         .fill('INSTRUÇÃO INTERNA PARA O MODELO');
     await expect(page.locator('.flow-node.node-ai')).toContainText(
         'Conversa com IA configurada. Inatividade: 1 hora.',
@@ -1792,47 +1830,32 @@ test('empty blocks and configured actions show useful summaries instead of descr
     await expect(page.locator('.flow-node.node-ai')).not.toContainText(
         'INSTRUÇÃO INTERNA PARA O MODELO',
     );
+    await expect(page.getByText('Todas as alterações salvas', { exact: true })).toBeVisible();
+    await release();
 });
 
 test('assistant permissions persist in the editor with overwrite disabled by default', async ({
     page,
 }, testInfo) => {
     await login(page);
-    await page.goto('/workspaces/1/flows/2');
+    await openPreviewFlow(page);
+    const endpoint = new URL(page.url()).pathname;
     await page
         .getByRole('button', { name: 'Adicionar bloco', exact: true })
         .click();
     await page.getByRole('button', { name: 'IA', exact: true }).click();
     await page
-        .getByLabel('Instruções da IA')
+        .getByRole('textbox', { name: 'O que a IA deve fazer?' })
         .fill('Identifique o curso de interesse.');
+    const resourcesTab = page.getByRole('tab', { name: 'Saídas e recursos', exact: true });
+    await resourcesTab.click();
     await page
         .getByRole('button', { name: 'Adicionar mídia', exact: true })
         .click();
-    await page.route('**/workspaces/1/flows/2/assets', (route) =>
-        route.fulfill({
-            status: 201,
-            json: {
-                data: {
-                    id: 9876,
-                    media_type: 'image',
-                    original_name: 'catalogo.png',
-                    mime_type: 'image/png',
-                    size: 68,
-                },
-            },
-        }),
-    );
-    await page.getByLabel('Arquivo 1', { exact: true }).setInputFiles({
-        name: 'catalogo.png',
-        mimeType: 'image/png',
-        buffer: Buffer.from('fixture'),
-    });
-    await expect(page.locator('.ai-resource strong')).toHaveText(
-        'catalogo.png',
-    );
+    await page.getByLabel('Arquivo', { exact: true }).setInputFiles('public/brand/symbol.png');
+    await expect(page.locator('.ai-resource summary').filter({ hasText: 'symbol.png' })).toBeVisible();
     await page
-        .getByLabel('Quando enviar a mídia 1', { exact: true })
+        .getByLabel('Quando enviar a mídia', { exact: true })
         .fill('Quando solicitar o catálogo.');
     await page
         .getByRole('button', { name: 'Autorizar tag', exact: true })
@@ -1850,21 +1873,14 @@ test('assistant permissions persist in the editor with overwrite disabled by def
         .getByLabel('Campo autorizado 1', { exact: true })
         .selectOption({ label: 'Curso IA' });
     await page
-        .getByLabel('Instruções do campo 1', { exact: true })
+        .getByLabel('Quando preencher o campo', { exact: true })
         .fill('Registrar o curso escolhido.');
     await expect(
-        page.getByLabel('Permitir sobrescrever valor existente — campo 1'),
+        page.getByLabel('Permitir sobrescrever valor existente'),
     ).not.toBeChecked();
-    const response = page.waitForResponse(
-        (response) =>
-            response.request().method() === 'PUT' &&
-            response.url().endsWith('/workspaces/1/flows/2'),
-    );
-    await page.getByRole('button', { name: 'Salvar', exact: true }).click();
-    const saved = await (await response).json();
-    const assistant = saved.data.graph.nodes.find(
-        (node: { type: string }) => node.type === 'ai',
-    );
+    await expect(page.getByText('Todas as alterações salvas', { exact: true })).toBeVisible();
+    const { data: saved } = await (await page.request.get(`${endpoint}/assistant`)).json();
+    const assistant = saved.flow.graph.nodes.find((node: { type: string }) => node.type === 'ai');
     expect(assistant.data.ai_media).toHaveLength(1);
     expect(assistant.data.ai_tags[0].instruction).toBe(
         'Quando demonstrar interesse.',
@@ -1872,14 +1888,14 @@ test('assistant permissions persist in the editor with overwrite disabled by def
     expect(assistant.data.ai_fields[0].allow_overwrite).toBe(false);
     await page.reload();
     await page.locator('.flow-node.node-ai').click();
+    await resourcesTab.click();
+    await page.locator('.ai-resource summary').filter({ hasText: 'Curso IA' }).click();
     await expect(
-        page.getByLabel('Instruções do campo 1', { exact: true }),
+        page.getByLabel('Quando preencher o campo', { exact: true }),
     ).toHaveValue('Registrar o curso escolhido.');
-    await expect(page.locator('.ai-resource strong')).toContainText(
-        'Arquivo indisponível',
-    );
+    await expect(page.locator('.ai-resource summary').filter({ hasText: 'symbol.png' })).toBeVisible();
     await page
-        .getByLabel('Permitir sobrescrever valor existente — campo 1')
+        .getByLabel('Permitir sobrescrever valor existente')
         .check();
     await page.setViewportSize({ width: 390, height: 844 });
     await noOverflow(page);
@@ -1887,11 +1903,12 @@ test('assistant permissions persist in the editor with overwrite disabled by def
         path: testInfo.outputPath('assistant-mobile.png'),
         fullPage: true,
     });
+    await page.locator('.ai-resource summary').filter({ hasText: 'symbol.png' }).click();
     await page
         .getByRole('button', { name: 'Remover mídia 1', exact: true })
         .click();
     await expect(
-        page.getByLabel('Quando enviar a mídia 1', { exact: true }),
+        page.getByLabel('Quando enviar a mídia', { exact: true }),
     ).toHaveCount(0);
 });
 
@@ -2297,4 +2314,26 @@ test('mobile dialogs and deletion action stay within the visible area', async ({
         footer.getByRole('button', { name: 'Cancelar' }),
     ).toBeInViewport();
     await footer.getByRole('button', { name: 'Cancelar' }).click();
+});
+
+test('block title can be edited in place and saved automatically', async ({ page }) => {
+    await login(page);
+    const flowsUrl = await page.getByRole('link', { name: 'Fluxos', exact: true }).getAttribute('href');
+    await page.goto(`${flowsUrl}/1`);
+    const start = page.locator('.flow-node.node-start');
+    await start.click();
+    const title = page.getByRole('button', { name: 'Editar nome interno do bloco' });
+    await expect(title).toHaveText('Início');
+    await title.click();
+    const name = page.getByLabel('Nome interno do bloco', { exact: true });
+    await name.fill('  Título alterado  ');
+    await name.press('Enter');
+    await expect(start.locator('.node-header strong')).toHaveText('Título alterado');
+    await title.click();
+    await name.fill('Descartado');
+    await name.press('Escape');
+    await expect(title).toHaveText('Título alterado');
+    await expect(page.getByText('Todas as alterações salvas', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(start.locator('.node-header strong')).toHaveText('Título alterado');
 });

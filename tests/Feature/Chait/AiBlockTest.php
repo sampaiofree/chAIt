@@ -68,6 +68,14 @@ function aiFixture(array $data = []): array
     return compact('user', 'workspace', 'connection', 'contact', 'thread', 'flow', 'version');
 }
 
+function startAiOpening(array $fixture): AiSession
+{
+    $execution = app(FlowRuntime::class)->start($fixture['version'], $fixture['contact']->id, $fixture['thread']->id, $fixture['connection'], 'test');
+    app(FlowRuntime::class)->run($execution->id);
+
+    return AiSession::sole();
+}
+
 test('OpenAI key is encrypted, admin-only and never returned by settings', function () {
     Http::fake(['api.openai.com/*' => Http::response(['id' => 'gpt-6.1-sol'])]);
     $user = User::factory()->create();
@@ -917,6 +925,115 @@ test('initial context preserves normal opening when there is no captured message
     expect($service->input($session, '', 'test', new AiTurnBudget))->toBeNull();
     expect($service->input($session, 'Contexto literal', 'test', new AiTurnBudget))->toBe([['type' => 'input_text', 'text' => 'Contexto literal']]);
 });
+
+test('AI loads only eligible text from its own chat once and deduplicates the initial message', function () {
+    Queue::fake();
+    $this->travelTo(now()->startOfSecond());
+    $initialContext = ['template_version' => 1, 'parts' => [['type' => 'runtime', 'key' => 'ultima_mensagem']]];
+    $f = aiFixture(['ai_load_history' => true, 'ai_initial_context' => $initialContext]);
+    $chatId = $f['thread']->external_chat_id;
+    $f['thread']->update(['metadata' => ['last_lead_message' => ['message_id' => 'trigger', 'inbox_id' => null]]]);
+    DB::table('contact_resets')->insert(['workspace_id' => $f['workspace']->id, 'external_id' => $chatId, 'reset_at' => now()->subHour()]);
+    $message = fn ($id, $text, $time, array $data = []) => $data + [
+        'id' => $id, 'chatid' => $chatId, 'messageType' => 'text', 'text' => $text, 'messageTimestamp' => $time->getTimestampMs(),
+    ];
+    $trigger = $message('trigger', 'Qual o prazo mesmo?', now()->subSecond());
+    $next = $message('next', 'E o frete?', now()->addMinute());
+    Http::fake([
+        '*/message/find' => fn ($request) => Http::response(['messages' => match ($request['id'] ?? null) {
+            'trigger' => [$trigger],
+            'next' => [$next],
+            default => [
+                $message('foreign', 'Outro chat', now()->subSeconds(2), ['chatid' => '5511888888888@s.whatsapp.net']),
+                $next,
+                $message('alias', 'Qual o prazo mesmo?', now()->subSecond(), ['messageid' => 'trigger']),
+                $message('company', 'O prazo é de 5 dias.', now()->subMinutes(2), ['fromMe' => true, 'status' => 'Delivered']),
+                $message('lead', 'Quero dois produtos.', now()->subMinutes(3), ['messageType' => 'ExtendedTextMessage']),
+                $message('lead', 'Duplicado', now()->subMinutes(4)),
+                $message('image', 'Legenda da imagem', now()->subMinutes(5), ['messageType' => 'ImageMessage']),
+                $message('failed', 'Envio falhou', now()->subMinutes(6), ['fromMe' => true, 'status' => 'Failed']),
+                $message('old', 'Conversa anterior à redefinição', now()->subHours(2)),
+                $message('reset', 'Na hora da redefinição', now()->subHour()),
+            ],
+        }]),
+        'api.openai.com/v1/conversations' => Http::response(['id' => 'conv-history']),
+        'api.openai.com/v1/responses' => Http::response(['output' => [['type' => 'message', 'content' => [['type' => 'output_text', 'text' => 'Claro!']]]]]),
+        '*/send/text' => Http::response(['id' => 'sent', 'status' => 'Sent']),
+    ]);
+    $session = startAiOpening($f);
+    $service = app(AiSessionService::class);
+    $service->process($session->id, null);
+    expect($session->fresh()->message_count)->toBe(0);
+    $this->travel(2)->minutes();
+    $service->process($session->id, 'next');
+    $service->process($session->id, null);
+    expect($session->fresh()->message_count)->toBe(1);
+
+    $historyRequests = Http::recorded(fn ($request) => str_ends_with($request->url(), '/message/find') && isset($request['chatid']));
+    expect($historyRequests)->toHaveCount(1)->and($historyRequests->sole()[0]['chatid'])->toBe($chatId);
+    $responses = Http::recorded(fn ($request) => str_ends_with($request->url(), '/v1/responses'))->values();
+    expect($responses)->toHaveCount(2);
+    $opening = $responses[0][0]['input'][0];
+    expect($opening['role'])->toBe('user')
+        ->and($opening['content'][0]['text'])->toEndWith("Lead: Quero dois produtos.\nEmpresa: O prazo é de 5 dias.")
+        ->and($opening['content'][1]['text'])->toBe('Qual o prazo mesmo?')
+        ->and($opening['content'])->toHaveCount(2)
+        ->and($responses[0][0]['instructions'])->not->toContain('Quero dois produtos.')
+        ->and($responses[1][0]['input'][0]['content'][0]['text'])->toBe('E o frete?')
+        ->and(json_encode($session->fresh()->execution->context))->not->toContain('Quero dois produtos.');
+});
+
+test('AI history respects the last seven days and the transcript limits', function (bool $long) {
+    Queue::fake();
+    $this->travelTo(now()->startOfSecond());
+    $f = aiFixture(['ai_load_history' => true]);
+    $message = fn ($id, $text, $time) => ['id' => $id, 'chatid' => $f['thread']->external_chat_id, 'messageType' => 'text', 'text' => $text, 'messageTimestamp' => $time->getTimestampMs()];
+    $messages = $long
+        ? [$message('huge', str_repeat('á', 13000), now()->subMinute()), $message('older', 'Mensagem menor', now()->subMinutes(2))]
+        : array_map(fn ($index) => $message("m-{$index}", "Mensagem {$index}", now()->subMinutes($index)), range(1, 55));
+    $messages[] = $message('eight-days', 'Fora da janela', now()->subDays(8));
+    Http::fake([
+        '*/message/find' => Http::response(['messages' => $messages]),
+        'api.openai.com/v1/conversations' => Http::response(['id' => 'conv-history-limit']),
+        'api.openai.com/v1/responses' => Http::response(['output' => [['type' => 'message', 'content' => [['type' => 'output_text', 'text' => 'Olá!']]]]]),
+        '*/send/text' => Http::response(['id' => 'sent', 'status' => 'Sent']),
+    ]);
+    $session = startAiOpening($f);
+    app(AiSessionService::class)->process($session->id, null);
+    $request = Http::recorded(fn ($request) => str_ends_with($request->url(), '/v1/responses'))->sole()[0];
+    $history = $request['input'][0]['content'][0]['text'];
+    expect($history)->not->toContain('Fora da janela');
+    if ($long) {
+        expect(mb_strlen($history))->toBe(12000)->and($history)->toEndWith('…');
+    } else {
+        $lines = explode("\n", $history);
+        expect($lines)->toHaveCount(51)->and($lines[1])->toBe('Lead: Mensagem 50')->and(end($lines))->toBe('Lead: Mensagem 1');
+    }
+})->with([false, true]);
+
+test('AI opens normally when history is off, empty or unavailable', function (?bool $enabled, int $code, bool $expired = false, string $context = '') {
+    Queue::fake();
+    $f = aiFixture(['ai_initial_context' => $context] + ($enabled === null ? [] : ['ai_load_history' => $enabled]));
+    $messages = $expired ? [[
+        'id' => 'eight-days', 'chatid' => $f['thread']->external_chat_id, 'messageType' => 'text', 'text' => 'Fora da janela', 'messageTimestamp' => now()->subDays(8)->getTimestampMs(),
+    ]] : [];
+    Http::fake([
+        '*/message/find' => Http::response(['messages' => $messages], $code),
+        'api.openai.com/v1/conversations' => Http::response(['id' => 'conv-history-fallback']),
+        'api.openai.com/v1/responses' => Http::response(['output' => [['type' => 'message', 'content' => [['type' => 'output_text', 'text' => 'Olá!']]]]]),
+        '*/send/text' => Http::response(['id' => 'sent', 'status' => 'Sent']),
+    ]);
+    $session = startAiOpening($f);
+    app(AiSessionService::class)->process($session->id, null);
+    expect($session->fresh()->status)->toBe('active');
+    $reads = Http::recorded(fn ($request) => str_ends_with($request->url(), '/message/find'));
+    expect($reads)->toHaveCount($enabled ? 1 : 0);
+    $request = Http::recorded(fn ($request) => str_ends_with($request->url(), '/v1/responses'))->sole()[0];
+    expect($request['input'][0]['content'])->toBe([['type' => 'input_text', 'text' => $context ?: 'Inicie a conversa com o lead seguindo as instruções. Não presuma o conteúdo de uma mensagem anterior.']]);
+})->with([
+    'legacy' => [null, 200], 'off' => [false, 200], 'empty' => [true, 200], 'expired' => [true, 200, true],
+    'unavailable' => [true, 503], 'unavailable with initial context' => [true, 503, false, 'Contexto original da conversa.'],
+]);
 
 test('custom AI outputs finish without implicitly opening human support', function () {
     Queue::fake();

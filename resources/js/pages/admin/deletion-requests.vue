@@ -28,10 +28,25 @@ defineProps<{
 </template>
 <style scoped>
 .requests {
-    padding: 32px;
+    padding: var(--page-block-padding) var(--page-gutter);
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+}
+h1 {
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+.requests > p,
+article p {
+    color: var(--text-secondary);
 }
 article {
-    padding: 16px;
-    border-bottom: 1px solid var(--border);
+    padding: var(--card-padding);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--card);
+    overflow-wrap: anywhere;
 }
 </style>

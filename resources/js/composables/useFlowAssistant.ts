@@ -155,6 +155,15 @@ function clone<T>(value: T): T {
     return JSON.parse(JSON.stringify(value));
 }
 
+class FlowRequestError extends Error {
+    readonly errors: Record<string, string[]>;
+
+    constructor(message: string, errors: Record<string, string[]>) {
+        super(message);
+        this.errors = errors;
+    }
+}
+
 export function useFlowAssistant(options: {
     workspaceId: number;
     flowId: number;
@@ -169,7 +178,7 @@ export function useFlowAssistant(options: {
         state: AssistantState,
     ) => void;
     onSaving: () => void;
-    onError: () => void;
+    onError: (errors: Record<string, string[]>) => void;
 }) {
     const state = ref<AssistantState | null>(null);
     const error = ref('');
@@ -254,8 +263,9 @@ export function useFlowAssistant(options: {
                 conflict.value = true;
             }
 
-            throw new Error(
+            throw new FlowRequestError(
                 result.message || 'Não foi possível sincronizar o editor.',
+                result.errors || {},
             );
         }
 
@@ -491,7 +501,9 @@ export function useFlowAssistant(options: {
 
                 return true;
             } catch (caught) {
-                options.onError();
+                options.onError(
+                    caught instanceof FlowRequestError ? caught.errors : {},
+                );
                 error.value =
                     caught instanceof Error
                         ? caught.message

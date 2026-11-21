@@ -9,6 +9,7 @@ use App\Jobs\ReconcileAiSend;
 use App\Models\AiSession;
 use App\Models\Contact;
 use App\Models\FlowExecution;
+use App\Models\FlowMessageBatch;
 use App\Models\UazapiInbox;
 use App\Models\WorkspaceOpenAiIntegration;
 use App\Services\Uazapi\UazapiClient;
@@ -39,6 +40,9 @@ class AiSessionService
         $context = $execution->context ?? [];
         $context['ai_initial_session_id'] = $session->id;
         $context['ai_initial_message'] = $execution->thread()->first()?->metadata['last_lead_message'] ?? null;
+        if ($node['data']['ai_load_history'] ?? false) {
+            $context['ai_history_before'] = now()->toISOString();
+        }
         $usesLast = collect(ContactTemplate::parts($node['data']['ai_initial_context'] ?? ''))->contains(fn ($part) => ($part['type'] ?? '') === 'runtime');
         $context['ai_initial_reserved'] = $usesLast && ! empty($context['ai_initial_message']['inbox_id']);
         if ($context['ai_initial_reserved']) {
@@ -49,17 +53,28 @@ class AiSessionService
         ExpireAiSession::dispatch($session->id)->delay($session->expires_at)->afterCommit();
     }
 
-    public function process(int $sessionId, ?string $messageId, ?int $inboxId = null): void
+    public function processBatch(int $sessionId, int $batchId, array $messageIds, array $input): bool
+    {
+        $this->process($sessionId, $messageIds[0], batchId: $batchId, messageIds: $messageIds, batchInput: $input);
+        $batch = FlowMessageBatch::find($batchId);
+
+        return ! $batch || $batch->started_at !== null;
+    }
+
+    public function process(int $sessionId, ?string $messageId, ?int $inboxId = null, ?int $batchId = null, array $messageIds = [], ?array $batchInput = null): void
     {
         $lock = Cache::lock("ai-session:{$sessionId}", 195);
         try {
             $lock->block(5);
         } catch (LockTimeoutException) {
-            ProcessAiTurn::dispatch($sessionId, $messageId, $inboxId)->delay(5);
+            if ($batchId === null) {
+                ProcessAiTurn::dispatch($sessionId, $messageId, $inboxId)->delay(5);
+            }
 
             return;
         }
         $budget = app(AiTurnBudget::class);
+        $turnId = $batchId === null ? $messageId : 'batch-'.$batchId;
         try {
             $session = AiSession::with('execution.version', 'execution.thread', 'execution.connection')->find($sessionId);
             if (! $session || ! $this->isCurrent($session) || now()->gte($session->expires_at)) {
@@ -67,7 +82,7 @@ class AiSessionService
             }
             if (isset($session->execution->context['ai_pending_send'])) {
                 ReconcileAiSend::dispatch($session->id)->delay(5);
-                if ($messageId !== null) {
+                if ($messageId !== null && $batchId === null) {
                     ProcessAiTurn::dispatch($sessionId, $messageId, $inboxId)->delay(5);
                 }
 
@@ -82,28 +97,36 @@ class AiSessionService
                 return;
             }
             if ($messageId !== null && $session->remote_conversation_id === null) {
-                ProcessAiTurn::dispatch($sessionId, $messageId, $inboxId)->delay(2);
+                if ($batchId === null) {
+                    ProcessAiTurn::dispatch($sessionId, $messageId, $inboxId)->delay(2);
+                }
 
                 return;
             }
             if ($messageId !== null) {
-                $inserted = DB::table('ai_session_inputs')->insertOrIgnore([
-                    'ai_session_id' => $session->id, 'provider_message_id' => $messageId,
-                    'created_at' => now(), 'updated_at' => now(),
-                ]);
+                $inserted = DB::transaction(function () use ($batchId, $session, $messageIds, $messageId): int {
+                    if ($batchId !== null && ! FlowMessageBatch::whereKey($batchId)->whereNull('started_at')->update(['started_at' => now()])) {
+                        return 0;
+                    }
+
+                    return DB::table('ai_session_inputs')->insertOrIgnore(array_map(fn ($id) => [
+                        'ai_session_id' => $session->id, 'provider_message_id' => $id,
+                        'created_at' => now(), 'updated_at' => now(),
+                    ], $messageIds ?: [$messageId]));
+                });
                 if (! $inserted) {
                     return;
                 }
                 try {
-                    $inbound = $this->inbound->input($session, $messageId, $key, $budget, $inboxId ? UazapiInbox::find($inboxId)?->payload : null);
+                    $inbound = $this->inbound->input($session, $messageId, $key, $budget, $batchInput ?? ($inboxId ? UazapiInbox::find($inboxId)?->payload : null));
                 } catch (AiTurnLimitException $exception) {
                     throw $exception;
                 } catch (UnsupportedAiMediaException) {
-                    $session->increment('message_count');
+                    $session->increment('message_count', $inserted);
                     $session->refresh();
                     $session->forceFill(['expires_at' => now()->addSeconds((int) $data['ai_inactivity_seconds'])])->save();
                     ExpireAiSession::dispatch($session->id)->delay($session->expires_at);
-                    $this->send($session, 'Não consegui analisar essa mídia. Envie sua dúvida por texto, imagem, áudio ou PDF, DOCX e TXT de até 10 MB.', 'unsupported-'.$messageId, $budget);
+                    $this->send($session, 'Não consegui analisar essa mídia. Envie sua dúvida por texto, imagem, áudio ou PDF, DOCX e TXT de até 10 MB.', 'unsupported-'.$turnId, $budget);
                     $this->applyLimit($session, $data);
 
                     return;
@@ -112,12 +135,12 @@ class AiSessionService
 
                     return;
                 }
-                $session->increment('message_count');
+                $session->increment('message_count', $inserted);
                 $session->refresh();
                 $session->forceFill(['expires_at' => now()->addSeconds((int) $data['ai_inactivity_seconds'])])->save();
                 ExpireAiSession::dispatch($session->id)->delay($session->expires_at);
                 if ($inbound['video']) {
-                    $this->send($session, 'Não consigo analisar vídeos. Envie sua dúvida por texto, áudio, imagem ou documento.', 'video-'.$messageId, $budget);
+                    $this->send($session, 'Não consigo analisar vídeos. Envie sua dúvida por texto, áudio, imagem ou documento.', 'video-'.$turnId, $budget);
                     $this->applyLimit($session, $data);
 
                     return;
@@ -127,8 +150,17 @@ class AiSessionService
                 if ($session->remote_conversation_id !== null) {
                     return;
                 }
-                $input = app(AiInitialContext::class)->input($session, $data['ai_initial_context'] ?? '', $key, $budget)
-                    ?? [['type' => 'input_text', 'text' => 'Inicie a conversa com o lead seguindo as instruções. Não presuma o conteúdo de uma mensagem anterior.']];
+                $includedMessageId = null;
+                $input = app(AiInitialContext::class)->input($session, $data['ai_initial_context'] ?? '', $key, $budget, $includedMessageId);
+                $history = ($data['ai_load_history'] ?? false)
+                    ? app(AiConversationHistory::class)->input($session, $includedMessageId, $budget)
+                    : null;
+                $input = [
+                    ...($history ? [$history] : []),
+                    ...($input ?? [['type' => 'input_text', 'text' => $history
+                        ? 'Inicie a conversa com o lead seguindo as instruções e considerando o histórico disponível.'
+                        : 'Inicie a conversa com o lead seguindo as instruções. Não presuma o conteúdo de uma mensagem anterior.']]),
+                ];
             }
             try {
                 if (! $session->remote_conversation_id) {
@@ -239,7 +271,7 @@ class AiSessionService
                 return;
             }
             try {
-                $this->send($session, $outcome['text'], $messageId ?? 'opening', $budget);
+                $this->send($session, $outcome['text'], $turnId ?? 'opening', $budget);
                 $this->applyLimit($session, $data);
             } catch (TemplateContentException $exception) {
                 $this->operationalFailure($session, $exception->reason, $exception->field);
@@ -539,6 +571,7 @@ class AiSessionService
                 unset($context['ai_pending_send']);
                 $execution->update(['context' => $context]);
             }
+            app(FlowMessageGrouping::class)->cancel($current->flow_execution_id);
             app(AiInitialContext::class)->release($current);
             $current->forceFill(['status' => $execution?->status !== 'waiting_ai' ? 'interrupted' : match ($action) {
                 'continue' => 'completed', 'human' => 'handed_off', default => str_starts_with($action, 'ai_exit:') ? 'completed' : 'expired',

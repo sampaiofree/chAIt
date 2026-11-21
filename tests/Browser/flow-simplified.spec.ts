@@ -7,17 +7,21 @@ async function createFlow(page: Page) {
     await page.getByLabel('Senha', { exact: true }).fill('password');
     await page.getByRole('button', { name: 'Entrar', exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
-    await page.goto('/workspaces/1/flows');
+    const flowsUrl = await page
+        .getByRole('link', { name: 'Fluxos', exact: true })
+        .getAttribute('href');
+    expect(flowsUrl).toMatch(/\/workspaces\/\d+\/flows$/);
+    await page.goto(flowsUrl!);
     const csrf = await page
         .locator('meta[name="csrf-token"]')
         .getAttribute('content');
-    const response = await page.request.post('/workspaces/1/flows', {
+    const response = await page.request.post(flowsUrl!, {
         headers: { 'X-CSRF-TOKEN': csrf || '', Accept: 'application/json' },
         data: { name: 'Novo fluxo' },
     });
     expect(response.ok()).toBeTruthy();
     const flow = (await response.json()).data;
-    const endpoint = `/workspaces/1/flows/${flow.id}`;
+    const endpoint = `${flowsUrl}/${flow.id}`;
     await page.goto(endpoint);
     await expect(page.getByLabel('Nome do fluxo')).toBeEnabled();
 
@@ -152,4 +156,79 @@ test('changes made while a save is in flight are saved afterwards', async ({
         )
         .toBe('Alteração mais recente');
     await expect(page.getByText('Todas as alterações salvas')).toBeVisible();
+});
+
+test('editor guides configuration and keeps the canvas selection when returning from AI', async ({
+    page,
+}) => {
+    await createFlow(page);
+    const canvas = page.getByRole('region', { name: 'Canvas do fluxo' });
+    const start = canvas.locator('.node-start');
+    await start.getByRole('button', { name: /Adicionar bloco após/ }).click();
+    await canvas.getByRole('button', { name: 'Conteúdo', exact: true }).click();
+    const content = canvas.locator('.node-content');
+    await expect(content).toHaveClass(/flow-node--selected/);
+    const panel = page.locator('.settings-panel');
+    await panel
+        .getByRole('button', { name: 'Adicione uma mensagem ou arquivo.' })
+        .click();
+    await expect(
+        panel.getByRole('button', { name: 'Texto', exact: true }),
+    ).toBeFocused();
+    await page.keyboard.press('Enter');
+    await panel
+        .getByRole('textbox', { name: 'Texto da mensagem 1' })
+        .fill('Qual é o seu curso?');
+    await content.getByRole('button', { name: /Adicionar bloco após/ }).click();
+    await canvas
+        .getByRole('button', { name: 'Aguardar Resposta', exact: true })
+        .click();
+
+    const field = panel.getByLabel('Salvar resposta no campo');
+    await panel
+        .getByRole('button', {
+            name: 'Escolha o campo de destino e o prazo de resposta.',
+        })
+        .click();
+    await expect(field).toBeFocused();
+    await field.selectOption({ label: 'Curso IA' });
+    await canvas
+        .getByRole('button', { name: 'Adicionar bloco', exact: true })
+        .click();
+    await canvas.getByRole('button', { name: 'IA', exact: true }).click();
+    await page
+        .getByRole('button', { name: 'Preencha as instruções da IA.' })
+        .click();
+    const prompt = page.getByRole('textbox', {
+        name: 'O que a IA deve fazer?',
+    });
+    await expect(prompt).toBeFocused();
+    await prompt.fill('Responda com clareza.');
+    const viewport = page.locator('.vue-flow__transformationpane');
+    const transform = await viewport.evaluate(
+        (element) => getComputedStyle(element).transform,
+    );
+    await page.getByRole('button', { name: 'Expandir configuração' }).click();
+    await page.getByRole('button', { name: 'Voltar ao painel' }).click();
+    await expect(canvas.locator('.node-ai')).toHaveClass(/flow-node--selected/);
+    await page.getByRole('button', { name: 'Fechar painel' }).click();
+    await expect
+        .poll(() =>
+            viewport.evaluate((element) => getComputedStyle(element).transform),
+        )
+        .toBe(transform);
+    await canvas.getByText('Ocorrências e execuções', { exact: true }).click();
+    await expect(
+        canvas.getByRole('button', { name: 'Consultar ocorrências' }),
+    ).toBeVisible();
+    await canvas.getByText('Ocorrências e execuções', { exact: true }).click();
+    await expect(page.getByText('Todas as alterações salvas')).toBeVisible();
+    await page.getByRole('button', { name: 'Ativar', exact: true }).click();
+    await expect(page.getByText('Ativo', { exact: true })).toBeVisible();
+    const startNode = start.locator('..');
+    await startNode.focus();
+    await page.keyboard.press('Enter');
+    await panel.getByRole('button', { name: 'Fechar painel' }).click();
+    await expect(panel).toBeHidden();
+    await expect(startNode).toBeFocused();
 });

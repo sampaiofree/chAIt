@@ -32,7 +32,7 @@ watch(
         switching.value = false;
     },
 );
-const { items, workspace } = useNavigationItems();
+const { items, workspace, homeHref } = useNavigationItems();
 const workspaceInitial = (name?: string) =>
     name?.trim().charAt(0).toUpperCase() || '?';
 function switchWorkspace(id: number) {
@@ -57,8 +57,8 @@ function switchWorkspace(id: number) {
     <div class="app-navigation" :class="{ compact: props.compact }">
         <Link
             class="brand-link"
-            href="/dashboard"
-            aria-label="chAIt — Conversas"
+            :href="homeHref"
+            aria-label="chAIt — Início"
             @click="emit('navigate')"
             ><AppBrand :compact="compact"
         /></Link>
@@ -174,7 +174,7 @@ function switchWorkspace(id: number) {
     text-decoration: none;
 }
 .navigation-caption {
-    padding: 20px 12px 10px;
+    padding: 20px 12px 8px;
     font-size: 10px;
     letter-spacing: 0.1em;
     color: var(--muted-foreground);
@@ -182,13 +182,13 @@ function switchWorkspace(id: number) {
 }
 nav {
     display: grid;
-    gap: 6px;
+    gap: 4px;
 }
 .navigation-link {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 12px;
+    padding: 8px 12px;
     min-height: 44px;
     border-radius: var(--radius);
     color: var(--muted-foreground);
@@ -209,14 +209,14 @@ nav {
 }
 .navigation-footer {
     margin-top: auto;
-    padding-top: 14px;
+    padding-top: 16px;
     border-top: 1px solid var(--border);
 }
 .workspace-trigger {
     display: flex;
     width: 100%;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     border-radius: var(--radius);
     padding: 8px;
     text-align: left;
@@ -285,7 +285,7 @@ nav {
     justify-content: center;
 }
 .compact nav {
-    margin-top: 18px;
+    margin-top: 16px;
 }
 .compact .navigation-link {
     padding: 0;

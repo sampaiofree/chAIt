@@ -1,14 +1,23 @@
 <script setup lang="ts">
+import AppNotice from '@/components/AppNotice.vue';
 import AppButton from '@/components/AppButton.vue';
 import { Input } from '@/components/ui/input';
-import { Head, useForm, usePage } from '@inertiajs/vue3';
-const props = usePage<any>().props;
+import { Head, useForm } from '@inertiajs/vue3';
+import { computed } from 'vue';
+const props = defineProps<{ token: string; email?: string }>();
 const form = useForm({
     token: props.token,
     email: props.email || '',
     password: '',
     password_confirmation: '',
 });
+const error = computed(
+    () =>
+        form.errors.email ||
+        form.errors.password ||
+        form.errors.password_confirmation ||
+        form.errors.token,
+);
 </script>
 <template>
     <Head title="Redefinir senha" />
@@ -19,18 +28,27 @@ const form = useForm({
                 >E-mail<Input
                     v-model="form.email"
                     type="email"
+                    autocomplete="email"
                     required /></label
             ><label
                 >Nova senha<Input
                     v-model="form.password"
                     type="password"
+                    autocomplete="new-password"
                     required /></label
             ><label
                 >Confirmar senha<Input
                     v-model="form.password_confirmation"
                     type="password"
-                    required /></label
-            ><AppButton type="submit">Salvar senha</AppButton>
+                    autocomplete="new-password"
+                    required
+            /></label>
+            <AppNotice v-if="error" :key="error" variant="error">{{
+                error
+            }}</AppNotice>
+            <AppButton type="submit" :disabled="form.processing">{{
+                form.processing ? 'Salvando…' : 'Salvar senha'
+            }}</AppButton>
         </form>
     </main>
 </template>

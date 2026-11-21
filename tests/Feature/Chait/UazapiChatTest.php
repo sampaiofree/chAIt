@@ -18,6 +18,15 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
+// These route tests start with an already confirmed connection. Connection-gate
+// failures are exercised independently in LeadsTest and ChatVisibilityTest.
+function connectedUazapiFixture(array $attributes = []): UazapiConnection
+{
+    $connection = UazapiConnection::factory()->create($attributes);
+    Cache::put('chat-access:'.$connection->id, ['allowed' => true, 'status' => 'connected'], 60);
+    return $connection;
+}
+
 function uazapiWebhookUrl(UazapiConnection $connection): string
 {
     $secret = hash_hmac('sha256', 'uazapi-webhook:'.$connection->id, (string) config('app.key'));
@@ -27,7 +36,7 @@ function uazapiWebhookUrl(UazapiConnection $connection): string
 
 test('webhook inspection prints settings without exposing its URL or token', function () {
     config(['services.uazapi.base_url' => 'https://api.uazapi.test']);
-    $connection = UazapiConnection::factory()->create();
+    $connection = connectedUazapiFixture();
     $expected = uazapiWebhookUrl($connection);
     Http::fake(['*/webhook' => Http::response([[
         'enabled' => true,
@@ -102,7 +111,7 @@ test('workspace status refresh uses the instance token and updates the connected
 
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create([
+    $connection = connectedUazapiFixture([
         'workspace_id' => $workspace->id,
         'status' => 'connecting',
         'phone' => null,
@@ -125,7 +134,7 @@ test('provider outage is reported separately from the last known connection stat
 
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    UazapiConnection::factory()->create([
+    connectedUazapiFixture([
         'workspace_id' => $workspace->id,
         'status' => 'connected',
         'profile_name' => 'Atendimento',
@@ -162,7 +171,7 @@ test('avatar requests are workspace-authorized and cached for fifteen minutes', 
 
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create([
         'workspace_id' => $workspace->id,
@@ -176,6 +185,7 @@ test('avatar requests are workspace-authorized and cached for fifteen minutes', 
     $this->getJson($url)->assertOk()->assertJsonPath('data.url', 'https://cdn.test/avatar.jpg');
     expect(data_get($contact->fresh()->profile, 'imagePreview'))->toBe('https://cdn.test/avatar.jpg');
     Cache::flush();
+    Cache::put('chat-access:'.$connection->id, ['allowed' => true, 'status' => 'connected'], 60);
     $this->getJson($url)->assertOk()->assertJsonPath('data.url', 'https://cdn.test/avatar.jpg');
     Http::assertSentCount(1);
 
@@ -201,7 +211,7 @@ test('avatar absence is cached and can be refreshed on request', function () {
 
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $contact->id, 'external_chat_id' => '551155501234@s.whatsapp.net']);
     $url = route('workspaces.conversations.avatar', [$workspace, $thread]);
@@ -221,7 +231,7 @@ test('refresh replaces an expired persisted avatar URL', function () {
 
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id, 'profile' => ['imagePreview' => 'https://cdn.test/expired-avatar.jpg']]);
     $thread = Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $contact->id, 'external_chat_id' => '551155501234@s.whatsapp.net']);
     $url = route('workspaces.conversations.avatar', [$workspace, $thread]);
@@ -239,7 +249,7 @@ test('legacy contact notes stay in storage but are not exposed or changed by the
 
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create([
+    $connection = connectedUazapiFixture([
         'workspace_id' => $workspace->id,
         'status' => 'connected',
     ]);
@@ -277,7 +287,7 @@ test('chat status and assignment filters combine without excluding waiting atten
     Http::fake(['*/chat/find' => Http::response(['chats' => []])]);
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id, 'status' => 'connected']);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id, 'status' => 'connected']);
     $other = User::factory()->create();
     WorkspaceMembership::factory()->create(['workspace_id' => $workspace->id, 'user_id' => $other->id, 'role' => 'agent']);
     $threads = collect();
@@ -307,7 +317,7 @@ test('local chat filters by workspace contact tags before limiting the list', fu
     Http::fake(['*/chat/find' => Http::response(['chats' => []])]);
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id, 'status' => 'connected']);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id, 'status' => 'connected']);
     $first = $workspace->tags()->create(['name' => 'Primeira', 'color' => '#16a34a']);
     $second = $workspace->tags()->create(['name' => 'Segunda', 'color' => '#0f766e']);
     $foreign = User::factory()->create()->fresh()->currentWorkspace->tags()->create(['name' => 'Privada', 'color' => '#16a34a']);
@@ -344,7 +354,7 @@ test('sending an image returns provider metadata with a correlation id without s
 
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $contact->id, 'external_chat_id' => '551155501234@s.whatsapp.net', 'status' => 'bot', 'assigned_to_user_id' => null]);
     $trackId = 'send-attempt-123';
@@ -376,7 +386,7 @@ test('an image send timeout remains pending and is not reported as a failed rese
 
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $contact->id, 'external_chat_id' => '551155501234@s.whatsapp.net', 'status' => 'bot', 'assigned_to_user_id' => null]);
 
@@ -408,7 +418,7 @@ test('history normalizes image metadata and searches the provider by send correl
 
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create([
         'workspace_id' => $workspace->id,
@@ -438,7 +448,7 @@ test('history correlation rejects a provider result from another conversation', 
     ]] : []], 200)]);
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $contact->id, 'external_chat_id' => '551155501234@s.whatsapp.net']);
 
@@ -457,7 +467,7 @@ test('media URLs can be renewed only for messages in the authorized conversation
 
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $contact->id, 'external_chat_id' => '551155501234@s.whatsapp.net']);
 
@@ -475,7 +485,7 @@ test('media URLs can be renewed only for messages in the authorized conversation
 test('UAZAPI webhooks are deduplicated and message bodies are not persisted', function () {
     Queue::fake();
     $workspace = Workspace::factory()->create();
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id, 'activated_at' => now()->subMinute()]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id, 'activated_at' => now()->subMinute()]);
     $secret = hash_hmac('sha256', 'uazapi-webhook:'.$connection->id, (string) config('app.key'));
     $connection->update(['webhook_secret_hash' => hash('sha256', $secret)]);
     $payload = [
@@ -519,7 +529,7 @@ test('known conversation history is paged by its chat id without scanning chats'
     config(['chat.enabled' => false, 'services.uazapi.base_url' => 'https://api.uazapi.test']);
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $contact->id, 'external_chat_id' => '5527888888888@s.whatsapp.net']);
     Http::fake(function (ClientRequest $request) use ($thread) {
@@ -542,7 +552,7 @@ test('marking a conversation read uses the provider and clears shared unread sta
 
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create([
         'workspace_id' => $workspace->id,
@@ -572,7 +582,7 @@ test('stale read versions and provider failures preserve unread state', function
 
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create([
         'workspace_id' => $workspace->id,
@@ -599,7 +609,7 @@ test('a message received during provider read is not cleared locally', function 
     config(['services.uazapi.base_url' => 'https://api.uazapi.test']);
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create([
         'workspace_id' => $workspace->id,
@@ -632,7 +642,7 @@ test('mark read enforces workspace and assignment visibility', function () {
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
     $otherWorkspace = Workspace::factory()->create();
-    $otherConnection = UazapiConnection::factory()->create(['workspace_id' => $otherWorkspace->id]);
+    $otherConnection = connectedUazapiFixture(['workspace_id' => $otherWorkspace->id]);
     $otherContact = Contact::factory()->create(['workspace_id' => $otherWorkspace->id]);
     $otherThread = Thread::factory()->create([
         'workspace_id' => $otherWorkspace->id,
@@ -652,7 +662,7 @@ test('mark read enforces workspace and assignment visibility', function () {
         'role' => 'agent',
         'can_view_unassigned' => false,
     ]);
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create([
         'workspace_id' => $workspace->id,
@@ -673,7 +683,7 @@ test('first reply opens and assigns without storing message content', function (
 
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create([
         'workspace_id' => $workspace->id,
@@ -703,7 +713,7 @@ test('first reply claims unassigned conversations in every human state', functio
 
     $owner = User::factory()->create();
     $workspace = $owner->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create([
         'workspace_id' => $workspace->id,
@@ -719,7 +729,7 @@ test('first reply claims unassigned conversations in every human state', functio
             'workspace_id' => $workspace->id,
             'user_id' => $sender->id,
             'role' => 'agent',
-            'can_view_unassigned' => true,
+            'can_view_unassigned' => true, 'can_view_all' => true,
         ]);
     }
 
@@ -747,9 +757,9 @@ test('visible attendants explicitly claim occupied conversations and only admini
         'workspace_id' => $workspace->id,
         'user_id' => $otherAgent->id,
         'role' => 'agent',
-        'can_view_unassigned' => true,
+        'can_view_unassigned' => true, 'can_view_all' => true,
     ]);
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create([
         'workspace_id' => $workspace->id,
@@ -799,9 +809,9 @@ test('sending cannot take an occupied conversation, including for an administrat
     $actor = $admin;
     if ($role === 'agent') {
         $actor = User::factory()->create();
-        WorkspaceMembership::factory()->create(['workspace_id' => $workspace->id, 'user_id' => $actor->id, 'role' => 'agent', 'can_view_unassigned' => true]);
+        WorkspaceMembership::factory()->create(['workspace_id' => $workspace->id, 'user_id' => $actor->id, 'role' => 'agent', 'can_view_unassigned' => true, 'can_view_all' => true]);
     }
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $contact->id, 'status' => 'in_progress', 'assigned_to_user_id' => $owner->id]);
 
@@ -813,7 +823,7 @@ test('sending cannot take an occupied conversation, including for an administrat
 test('opening without a reply leaves the conversation unassigned', function () {
     $admin = User::factory()->create();
     $workspace = $admin->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id]);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create(['workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id, 'contact_id' => $contact->id, 'status' => 'bot', 'assigned_to_user_id' => null]);
 
@@ -826,7 +836,7 @@ test('opening without a reply leaves the conversation unassigned', function () {
 test('conversation serialization reports automation state and execution separately', function () {
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
-    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id, 'status' => 'connected']);
+    $connection = connectedUazapiFixture(['workspace_id' => $workspace->id, 'status' => 'connected']);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create([
         'workspace_id' => $workspace->id,

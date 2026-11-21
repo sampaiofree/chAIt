@@ -24,12 +24,12 @@ const model = defineModel<any>();
     font-size: 14px;
     border: 1px solid var(--input);
     border-radius: var(--radius);
-    background: var(--card);
+    background: var(--muted);
     color: var(--foreground);
 }
 .native-select-wrap > svg {
     position: absolute;
-    right: 10px;
+    right: 12px;
     top: 50%;
     transform: translateY(-50%);
     pointer-events: none;
@@ -37,6 +37,11 @@ const model = defineModel<any>();
 }
 .native-select-wrap > select:focus-visible {
     border-color: var(--ring);
+}
+@media (max-width: 1023px) {
+    .native-select-wrap > select {
+        font-size: 16px;
+    }
 }
 .native-select-wrap > select:disabled {
     opacity: 0.5;

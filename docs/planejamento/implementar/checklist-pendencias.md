@@ -1,15 +1,16 @@
 # Checklist de implementação e homologação
 
-> **Atualizado em:** 2026-11-17
+> **Atualizado em:** 2026-11-21
 >
-> **Base:** revisão geral estática de 17/10/2026, sem execução de testes naquela revisão. Em 17/11/2026, inclusão pontual das etapas de mensagens para IA; evidências de testes locais estão no documento específico. Os demais itens não foram reavaliados nesta atualização.
+> **Base:** revisão geral estática de 17/10/2026, sem execução de testes naquela revisão. Em 17/11/2026, inclusão pontual das etapas de mensagens para IA; evidências de testes locais estão no documento específico. Em 21/11/2026, atualização pontual de permissões e validação local; os demais itens não foram reavaliados.
 > **Status:** acompanhamento de pendências; não define prioridade nem aprova novos recursos.
 
 ## Checklist de recursos
 
-- [ ] **Módulo de Leads:** criar listagem, busca, filtros, cadastro manual e ficha própria dos contatos. Os contatos já existem e são utilizados pelo chat. Ver [briefing de Leads](../../modulos/leads.md).
+- [x] **Módulo de Leads:** listagem, busca, filtros, cadastro manual e ficha própria implementados; estado confirmado no documento de Leads de 17/11 e no código em 21/11/2026. Os contatos já existem e são utilizados pelo chat. Ver [briefing de Leads](../../modulos/leads.md).
 - [x] **Transferência para outro atendente — implementada, conferida no código em 17/10/2026:** administrador pode escolher membro ativo como responsável; há também Assumir para mim. O item estava pendente na análise anterior. Referências: `UazapiChatController::assignTo`, serviço `HumanAssignment` e controles de responsável no dashboard. Ver [contrato atual](../../modulos/chat-multiatendimento.md#52-transferência-explícita). Esta conferência foi estática, sem novos testes operacionais.
-- [ ] **Permissões mais detalhadas:** implementar controles independentes para visualizar todas/próprias/não atribuídas, transferir atendimentos, visualizar/editar leads e criar etiquetas/campos, conforme os respectivos contratos. A autorização atual por papel, atribuição e `can_view_unassigned` já existe. Ver [Chat](../../modulos/chat-multiatendimento.md#4-acesso-e-visibilidade-das-conversas) e [Leads](../../modulos/leads.md#7-permissões-e-isolamento).
+- [x] **Visibilidade das conversas e permissões de Leads:** controles Próprias/Não atribuídas/Todas concluídos em 21/11/2026, com migração local, testes de backend e navegador; visualizar/editar Leads e criar etiquetas/campos já estavam implementados. Ver [contrato do Chat](../../modulos/chat-multiatendimento.md#4-acesso-e-visibilidade-das-conversas).
+- [ ] **Permissão específica de transferência para terceiros:** evolução futura; nesta etapa escolher outro responsável continua exclusivo de administradores.
 - [ ] **Notificações operacionais:** avisar a equipe sobre falhas ou resultados desconhecidos dos fluxos. Hoje o editor permite consultar ocorrências. Ver [proposta de notificações](../notificacoes-operacionais-fluxos.md).
 - [ ] **Integração oficial com a Meta:** implementar conexão via Cloud API e Embedded Signup. A integração operacional atual usa UAZAPI. Ver [roteiro Meta](../../integracoes/meta-tech-provider.md).
 - [ ] **Simulador de fluxos:** permitir testar uma conversa dentro do sistema sem enviar mensagens reais pelo WhatsApp.

@@ -149,6 +149,9 @@ class FlowGraphValidator
             if ($node['type'] !== 'ai' && array_key_exists('ai_initial_context', $node['data'])) {
                 $this->invalid('graph.nodes.'.$node['id'].'.ai_initial_context', 'Contexto inicial disponível somente no bloco IA.');
             }
+            if ($node['type'] !== 'ai' && array_key_exists('ai_load_history', $node['data'])) {
+                $this->invalid('graph.nodes.'.$node['id'].'.ai_load_history', 'Histórico da conversa disponível somente no bloco IA.');
+            }
             if ($node['type'] === 'ai' && isset($node['data']['ai_initial_context'])) {
                 $node['data']['ai_initial_context'] = ContactTemplate::normalize($node['data']['ai_initial_context']);
             }
@@ -314,10 +317,22 @@ class FlowGraphValidator
                         }
                     }
                 }
-                if (trim(ContactTemplate::display($data['ai_prompt'] ?? '')) === '' || ! in_array($data['ai_model'] ?? '', ['gpt-6-luna', 'gpt-6.1-sol', 'gpt-6-astra'], true)
-                    || ! isset($data['ai_inactivity_seconds']) || (! array_key_exists('ai_outputs', $data) && (! in_array($data['ai_expiry_action'] ?? '', ['end', 'human'], true)
-                    || (! empty($data['ai_max_messages']) && ! in_array($data['ai_limit_action'] ?? '', ['continue', 'human'], true))))) {
-                    $this->invalid("graph.nodes.{$id}", 'Configure prompt, modelo, inatividade e ação do limite no bloco IA.');
+                if (trim(ContactTemplate::display($data['ai_prompt'] ?? '')) === '') {
+                    $this->invalid("graph.nodes.{$id}.ai_prompt", 'Preencha as instruções da IA.');
+                }
+                if (! in_array($data['ai_model'] ?? '', ['gpt-6-luna', 'gpt-6.1-sol', 'gpt-6-astra'], true)) {
+                    $this->invalid("graph.nodes.{$id}.ai_model", 'Selecione o modelo da IA.');
+                }
+                if (! isset($data['ai_inactivity_seconds'])) {
+                    $this->invalid("graph.nodes.{$id}.ai_inactivity_seconds", 'Configure o prazo de inatividade da IA.');
+                }
+                if (! array_key_exists('ai_outputs', $data)) {
+                    if (! in_array($data['ai_expiry_action'] ?? '', ['end', 'human'], true)) {
+                        $this->invalid("graph.nodes.{$id}.ai_expiry_action", 'Selecione a ação ao expirar.');
+                    }
+                    if (! empty($data['ai_max_messages']) && ! in_array($data['ai_limit_action'] ?? '', ['continue', 'human'], true)) {
+                        $this->invalid("graph.nodes.{$id}.ai_limit_action", 'Selecione a ação ao atingir o limite de mensagens.');
+                    }
                 }
                 foreach ($data['ai_outputs'] ?? [] as $output) {
                     if (trim($output['label'] ?? '') === '' || trim($output['instruction'] ?? '') === '') {
@@ -326,7 +341,7 @@ class FlowGraphValidator
                 }
                 $integration = WorkspaceOpenAiIntegration::where('workspace_id', $workspace->id)->first();
                 if (! $integration) {
-                    $this->invalid("graph.nodes.{$id}", 'Configure a chave OpenAI deste workspace antes de publicar.');
+                    $this->invalid("graph.nodes.{$id}.ai_model", 'Configure a chave OpenAI deste workspace antes de publicar.');
                 }
                 try {
                     $available = Http::withToken($integration->api_key)->acceptJson()->timeout(10)
@@ -338,7 +353,7 @@ class FlowGraphValidator
                     $transcriptionAvailable = false;
                 }
                 if (! $available || ! $transcriptionAvailable) {
-                    $this->invalid("graph.nodes.{$id}", 'O modelo IA ou a transcrição de áudio não estão disponíveis para a chave deste workspace.');
+                    $this->invalid("graph.nodes.{$id}.ai_model", 'O modelo IA ou a transcrição de áudio não estão disponíveis para a chave deste workspace.');
                 }
             }
             if ($node['type'] === 'condition') {

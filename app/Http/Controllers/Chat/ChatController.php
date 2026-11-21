@@ -12,6 +12,7 @@ use App\Models\Workspace;
 use App\Services\Chat\ChatOperations;
 use App\Services\Chat\ChatProjection;
 use App\Services\Chat\HumanAssignment;
+use App\Services\Contacts\ContactPhoneIdentity;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -32,20 +33,12 @@ class ChatController extends Controller
         ])['tag_ids'] ?? [];
         $connection = UazapiConnection::where('workspace_id', $workspace->id)->first();
         if (! $connection) {
-            return response()->json(['data' => [], 'selected_thread' => null, 'next_cursor' => null, 'end_cursor' => null]);
+            return response()->json(['counts' => ['all' => 0, 'mine' => 0, 'unassigned' => 0], 'data' => [], 'selected_thread' => null, 'next_cursor' => null, 'end_cursor' => null]);
         }
         $membership = $request->user()->membershipFor($workspace);
         $query = Thread::where('workspace_id', $workspace->id)->where('uazapi_connection_id', $connection->id);
-        if (! WorkspaceRole::from($membership->role)->atLeast(WorkspaceRole::Admin) && ! $membership->can_view_unassigned) {
-            $query->where('assigned_to_user_id', $request->user()->id);
-        }
+        $membership->scopeVisibleThreads($query);
         $allowedQuery = clone $query;
-        if ($request->input('assignment') === 'mine') {
-            $query->where('assigned_to_user_id', $request->user()->id);
-        }
-        if ($request->input('assignment') === 'unassigned') {
-            $query->whereNull('assigned_to_user_id');
-        }
         if ($request->input('status') === 'open') {
             $query->whereIn('status', ['open', 'in_progress']);
         }
@@ -61,9 +54,22 @@ class ChatController extends Controller
                 $q->where('display_name', 'ilike', '%'.$search.'%');
                 $digits = preg_replace('/\D/', '', $search);
                 if ($digits !== '') {
-                    $q->orWhere('phone', 'like', '%'.$digits.'%');
+                    foreach (app(ContactPhoneIdentity::class)->variants($digits) as $variant) {
+                        $q->orWhere('phone', 'like', '%'.$variant.'%');
+                    }
                 }
             });
+        }
+        $counts = [
+            'all' => (clone $query)->count(),
+            'mine' => (clone $query)->where('assigned_to_user_id', $request->user()->id)->count(),
+            'unassigned' => (clone $query)->whereNull('assigned_to_user_id')->count(),
+        ];
+        if ($request->input('assignment') === 'mine') {
+            $query->where('assigned_to_user_id', $request->user()->id);
+        }
+        if ($request->input('assignment') === 'unassigned') {
+            $query->whereNull('assigned_to_user_id');
         }
         // Stable cursor supports rows without a provider message timestamp.
         $query->select('threads.*')->selectRaw("COALESCE(last_message_at, '1970-01-01'::timestamp) AS sort_at");
@@ -84,7 +90,7 @@ class ChatController extends Controller
         }
         $endCursor = $last ? base64_encode(json_encode(['at' => $last->sort_at, 'id' => $last->id])) : null;
 
-        return response()->json(['data' => $serialized->values(), 'selected_thread' => $selected, 'next_cursor' => $more ? $endCursor : null, 'end_cursor' => $endCursor]);
+        return response()->json(['counts' => $counts, 'data' => $serialized->values(), 'selected_thread' => $selected, 'next_cursor' => $more ? $endCursor : null, 'end_cursor' => $endCursor]);
     }
 
     public function import(Request $request, Workspace $workspace): JsonResponse
@@ -120,12 +126,13 @@ class ChatController extends Controller
         $this->ensureWorkspaceAccess($request->user(), $workspace);
         abort_unless($thread->workspace_id === $workspace->id && $thread->uazapi_connection_id, 404);
         $member = $request->user()->membershipFor($workspace);
-        abort_unless(WorkspaceRole::from($member->role)->atLeast(WorkspaceRole::Admin) || $member->can_view_unassigned || $thread->assigned_to_user_id === $request->user()->id, 404);
+        abort_unless($member->canSeeThread($thread), 404);
         $payload = $request->only(['read_version', 'track_id', 'preview', 'refresh', 'offset']);
         if ($kind === 'media') {
             $payload['message_id'] = (string) $request->route('messageId');
         }
         if ($kind === 'send') {
+            abort_unless($member->canSeeOwnThreads(), 403);
             abort_if($thread->assigned_to_user_id && $thread->assigned_to_user_id !== $request->user()->id, 409, 'Esta conversa já tem responsável.');
             abort_unless($thread->uazapiConnection?->status === 'connected', 409, 'WhatsApp desconectado.');
             $voice = $request->input('media_type') === 'voice';

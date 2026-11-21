@@ -41,7 +41,7 @@ async function setup(page: Page, holdHistory = false, holdConnection = false) {
         },
         notes: [],
     };
-    await page.route('**/workspaces/*/chat-access', (route) => {
+    await page.route('**/workspaces/*/chat-access*', (route) => {
         workspaceId = Number(
             new URL(route.request().url()).pathname.split('/')[2],
         );

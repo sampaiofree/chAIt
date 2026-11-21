@@ -37,6 +37,8 @@ class TeamController extends Controller
                 'email' => $membership->user->email,
                 'role' => $membership->role,
                 'can_view_unassigned' => $membership->can_view_unassigned,
+                'can_view_own' => $membership->can_view_own,
+                'can_view_all' => $membership->can_view_all,
                 'can_view_leads' => (bool) $membership->can_view_leads,
                 'can_edit_leads' => (bool) $membership->can_edit_leads,
                 'can_create_tags' => (bool) $membership->can_create_tags,
@@ -53,6 +55,8 @@ class TeamController extends Controller
         $this->ensureWorkspaceAccess($request->user(), $workspace, WorkspaceRole::Admin);
         $data = $request->validate([
             'can_view_unassigned' => ['sometimes', 'boolean'],
+            'can_view_own' => ['sometimes', 'boolean'],
+            'can_view_all' => ['sometimes', 'boolean'],
             'can_view_leads' => ['sometimes', 'boolean'],
             'can_edit_leads' => ['sometimes', 'boolean'],
             'can_create_tags' => ['sometimes', 'boolean'],
@@ -76,6 +80,8 @@ class TeamController extends Controller
         $data = $request->validate([
             'email' => ['required', 'string', 'email', 'max:255'],
             'can_view_unassigned' => ['required', 'boolean'],
+            'can_view_own' => ['sometimes', 'boolean'],
+            'can_view_all' => ['sometimes', 'boolean'],
             'can_view_leads' => ['sometimes', 'boolean'],
             'can_edit_leads' => ['sometimes', 'boolean'],
             'can_create_tags' => ['sometimes', 'boolean'],
@@ -124,6 +130,8 @@ class TeamController extends Controller
                 'joined_at' => now(),
                 'last_seen_at' => now(),
                 'can_view_unassigned' => $data['can_view_unassigned'],
+                'can_view_own' => $data['can_view_own'] ?? true,
+                'can_view_all' => $data['can_view_all'] ?? false,
                 'can_view_leads' => $data['can_view_leads'] ?? false,
                 'can_edit_leads' => $data['can_edit_leads'] ?? false,
                 'can_create_tags' => $data['can_create_tags'] ?? false,

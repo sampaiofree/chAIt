@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppNotice from '@/components/AppNotice.vue';
 import SettingsLayout from '@/layouts/SettingsLayout.vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
@@ -102,41 +103,17 @@ applyTheme(selected.value);
             <p v-if="saving" class="form-status" role="status">
                 Salvando preferência…
             </p>
-            <p v-else-if="saved" class="form-status success" role="status">
+            <AppNotice v-else-if="saved" variant="success">
                 Preferência salva.
-            </p>
-            <p v-else-if="error" class="form-status error" role="alert">
+            </AppNotice>
+            <AppNotice v-else-if="error" variant="error">
                 {{ error }}
-            </p>
+            </AppNotice>
         </section>
     </SettingsLayout>
 </template>
 
 <style scoped>
-.settings-nav {
-    padding: 30px 20px;
-    display: grid;
-    align-content: start;
-    gap: 8px;
-    min-width: 0;
-    background: var(--card);
-    border-right: 1px solid var(--border);
-}
-.settings-nav a {
-    color: var(--muted-foreground);
-    text-decoration: none;
-    font-size: 14px;
-    padding: 9px 10px;
-    border-radius: 8px;
-}
-.settings-nav a:hover,
-.settings-nav a[aria-current='page'] {
-    color: var(--accent-foreground);
-    background: var(--accent);
-}
-.appearance-content {
-    padding: 38px;
-}
 h1 {
     margin: 0 0 8px;
     font-size: 24px;
@@ -148,29 +125,32 @@ h1 {
 }
 .theme-options {
     display: grid;
-    gap: 10px;
+    gap: 12px;
     border: 0;
     padding: 0;
-    margin-top: 28px;
+    margin-top: var(--section-gap);
 }
 .theme-options legend {
     margin-bottom: 12px;
     font-weight: 600;
 }
 .theme-option {
-    min-height: 70px;
+    min-height: 72px;
     display: flex;
     align-items: center;
-    gap: 13px;
-    padding: 14px 16px;
+    gap: 12px;
+    padding: var(--card-padding);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-card);
     background: var(--card);
     cursor: pointer;
 }
+.theme-option:not(.selected):hover {
+    background: var(--muted);
+}
 .theme-option.selected {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 1px var(--primary);
+    border-color: var(--ring);
+    background: var(--accent);
 }
 .theme-option input {
     accent-color: var(--primary);
@@ -192,25 +172,5 @@ h1 {
 }
 .error {
     color: var(--danger);
-}
-@media (max-width: 650px) {
-    .settings-nav {
-        display: flex;
-        align-items: center;
-        overflow-x: auto;
-        min-height: 62px;
-        height: auto;
-        padding: 12px;
-        border-right: 0;
-        border-bottom: 1px solid var(--border);
-    }
-    .settings-nav a {
-        flex: 0 0 auto;
-        height: auto;
-        white-space: nowrap;
-    }
-    .appearance-content {
-        padding: 26px 18px;
-    }
 }
 </style>

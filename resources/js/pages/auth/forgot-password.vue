@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import AppNotice from '@/components/AppNotice.vue';
 import AppButton from '@/components/AppButton.vue';
 import { Input } from '@/components/ui/input';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+defineProps<{ status?: string }>();
 const form = useForm({ email: '' });
 </script>
 <template>
@@ -10,11 +12,25 @@ const form = useForm({ email: '' });
         <form class="auth-card" @submit.prevent="form.post('/forgot-password')">
             <h1>Recuperar senha</h1>
             <p>Informe seu e-mail para receber as instruções.</p>
+            <AppNotice v-if="status" :key="status" variant="success">{{
+                status
+            }}</AppNotice>
             <label
-                >E-mail<Input v-model="form.email" type="email" required
+                >E-mail<Input
+                    v-model="form.email"
+                    type="email"
+                    autocomplete="email"
+                    required
             /></label>
-            <div class="error">{{ form.errors.email }}</div>
-            <AppButton type="submit">Enviar instruções</AppButton
+            <AppNotice
+                v-if="form.errors.email"
+                :key="form.errors.email"
+                variant="error"
+                >{{ form.errors.email }}</AppNotice
+            >
+            <AppButton type="submit" :disabled="form.processing">{{
+                form.processing ? 'Enviando…' : 'Enviar instruções'
+            }}</AppButton
             ><Link href="/login">Voltar ao login</Link>
         </form>
     </main>
@@ -48,9 +64,6 @@ const form = useForm({ email: '' });
     display: grid;
     gap: var(--form-label-gap);
     font-size: 14px;
-}
-.error {
-    color: var(--danger);
 }
 .auth-card > [data-slot='button'][type='submit'] {
     margin-top: calc(var(--form-actions-space) - var(--form-field-gap));

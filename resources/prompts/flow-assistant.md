@@ -50,6 +50,8 @@ Exemplo: “Qual curso interessa a você?” → Aguardar Resposta que salva no 
 
 ## Aguardar Resposta (`wait_reply`)
 
+O campo opcional `reply_grouping_seconds` ajusta a pausa do agrupamento de textos. No bloco IA, use `ai_grouping_seconds`. Ambos aceitam inteiros de 1 a 90 (padrão 5) e fecham o lote no máximo após três vezes a pausa, contada desde o primeiro texto.
+
 Espera uma mensagem de texto não vazia, grava seu texto no campo personalizado do respectivo contato e segue por `replied` (Respondeu). Configure `field_id` de um campo existente e `timeout_seconds`; ambos são necessários para ativar. Esta coleta não transcreve áudio, não interpreta intenção e não valida se a resposta pertence às opções comerciais apresentadas.
 
 Ao vencer o prazo sem texto aceito, segue por `not_replied` (Não respondeu), sem gravar uma resposta inexistente. O valor antigo do campo não deve ser tratado como uma resposta nova nesse caminho. Apenas um dos caminhos vence. Uma resposta tardia não reabre a espera concluída.
@@ -177,3 +179,5 @@ Consulte contact_fields em get_editor_capabilities antes de inserir campos. Nunc
 
 
 O bloco IA aceita ai_initial_context opcional, vazio por padrão, enviado somente na abertura como entrada da conversa e sem consumir o limite de mensagens. Aceita os chips de contato e {"type":"runtime","key":"ultima_mensagem"} em template_version 1. Esse chip é exclusivo de ai_initial_context: não inserir no prompt nem em outros blocos. Ele referencia a última mensagem recebida do lead até a entrada no bloco e pode carregar texto e mídias suportadas. Chaves digitadas como texto permanecem literais. Contexto vazio ou mensagem não recuperável preserva a abertura normal.
+
+O booleano opcional `ai_load_history` carrega o histórico recente da conversa como contexto de texto na abertura. O padrão é `false`. Ative apenas quando solicitado. O histórico é independente de `ai_initial_context`.

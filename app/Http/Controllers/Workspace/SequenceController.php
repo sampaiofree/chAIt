@@ -81,7 +81,7 @@ class SequenceController extends Controller
             'inactive_flows' => Flow::where('workspace_id', $workspace->id)->where('is_active', false)->orderBy('name')->get(['id', 'name']),
             'timezones' => timezone_identifiers_list(),
             'published_version' => $model->publishedVersion?->version,
-            'enrollments' => $model->enrollments()->when(! ($request->user()->canAccessWorkspace($workspace, WorkspaceRole::Admin) || $request->user()->membershipFor($workspace)->can_view_unassigned), fn ($query) => $query->whereHas('thread', fn ($thread) => $thread->where('assigned_to_user_id', $request->user()->id)))->with('version', 'nextStep.flowVersion.flow', 'contact')->latest('id')->limit(20)->get()
+            'enrollments' => $model->enrollments()->when(! $request->user()->membershipFor($workspace)->seesAllThreads(), fn ($query) => $query->whereHas('thread', fn ($thread) => $request->user()->membershipFor($workspace)->scopeVisibleThreads($thread)))->with('version', 'nextStep.flowVersion.flow', 'contact')->latest('id')->limit(20)->get()
                 ->map(fn ($enrollment) => array_merge($this->snapshot($enrollment), ['contact_id' => $enrollment->contact_id, 'contact_name' => $enrollment->contact?->display_name ?: $enrollment->contact?->phone]))]);
     }
 
@@ -137,7 +137,7 @@ class SequenceController extends Controller
         $connection = UazapiConnection::where('workspace_id', $workspace->id)->firstOrFail();
         $thread = Thread::where('workspace_id', $workspace->id)->where('uazapi_connection_id', $connection->id)->where('contact_id', $contact->id)->firstOrFail();
         $membership = $request->user()->membershipFor($workspace);
-        abort_unless(WorkspaceRole::from($membership->role)->atLeast(WorkspaceRole::Admin) || $membership->can_view_unassigned || $thread->assigned_to_user_id === $request->user()->id, 404);
+        abort_unless($membership->canSeeThread($thread), 404);
 
         return $thread;
     }
@@ -151,13 +151,14 @@ class SequenceController extends Controller
 
         return response()->json(['data' => $enrollment ? $this->snapshot($enrollment) : null,
             'sequences' => $request->user()->canManageFlows($workspace) ? Sequence::where('workspace_id', $workspace->id)->where('is_active', true)->whereNotNull('published_version_id')->orderBy('name')->get(['id', 'name']) : [],
-            'can_enroll' => $request->user()->canManageFlows($workspace)]);
+            'can_enroll' => $request->user()->canManageFlows($workspace) && $request->user()->membershipFor($workspace)->canSeeOwnThreads()]);
     }
 
     public function enroll(Request $request, Workspace $workspace, Contact $contact, SequenceEnrollmentService $enrollments): JsonResponse
     {
         $this->manage($request, $workspace);
         $thread = $this->contactThread($request, $workspace, $contact);
+        abort_unless($request->user()->membershipFor($workspace)->canSeeOwnThreads(), 403);
         $data = $request->validate(['sequence_id' => ['required', 'integer'], 'idempotency_key' => ['required', 'uuid']]);
         $sequence = Sequence::where('workspace_id', $workspace->id)->findOrFail($data['sequence_id']);
         $result = $enrollments->enroll($thread, $sequence, 'manual', 'manual:'.$data['idempotency_key'], $request->user());

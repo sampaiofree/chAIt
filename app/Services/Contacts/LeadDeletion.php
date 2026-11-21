@@ -12,6 +12,7 @@ use App\Models\Workspace;
 use App\Models\WorkspaceOpenAiIntegration;
 use App\Services\AuditLogService;
 use App\Services\Chat\ChatPublisher;
+use App\Services\Chat\WhatsAppJid;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
@@ -24,6 +25,22 @@ class LeadDeletion
                 ->merge($lead->threads()->pluck('external_chat_id'))->filter();
             if ($lead->phone) {
                 $identities->push($lead->phone.'@s.whatsapp.net');
+            }
+            $jids = app(WhatsAppJid::class);
+            foreach ($identities->all() as $identity) {
+                $phone = $jids->phone($identity);
+                if (! $phone) {
+                    continue;
+                }
+                foreach (app(ContactPhoneIdentity::class)->variants($phone) as $variant) {
+                    $alias = $variant.'@s.whatsapp.net';
+                    $owned = Contact::where('workspace_id', $workspace->id)->whereKeyNot($lead->id)->where(function ($q) use ($variant, $alias) {
+                        $q->where('phone', $variant)->orWhereHas('channels', fn ($q) => $q->where('type', 'whatsapp')->where('external_id', $alias))->orWhereHas('threads', fn ($q) => $q->where('external_chat_id', $alias));
+                    })->exists();
+                    if (! $owned) {
+                        $identities->push($alias);
+                    }
+                }
             }
             $reset = app(ContactReset::class);
             foreach ($identities->unique()->sort() as $external) {
@@ -48,6 +65,9 @@ class LeadDeletion
                 if ($path = data_get($operation->payload, 'file_path')) {
                     DB::afterCommit(fn () => Storage::disk('local')->delete($path));
                 }
+            }
+            foreach ($executions as $executionId) {
+                app(\App\Services\Flows\FlowMessageGrouping::class)->cancel($executionId);
             }
             DB::table('flow_events')->whereIn('flow_execution_id', $executions)->delete();
             // Executions reference enrollments with RESTRICT, so remove them first.

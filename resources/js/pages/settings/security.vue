@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppNotice from '@/components/AppNotice.vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import SettingsLayout from '@/layouts/SettingsLayout.vue';
 import AppButton from '@/components/AppButton.vue';
@@ -68,13 +69,9 @@ function save() {
                             >
                         </div>
                     </fieldset>
-                    <p
-                        v-if="form.recentlySuccessful"
-                        class="saved"
-                        role="status"
-                    >
+                    <AppNotice v-if="form.recentlySuccessful" variant="success">
                         Senha atualizada.
-                    </p>
+                    </AppNotice>
                     <div class="form-actions">
                         <AppButton type="submit" :loading="form.processing"
                             >Atualizar senha</AppButton

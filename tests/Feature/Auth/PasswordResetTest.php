@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use Illuminate\Auth\Notifications\ResetPassword;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Laravel\Fortify\Features;
 
@@ -20,7 +21,15 @@ test('reset password link can be requested', function () {
 
     $user = User::factory()->create();
 
-    $this->post(route('password.email'), ['email' => $user->email]);
+    $this->from(route('password.request'))
+        ->post(route('password.email'), ['email' => $user->email])
+        ->assertRedirect(route('password.request'))
+        ->assertSessionHas('status');
+
+    $status = session('status');
+    $this->get(route('password.request'))->assertInertia(fn ($page) => $page
+        ->component('auth/forgot-password')
+        ->where('status', $status));
 
     Notification::assertSentTo($user, ResetPassword::class);
 });
@@ -52,13 +61,15 @@ test('password can be reset with valid token', function () {
         $response = $this->post(route('password.update'), [
             'token' => $notification->token,
             'email' => $user->email,
-            'password' => 'password',
-            'password_confirmation' => 'password',
+            'password' => 'newpassword123',
+            'password_confirmation' => 'newpassword123',
         ]);
 
         $response
             ->assertSessionHasNoErrors()
             ->assertRedirect(route('login'));
+
+        expect(Hash::check('newpassword123', $user->fresh()->password))->toBeTrue();
 
         return true;
     });

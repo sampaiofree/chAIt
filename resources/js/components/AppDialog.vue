@@ -103,7 +103,7 @@ function restoreFocus(event: Event) {
                         variant="secondary"
                         @click="cancel"
                         >{{ dialog.cancelLabel }}</AppButton
-                    ><AppButton type="submit">{{
+                    ><AppButton type="submit" :variant="dialog.confirmVariant">{{
                         dialog.confirmLabel
                     }}</AppButton>
                 </div>

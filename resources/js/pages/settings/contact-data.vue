@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppNotice from '@/components/AppNotice.vue';
 import AppButton from '@/components/AppButton.vue';
 import SettingsLayout from '@/layouts/SettingsLayout.vue';
 import { Head, useForm } from '@inertiajs/vue3';
@@ -46,6 +47,7 @@ async function deleteResource(kind: 'field' | 'tag', item: Field | Tag) {
             ? `Excluir o campo “${item.name}”? Todos os valores preenchidos nesse campo nos contatos serão apagados. Esta ação não pode ser desfeita.`
             : `Excluir a etiqueta “${item.name}”? Ela será removida dos contatos. Esta ação não pode ser desfeita.`,
         kind === 'field' ? 'Excluir campo personalizado' : 'Excluir etiqueta',
+        'danger',
     );
     confirmingDeletion.value = false;
     if (!approved) return;
@@ -211,9 +213,9 @@ function tabKeydown(event: KeyboardEvent) {
                         ><Plus :size="16" />Cadastrar campo</AppButton
                     >
                 </div>
-                <p v-if="fieldNotice" class="notice" role="status">
+                <AppNotice v-if="fieldNotice" :key="fieldNotice" variant="success">
                     {{ fieldNotice }}
-                </p>
+                </AppNotice>
                 <h2 class="list-heading">
                     Campos cadastrados <span>{{ fields.length }}</span>
                 </h2>
@@ -275,9 +277,9 @@ function tabKeydown(event: KeyboardEvent) {
                         ><Plus :size="16" />Cadastrar tag</AppButton
                     >
                 </div>
-                <p v-if="tagNotice" class="notice" role="status">
+                <AppNotice v-if="tagNotice" :key="tagNotice" variant="success">
                     {{ tagNotice }}
-                </p>
+                </AppNotice>
                 <h2 class="list-heading">
                     Tags cadastradas <span>{{ tags.length }}</span>
                 </h2>
@@ -461,7 +463,6 @@ function tabKeydown(event: KeyboardEvent) {
 }
 .content {
     width: 100%;
-    padding: 38px;
     min-width: 0;
 }
 .content > small,
@@ -484,7 +485,7 @@ p {
 .tabs {
     display: flex;
     gap: 8px;
-    margin: 24px 0;
+    margin: var(--section-gap) 0;
     border-bottom: 1px solid var(--border);
 }
 .tabs button {
@@ -507,9 +508,9 @@ p {
 }
 .records,
 .empty {
-    padding: 20px;
+    padding: var(--card-padding);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius-card);
     background: var(--card);
 }
 .unused-editor-description {
@@ -579,7 +580,7 @@ button:focus-visible,
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    padding: 16px 20px;
+    padding: 16px var(--card-padding);
     border-bottom: 1px solid var(--border);
 }
 .records li:last-child {
@@ -637,14 +638,8 @@ input[type='color'] {
     flex-shrink: 0;
 }
 @media (max-width: 650px) {
-    .content {
-        padding: 24px 16px;
-    }
     .editor {
         padding: 16px;
-    }
-    .records li {
-        padding: 14px 16px;
     }
     .tabs button {
         padding: 12px 8px;

@@ -61,7 +61,7 @@ class ChatPublisher
                 if (! WorkspaceRole::from($member->role)->atLeast($minimumRole)) {
                     continue;
                 }
-                if ($thread && ! WorkspaceRole::from($member->role)->atLeast(WorkspaceRole::Admin) && ! $member->can_view_unassigned && $thread->assigned_to_user_id !== $member->user_id) {
+                if ($thread && ! $member->canSeeThread($thread)) {
                     // Removal contains only an internal ID, never a preview or contact data.
                     if ($type === 'conversation.changed') {
                         $this->emit($member->user_id, ['type' => 'conversation.removed', 'workspace_id' => $workspaceId, 'data' => ['id' => $threadId]]);

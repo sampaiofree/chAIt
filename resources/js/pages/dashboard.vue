@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppNotice from '@/components/AppNotice.vue';
 import { cacheGet, cachePut, clearChatCache } from '@/lib/chatCache';
 import {
     mergeChatMessages,
@@ -39,6 +40,7 @@ import {
     CirclePause,
     CircleOff,
     MessagesSquare,
+    Phone,
     LoaderCircle,
 } from '@lucide/vue';
 import { Mic } from '@lucide/vue';
@@ -161,8 +163,19 @@ async function checkChatAccess() {
     const generation = ++accessCheckGeneration;
     accessChecking.value = true;
     try {
+        const draftIds = new Set<number>();
+        const prefix = `chait-draft:${me.value.id}:${checkedWorkspace}:`;
+        try {
+            for (let i = 0; i < sessionStorage.length; i++) {
+                const key = sessionStorage.key(i);
+                if (key?.startsWith(prefix)) draftIds.add(Number(key.slice(prefix.length)));
+            }
+        } catch { /* Storage unavailable. */ }
+        for (const key of memoryDrafts.keys()) if (key.startsWith(prefix)) draftIds.add(Number(key.slice(prefix.length)));
+        const query = new URLSearchParams();
+        for (const id of [...draftIds].filter(Number.isSafeInteger).slice(0, 200)) query.append('draft_ids[]', String(id));
         const response = await fetch(
-            `/workspaces/${checkedWorkspace}/chat-access`,
+            `/workspaces/${checkedWorkspace}/chat-access${query.size ? `?${query}` : ''}`,
             { headers: { Accept: 'application/json' } },
         );
         const result = await response.json();
@@ -171,6 +184,11 @@ async function checkChatAccess() {
             checkedWorkspace !== workspace.value.id
         )
             return;
+        for (const id of result.revoked_draft_ids || []) forgetConversation(Number(id));
+        if (result.permissions_signature && result.permissions_signature !== page.props.chatPermissionsSignature) {
+            invalidateChatAccess();
+            return;
+        }
         const previous = chatAllowed.value;
         chatAllowed.value = response.ok && result.allowed === true;
         if (chatAllowed.value && !previous) void loadThreads();
@@ -198,8 +216,11 @@ async function checkChatAccess() {
 }
 
 const selected = ref<Thread | null>(null);
+const navigationKey = `chait-navigation:${me.value.id}:${workspace.value.id}`;
+let restoredNavigation: any = {};
+try { restoredNavigation = JSON.parse(sessionStorage.getItem(navigationKey) || '{}'); } catch { /* Empty navigation state. */ }
 const initialThreadId = Number(
-    new URLSearchParams(page.url.split('?')[1] || '').get('thread_id'),
+    new URLSearchParams(page.url.split('?')[1] || '').get('thread_id') || restoredNavigation.threadId,
 );
 const pendingThreadId = ref<number | null>(
     Number.isSafeInteger(initialThreadId) && initialThreadId > 0
@@ -228,10 +249,16 @@ const messagesElement = ref<HTMLElement | null>(null);
 const isAtLatest = ref(true);
 const hasNewMessages = ref(false);
 const historyReadVersion = ref<number | null>(null);
-const search = ref('');
-const assignment = ref('all');
-const statusFilter = ref('all');
-const appliedTagIds = ref<number[]>([]);
+const search = ref(restoredNavigation.search || '');
+const assignmentOptions = [
+    { value: 'all', title: 'Todos' },
+    { value: 'mine', title: 'Meus' },
+    { value: 'unassigned', title: 'Não atribuídos' },
+];
+const assignment = ref(restoredNavigation.assignment || 'all');
+const assignmentCounts = ref<Record<string, number> | null>(null);
+const statusFilter = ref(restoredNavigation.status || 'all');
+const appliedTagIds = ref<number[]>(restoredNavigation.tags || []);
 const filterOpen = ref(false);
 const draftAssignment = ref('all');
 const draftOpenOnly = ref(false);
@@ -261,6 +288,17 @@ function clearFilters() {
     filterOpen.value = false;
 }
 const draft = ref('');
+const memoryDrafts = new Map<string, string>();
+const draftStorageUnavailable = ref(false);
+const draftKey = (id: number) => `chait-draft:${me.value.id}:${workspace.value.id}:${id}`;
+watch(draft, (value) => {
+    if (!selected.value) return;
+    memoryDrafts.set(draftKey(selected.value.id), value);
+    try {
+        if (value) sessionStorage.setItem(draftKey(selected.value.id), value);
+        else sessionStorage.removeItem(draftKey(selected.value.id));
+    } catch { draftStorageUnavailable.value = true; }
+}, { flush: 'sync' });
 const noteDraft = ref('');
 const assignUserId = ref('');
 const busy = ref(false);
@@ -357,7 +395,7 @@ function cancelPauseForm() {
 }
 const mobilePane = ref<'list' | 'chat' | 'profile'>('list');
 
-const profileCollapsed = ref(true);
+const profileCollapsed = ref(restoredNavigation.profileCollapsed ?? window.innerWidth < 1200);
 const contactAvatars = reactive<Record<number, string | null>>({});
 const avatarLoaded = new Set<number>();
 const avatarRetries = new Set<number>();
@@ -504,6 +542,7 @@ async function loadThreads(append = false) {
         });
         completed = true;
         if (request.signal.aborted || generation !== searchGeneration) return;
+        assignmentCounts.value = result.counts ?? null;
         if (!append)
             void cachePut(key, {
                 data: result.data,
@@ -519,12 +558,17 @@ async function loadThreads(append = false) {
         );
         threadsReady.value = true;
         nextCursor.value = result.next_cursor;
+        if (!append && selected.value && !threads.value.some((item) => item.id === selected.value?.id) && result.selected_thread?.id !== selected.value.id) {
+            historyGeneration++;
+            forgetConversation(selected.value.id);
+            void clearChatCache();
+        }
         if (selected.value)
             selected.value =
                 threads.value.find((item) => item.id === selected.value?.id) ||
                 (result.selected_thread?.id === selected.value.id
                     ? result.selected_thread
-                    : selected.value);
+                    : null);
         if (
             !selected.value &&
             result.selected_thread &&
@@ -587,7 +631,7 @@ async function loadHistory() {
                 selected.value?.id === target.id &&
                 generation === historyGeneration
             )
-                scrollToLatest();
+                restoreHistoryPosition();
         },
     );
     try {
@@ -742,11 +786,14 @@ async function loadHistory() {
                 )
                 .map((message) => renewMedia(message, false)),
         );
-        if (shouldFollow) scrollToLatest();
+        if (initial) restoreHistoryPosition();
+        else if (shouldFollow) scrollToLatest();
         else updateLatestPosition();
     } catch (error: any) {
         if ([401, 403, 404].includes(error?.status)) {
             completed = true;
+            try { sessionStorage.removeItem(draftKey(target.id)); } catch { /* Storage unavailable. */ }
+            memoryDrafts.delete(draftKey(target.id));
             void clearChatCache();
             if (selected.value?.id === target.id) {
                 messages.value = [];
@@ -808,11 +855,23 @@ async function loadOlderMessages() {
         loadingOlder.value = false;
     }
 }
+function restoreHistoryPosition() {
+    const element = messagesElement.value;
+    if (!element || !selected.value) return;
+    try {
+        const top = sessionStorage.getItem(`${navigationKey}:scroll:${selected.value.id}`);
+        if (top !== null) { element.scrollTop = Number(top); updateLatestPosition(); return; }
+    } catch { /* Use the latest messages when storage is unavailable. */ }
+    scrollToLatest();
+}
 function updateLatestPosition() {
     const element = messagesElement.value;
     if (!element) return;
     isAtLatest.value =
         element.scrollHeight - element.scrollTop - element.clientHeight <= 48;
+    try {
+        if (selected.value) sessionStorage.setItem(`${navigationKey}:scroll:${selected.value.id}`, String(element.scrollTop));
+    } catch { /* Scroll restoration is best effort. */ }
     if (isAtLatest.value) {
         hasNewMessages.value = false;
         markVisibleConversationRead();
@@ -950,7 +1009,11 @@ async function sendMessage(event?: Event) {
             }),
         });
         if (workspace.value.id !== workspaceId) return;
-        draft.value = '';
+        if (selected.value?.id === threadId && draft.value === text) draft.value = '';
+        else {
+            try { if (sessionStorage.getItem(draftKey(threadId)) === text) sessionStorage.removeItem(draftKey(threadId)); } catch { /* Storage unavailable. */ }
+            if (memoryDrafts.get(draftKey(threadId)) === text) memoryDrafts.delete(draftKey(threadId));
+        }
         if (realtimeEnabled) {
             optimistic.sending_status =
                 sent.data?.status === 'confirmation_pending'
@@ -1198,17 +1261,39 @@ function previewText(thread: Thread) {
         'Mídia'
     );
 }
-function receiveChat(event: ChatUpdate) {
-    if (event.workspace_id !== workspace.value.id) return;
-    if (event.type === 'access.changed') {
-        historyGeneration++;
-        searchGeneration++;
-        void clearChatCache();
-        threads.value = [];
+function forgetConversation(id: number) {
+    try { sessionStorage.removeItem(draftKey(id)); } catch { /* Storage unavailable. */ }
+    memoryDrafts.delete(draftKey(id));
+    liveMessages.delete(id);
+    threads.value = threads.value.filter((thread) => thread.id !== id);
+    if (selected.value?.id === id) {
+        draft.value = '';
         selected.value = null;
         messages.value = [];
-        liveMessages.clear();
-        void loadThreads();
+        renderedThreadId = null;
+    }
+}
+let accessInvalidated = false;
+function invalidateChatAccess() {
+    if (accessInvalidated) return;
+    accessInvalidated = true;
+    chatAllowed.value = false;
+    historyGeneration++;
+    searchGeneration++;
+    listAbort?.abort();
+    pendingMedia.value.forEach(revokeObjectUrl);
+    pendingMedia.value = [];
+    threads.value = [];
+    selected.value = null;
+    messages.value = [];
+    liveMessages.clear();
+    liveStatuses.clear();
+    void clearChatCache().finally(() => window.location.reload());
+}
+function receiveChat(event: ChatUpdate) {
+    if (accessInvalidated || event.workspace_id !== workspace.value.id) return;
+    if (event.type === 'access.changed') {
+        invalidateChatAccess();
         return;
     }
     if (event.type === 'conversation.invalidate') {
@@ -1229,15 +1314,10 @@ function receiveChat(event: ChatUpdate) {
     }
     if (event.type === 'conversation.removed') {
         historyGeneration++;
+        searchGeneration++;
+        listAbort?.abort();
+        forgetConversation(event.data.id);
         void clearChatCache();
-        threads.value = threads.value.filter(
-            (thread) => thread.id !== event.data.id,
-        );
-        if (selected.value?.id === event.data.id) {
-            selected.value = null;
-            messages.value = [];
-        }
-        liveMessages.delete(event.data.id);
         return;
     }
     if (event.type === 'conversation.changed') {
@@ -1248,6 +1328,10 @@ function receiveChat(event: ChatUpdate) {
             (thread) => thread.id === incoming.id,
         );
         if ((current?.revision || 0) > (incoming.revision || 0)) return;
+        if (search.value && /\d/.test(search.value)) {
+            void loadThreads();
+            return;
+        }
         const matches =
             (assignment.value !== 'mine' ||
                 incoming.assigned_to?.id === me.value?.id) &&
@@ -1365,6 +1449,7 @@ async function loadMoreChats() {
 }
 function onListScroll(event: Event) {
     const element = event.target as HTMLElement;
+    try { sessionStorage.setItem(`${navigationKey}:list-scroll`, String(element.scrollTop)); } catch { /* Storage unavailable. */ }
     if (element.scrollHeight - element.scrollTop - element.clientHeight < 120)
         void loadMoreChats();
 }
@@ -1372,6 +1457,9 @@ function choose(thread: Thread, openMobile = true) {
     renderedThreadId = null;
     pendingThreadId.value = null;
     selected.value = thread;
+    try { sessionStorage.setItem(`chait-draft-contact:${me.value.id}:${workspace.value.id}:${thread.id}`, String(thread.contact.id)); } catch { /* Storage unavailable. */ }
+    try { draft.value = sessionStorage.getItem(draftKey(thread.id)) || memoryDrafts.get(draftKey(thread.id)) || ''; }
+    catch { draft.value = memoryDrafts.get(draftKey(thread.id)) || ''; }
     historyNextOffset.value = null;
     messages.value = pendingMedia.value.filter(
         (message) => message.thread_id === thread.id,
@@ -1544,6 +1632,9 @@ function messageDate(value?: string | null) {
     );
 }
 function statusBadge(thread: Thread) {
+    if (thread.status === 'completed') return { label: 'Finalizado', className: 'bot-active' };
+    if (thread.status === 'in_progress') return { label: 'Em atendimento', className: 'humanized' };
+    if (thread.status === 'open') return { label: 'Aguardando responsável', className: 'bot-paused' };
     const automation = thread.automation;
     if (
         connection.value?.status !== 'connected' ||
@@ -1565,7 +1656,7 @@ function statusBadge(thread: Thread) {
 }
 const canCompose = computed(
     () =>
-        !!selected.value &&
+        !!page.props.canActOnChat && !!selected.value &&
         (!selected.value.assigned_to ||
             selected.value.assigned_to.id === me.value?.id),
 );
@@ -1701,7 +1792,28 @@ watch(
 watch(mobilePane, (pane) => {
     if (pane === 'chat') void nextTick().then(updateLatestPosition);
 });
+let listPositionRestored = false;
+watch(threadsReady, async (ready) => {
+    if (!ready || listPositionRestored) return;
+    listPositionRestored = true;
+    await nextTick();
+    const list = document.querySelector<HTMLElement>('.thread-list');
+    if (!list) return;
+    let top = 0;
+    try { top = Number(sessionStorage.getItem(`${navigationKey}:list-scroll`) || 0); } catch { /* Storage unavailable. */ }
+    while (list.scrollHeight < top + list.clientHeight && nextCursor.value && !threadsError.value) {
+        const cursor = nextCursor.value;
+        await loadThreads(true);
+        await nextTick();
+        if (cursor === nextCursor.value) break;
+    }
+    list.scrollTop = top;
+});
 onMounted(async () => {
+    if (restoredNavigation.profileCollapsed === undefined) {
+        const shell = document.querySelector('.chat-shell');
+        profileCollapsed.value = window.innerWidth < 1024 || (shell?.clientWidth ?? window.innerWidth - 240) < 930;
+    }
     dateLabelTimer = window.setInterval(refreshDateLabels, 60000);
     document.addEventListener('visibilitychange', refreshDateLabels);
     if (realtimeEnabled) {
@@ -1727,6 +1839,13 @@ onMounted(async () => {
         listTimer = window.setInterval(() => void loadThreads(), 30000);
     }
 });
+watch([search, assignment, statusFilter, appliedTagIds, profileCollapsed, () => selected.value?.id], () => {
+    try { sessionStorage.setItem(navigationKey, JSON.stringify({
+        threadId: selected.value?.id, assignment: assignment.value,
+        status: statusFilter.value, search: search.value, tags: appliedTagIds.value,
+        profileCollapsed: profileCollapsed.value,
+    })); } catch { /* Navigation remains usable without storage. */ }
+}, { deep: true, flush: 'sync' });
 onUnmounted(() => {
     clearInterval(accessTimer);
     mobileChatDetail.value = false;
@@ -1815,10 +1934,11 @@ onUnmounted(() => {
         </div>
     </section>
     <div v-if="chatAllowed" class="connected-chat">
-        <div v-if="realtimeWarning" class="realtime-notice" role="status">
+        <AppNotice v-if="draftStorageUnavailable" variant="warning">O navegador não permitiu guardar o rascunho. Ele será mantido apenas durante esta navegação.</AppNotice>
+        <AppNotice v-if="realtimeWarning" variant="warning">
             As atualizações em tempo real serão retomadas automaticamente.
             Enquanto isso, as conversas podem estar desatualizadas.
-        </div>
+        </AppNotice>
         <main
             class="chat-shell"
             :class="{
@@ -1829,7 +1949,19 @@ onUnmounted(() => {
                 class="list-pane"
                 :class="{ 'mobile-hidden': mobilePane !== 'list' }"
             >
-                <h1 class="sr-only">Conversas</h1>
+                <div class="conversations-heading">
+                    <h1 class="conversations-title">Conversas</h1>
+                    <p>Atendimentos e conversas com seus clientes.</p>
+                </div>
+                <div class="assignment-segments" role="group" aria-label="Atribuição das conversas">
+                    <button
+                        v-for="option in assignmentOptions"
+                        :key="option.value"
+                        type="button"
+                        :aria-pressed="assignment === option.value"
+                        @click="assignment = option.value"
+                    >{{ option.title }} <span v-if="assignmentCounts">{{ assignmentCounts[option.value] }}</span></button>
+                </div>
                 <div class="search-row">
                     <label class="search"
                         ><Search :size="16" aria-hidden="true" /><Input
@@ -1880,8 +2012,12 @@ onUnmounted(() => {
                                 v-if="messageAvatar(thread)"
                                 :src="messageAvatar(thread)!"
                                 alt=""
-                                @error="avatarError(thread)" /></span
-                        ><span class="thread-main"
+                                @error="avatarError(thread)" />
+                            <span class="thread-channel" aria-label="WhatsApp" role="img">
+                                <Phone :size="10" aria-hidden="true" />
+                            </span>
+                        </span>
+                        <span class="thread-main"
                             ><span class="thread-top"
                                 ><b>{{
                                     thread.contact.display_name ||
@@ -1895,8 +2031,8 @@ onUnmounted(() => {
                                     ><span
                                         v-if="thread.unread_count > 0"
                                         class="unread-dot"
-                                        aria-label="Mensagens não lidas"
-                                    ></span></span></span
+                                        :aria-label="`${thread.unread_count} mensagens não lidas`"
+                                    >{{ thread.unread_count > 99 ? '99+' : thread.unread_count }}</span></span></span
                             ><small
                                 v-if="thread.last_message_type"
                                 class="message-preview"
@@ -1904,8 +2040,7 @@ onUnmounted(() => {
                             >
                             <span class="thread-bottom"
                                 ><small>{{
-                                    thread.assigned_to?.name ||
-                                    'Sem responsável'
+                                    ''
                                 }}</small
                                 ><em
                                     v-if="statusBadge(thread)"
@@ -1915,12 +2050,12 @@ onUnmounted(() => {
                             ></span
                         >
                     </button>
-                    <div v-if="threadsError" class="empty" role="alert">
+                    <AppNotice v-if="threadsError" variant="error">
                         Não foi possível carregar as conversas.
                         <button type="button" @click="loadThreads()">
                             Tentar novamente
                         </button>
-                    </div>
+                    </AppNotice>
                     <div
                         v-else-if="loadingThreads && !threadsReady"
                         class="skeleton-list"
@@ -2035,21 +2170,17 @@ onUnmounted(() => {
                                 ><span v-for="n in 4" :key="n"></span
                             ></template>
                         </div>
-                        <div
-                            v-else-if="historyError"
-                            class="history-warning"
-                            role="alert"
-                        >
+                        <AppNotice v-else-if="historyError" variant="error">
                             Não foi possível carregar as mensagens.
                             <button type="button" @click="loadHistory()">
                                 Tentar novamente
                             </button>
-                        </div>
-                        <div v-else-if="historyLimited" class="history-warning">
+                        </AppNotice>
+                        <AppNotice v-else-if="historyLimited" variant="warning">
                             A UAZAPI não disponibilizou este histórico.
                             Mensagens antigas podem ter expirado ou não terem
                             sido sincronizadas pelo aparelho.
-                        </div>
+                        </AppNotice>
                         <p v-else-if="!messages.length" class="no-messages">
                             As mensagens desta conversa aparecerão aqui.
                         </p>
@@ -2174,9 +2305,7 @@ onUnmounted(() => {
                     </div>
                     <div class="composer-area">
                         <p v-if="!canCompose" class="composer-hint">
-                            Responsável: {{ selected.assigned_to?.name }}.
-                            Altere a atribuição no Perfil do contato para
-                            responder.
+                            {{ page.props.canActOnChat ? 'Altere a atribuição no perfil para responder.' : 'Seu acesso permite consultar esta conversa.' }}
                         </p>
                         <p
                             v-else-if="
@@ -2244,9 +2373,9 @@ onUnmounted(() => {
                                 Descartar
                             </AppButton>
                         </div>
-                        <p v-if="voiceError" role="alert" class="voice-error">
+                        <AppNotice v-if="voiceError" variant="error">
                             {{ voiceError }}
-                        </p>
+                        </AppNotice>
                         <form class="composer" @submit="sendMessage">
                             <label class="attach" aria-label="Anexar arquivo"
                                 ><Plus :size="20" /><input
@@ -2338,7 +2467,7 @@ onUnmounted(() => {
                     </p>
                     <AppButton
                         v-if="
-                            !selected.assigned_to &&
+                            page.props.canActOnChat && !selected.assigned_to &&
                             (selected.status === 'bot' ||
                                 selected.status === 'completed')
                         "
@@ -2350,8 +2479,8 @@ onUnmounted(() => {
                     >
                     <AppButton
                         v-if="
-                            selected.assigned_to?.id !== me.id ||
-                            selected.status !== 'in_progress'
+                            page.props.canActOnChat && (selected.assigned_to?.id !== me.id ||
+                            selected.status !== 'in_progress')
                         "
                         variant="primary"
                         class="full"
@@ -2541,7 +2670,7 @@ onUnmounted(() => {
                     >
                         <AppButton
                             v-if="
-                                selected.automation?.can_pause && !pauseFormOpen
+                                page.props.canActOnChat && selected.automation?.can_pause && !pauseFormOpen
                             "
                             data-pause-trigger
                             data-automation-action
@@ -2554,7 +2683,7 @@ onUnmounted(() => {
                         >
                         <form
                             v-if="
-                                pauseFormOpen && selected.automation?.can_pause
+                                page.props.canActOnChat && pauseFormOpen && selected.automation?.can_pause
                             "
                             class="automation-form"
                             @submit.prevent="changeAutomation('pause')"
@@ -2648,7 +2777,7 @@ onUnmounted(() => {
                             </fieldset>
                         </form>
                         <AppButton
-                            v-if="selected.automation?.can_resume"
+                            v-if="page.props.canActOnChat && selected.automation?.can_resume"
                             data-automation-action
                             type="button"
                             variant="secondary"
@@ -2812,7 +2941,7 @@ onUnmounted(() => {
     margin: 0 auto 24px;
     border-radius: 20px;
     background: var(--muted);
-    color: var(--primary);
+    color: var(--link);
 }
 .connection-setup h1 {
     margin: 0 0 12px;
@@ -2988,6 +3117,7 @@ onUnmounted(() => {
     border: 0;
     outline: 0;
     min-width: 0;
+    min-height: 0;
     width: 100%;
     font: inherit;
     font-size: 11px;
@@ -3115,6 +3245,7 @@ onUnmounted(() => {
     gap: 4px;
 }
 .unread-dot {
+    font-size: 0;
     width: 7px;
     height: 7px;
     border-radius: 50%;
@@ -3224,22 +3355,22 @@ onUnmounted(() => {
     min-height: 0;
     position: relative;
     overflow: auto;
-    padding: 15px clamp(12px, 4vw, 55px);
+    padding: 16px var(--page-gutter);
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
 }
 .new-messages-button {
     position: sticky;
-    bottom: 10px;
+    bottom: 8px;
     align-self: center;
     margin: 4px auto 0;
     padding: 8px 12px;
     border: 1px solid var(--border);
-    border-radius: 18px;
+    border-radius: var(--radius);
     background: var(--card);
-    color: var(--primary);
-    box-shadow: 0 2px 8px #14261b20;
+    color: var(--link);
+    box-shadow: var(--shadow-popover);
     cursor: pointer;
 }
 .message-row {
@@ -3251,9 +3382,9 @@ onUnmounted(() => {
 .bubble {
     max-width: min(80%, 520px);
     background: var(--card);
-    padding: 9px 11px;
-    border-radius: 12px;
-    box-shadow: 0 1px 2px #12291b10;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
     font-size: 12px;
     line-height: 1.5;
     overflow-wrap: anywhere;
@@ -3261,6 +3392,7 @@ onUnmounted(() => {
 }
 .mine .bubble {
     background: var(--accent);
+    color: var(--accent-foreground);
 }
 .bubble p {
     margin: 0;
@@ -3275,14 +3407,14 @@ onUnmounted(() => {
 .history-warning,
 .no-messages {
     margin: auto;
-    padding: 15px;
+    padding: var(--card-padding);
     max-width: 360px;
     text-align: center;
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-card);
     color: var(--muted-foreground);
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.6;
 }
 .waiting {
@@ -3301,14 +3433,14 @@ onUnmounted(() => {
     font-weight: bold;
 }
 .composer {
-    margin: 10px 13px 15px;
+    margin: 8px 12px 16px;
     padding: 8px;
     display: flex;
     align-items: end;
     gap: 8px;
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 11px;
+    border-radius: var(--radius-card);
 }
 .composer textarea {
     resize: none;
@@ -3319,8 +3451,8 @@ onUnmounted(() => {
     overflow-y: auto;
     padding: 8px 12px;
     border: 1px solid var(--input);
-    border-radius: 8px;
-    background: var(--background);
+    border-radius: var(--radius);
+    background: var(--muted);
     box-shadow: none;
     outline: none;
     font: inherit;
@@ -3359,6 +3491,10 @@ onUnmounted(() => {
     background: var(--primary);
     color: var(--primary-foreground);
     font-size: 13px;
+}
+.send:hover:not(:disabled),
+.send:active:not(:disabled) {
+    background: var(--primary-hover);
 }
 .locked {
     text-align: center;
@@ -3744,8 +3880,8 @@ onUnmounted(() => {
     inset: 0;
     display: grid;
     place-items: center;
-    padding: 35px;
-    background: #07150edc;
+    padding: var(--page-gutter);
+    background: var(--overlay);
     cursor: zoom-out;
 }
 .image-modal img {
@@ -4088,7 +4224,7 @@ onUnmounted(() => {
             var(--visible-viewport-height, 100dvh) -
                 max(16px, env(safe-area-inset-top))
         ) !important;
-        border-radius: 16px 16px 0 0;
+        border-radius: var(--radius-dialog) var(--radius-dialog) 0 0;
         padding-bottom: max(20px, env(safe-area-inset-bottom));
     }
     .chat-heading .back,
@@ -4143,4 +4279,194 @@ onUnmounted(() => {
         opacity: 0.45;
     }
 }
+</style>
+
+<style scoped>
+.conversations-title {
+    margin: 16px 12px 0;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+}
+.thread-list {
+    padding: 4px 8px 12px;
+}
+.thread {
+    min-height: 64px;
+    margin-bottom: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+}
+.thread.chosen {
+    box-shadow: inset 3px 0 var(--primary);
+}
+.thread:focus-visible {
+    outline-offset: -2px;
+}
+.thread-main {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+}
+.thread-top b {
+    min-width: 0;
+    font-size: 14px;
+}
+.thread-time small,
+.thread-bottom small,
+.thread-bottom em,
+.message-preview {
+    font-size: 12px;
+}
+.thread-bottom {
+    flex-wrap: wrap;
+}
+.note {
+    padding: 12px;
+    border-inline-start: 3px solid var(--warning);
+    background: var(--warning-soft);
+}
+.note p,
+.note small {
+    font-size: 12px;
+}
+@media (max-width: 1023px) {
+    .conversations-title {
+        margin-inline: 16px;
+        font-size: 24px;
+    }
+    .thread-list {
+        padding-inline: 12px;
+    }
+}
+</style>
+
+<style scoped>
+.conversations-heading p,
+.assignment-segments,
+.thread-channel {
+    display: none;
+}
+@media (max-width: 1023px) {
+    .list-pane {
+        background: color-mix(in srgb, var(--accent) 27%, var(--background));
+    }
+    .conversations-heading {
+        padding: 16px var(--page-gutter) 12px;
+    }
+    .conversations-title {
+        margin: 0;
+        font-size: 28px;
+        line-height: 1.2;
+        font-weight: 700;
+    }
+    .conversations-heading p {
+        display: block;
+        margin-top: 4px;
+        color: var(--text-secondary);
+        font-size: 14px;
+    }
+    .assignment-segments {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1.35fr;
+        gap: 4px;
+        margin: 0 var(--page-gutter);
+        padding: 4px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-card);
+        background: var(--card);
+    }
+    .assignment-segments button {
+        min-width: 0;
+        min-height: 44px;
+        border-radius: var(--radius);
+        color: var(--text-secondary);
+        font-size: 13px;
+        font-weight: 600;
+    }
+    .assignment-segments button[aria-pressed='true'] {
+        background: var(--primary);
+        color: var(--primary-foreground);
+    }
+    .search-row {
+        padding: 12px var(--page-gutter) 8px;
+        border-bottom: 0;
+    }
+    .search {
+        background: var(--card);
+    }
+    .thread-list {
+        padding: 8px var(--page-gutter) 12px;
+    }
+    .thread {
+        min-height: 72px;
+        padding: 12px;
+        gap: 12px;
+        border-radius: 14px;
+    }
+    .thread .avatar {
+        position: relative;
+        width: 40px;
+        height: 40px;
+        background: var(--accent);
+        color: var(--accent-foreground);
+        overflow: visible;
+        font-weight: 700;
+    }
+    .thread-channel {
+        display: grid;
+        place-items: center;
+        position: absolute;
+        right: -4px;
+        bottom: -3px;
+        width: 18px;
+        height: 18px;
+        border: 2px solid var(--card);
+        border-radius: 50%;
+        background: #15803d;
+        color: #fff;
+    }
+    .thread-top b {
+        font-size: 15px;
+    }
+    .thread .unread-dot {
+        display: grid;
+        place-items: center;
+        min-width: 18px;
+        width: auto;
+        height: 18px;
+        padding-inline: 4px;
+        border-radius: 999px;
+        color: var(--primary-foreground);
+        font-size: 10px;
+    }
+    .thread .message-preview {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        white-space: normal;
+        color: var(--text-secondary);
+    }
+    .thread-bottom em {
+        margin-inline-start: auto;
+    }
+}
+</style>
+
+<style scoped>
+.thread-main { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 8px; }
+.thread-top { grid-column: 1 / -1; }
+.thread-bottom { margin: 0; }
+.thread-bottom > small { display: none; }
+.message-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assignment-segments button span { border-radius: 999px; padding: 1px 5px; background: color-mix(in srgb, currentColor 12%, transparent); }
+</style>
+
+<style scoped>
+.assignment-segments { display: grid; grid-template-columns: 1fr 1fr 1.35fr; gap: 4px; padding: 4px; margin: 8px 12px; border: 1px solid var(--border); border-radius: 12px; }
+.assignment-segments button { min-height: 44px; border-radius: 9px; font-size: 12px; color: var(--foreground); }
+.assignment-segments button[aria-pressed="true"] { background: var(--primary); color: var(--primary-foreground); }
+</style>
+
+<style scoped>
+.thread .message-preview { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>

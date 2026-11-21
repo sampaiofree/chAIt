@@ -424,6 +424,7 @@ class FlowRuntime
             unset($context['early_button_reply']);
             $execution->update(['context' => $context]);
             DB::table('flow_menu_waits')->where('flow_execution_id', $execution->id)->whereIn('status', ['sending', 'waiting'])->update(['status' => 'cancelled', 'completed_at' => now(), 'updated_at' => now(), 'transport' => null, 'retry_queue' => '[]']);
+            app(FlowMessageGrouping::class)->cancel($execution->id);
             DB::table('flow_waits')->where('flow_execution_id', $execution->id)->where('status', 'waiting')->update(['status' => 'cancelled', 'completed_at' => now(), 'updated_at' => now()]);
             AiSession::where('flow_execution_id', $execution->id)->where('status', 'active')->get()->each(function (AiSession $session): void {
                 $session->forceFill(['status' => 'interrupted', 'end_reason' => 'flow_finished', 'ended_at' => now()])->save();

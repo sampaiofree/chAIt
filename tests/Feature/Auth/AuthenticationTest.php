@@ -4,6 +4,25 @@ use App\Models\User;
 use Illuminate\Support\Facades\RateLimiter;
 use Laravel\Fortify\Features;
 
+test('home renders the login screen with the same options and status as login', function () {
+    foreach (['home', 'login'] as $route) {
+        $this->withSession(['status' => 'E-mail confirmado. Você já pode entrar.'])
+            ->get(route($route))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('auth/login')
+                ->where('canResetPassword', Features::enabled(Features::resetPasswords()))
+                ->where('canRegister', Features::enabled(Features::registration()))
+                ->where('status', 'E-mail confirmado. Você já pode entrar.'));
+    }
+});
+
+test('authenticated users visiting home are redirected to the dashboard', function () {
+    $this->actingAs(User::factory()->create())
+        ->get(route('home'))
+        ->assertRedirect(route('dashboard'));
+});
+
 test('login screen can be rendered', function () {
     $response = $this->get(route('login'));
 

@@ -15,6 +15,8 @@ use App\Models\User;
 use App\Models\WorkspaceMembership;
 use App\Services\Chat\ChatOperations;
 use App\Services\Chat\ChatProjection;
+use App\Services\Contacts\ContactIdentity;
+use App\Services\Contacts\ContactPhoneIdentity;
 use App\Services\Flows\FlowInboundProcessor;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -306,4 +308,31 @@ test('lead editors can delete but cannot bypass chat visibility to create a conv
     $member->update(['can_edit_leads' => true]);
     $this->actingAs($agent->fresh())->delete("/workspaces/{$workspace->id}/leads/{$lead->id}")->assertRedirect();
     $this->assertDatabaseMissing('contacts', ['id' => $lead->id]);
+});
+
+test('Brazilian mobile variants identify the same lead while fixed lines remain distinct', function () {
+    $identity = app(ContactPhoneIdentity::class);
+    expect($identity->variants('556295772922'))->toBe(['5562995772922', '556295772922'])
+        ->and($identity->variants('5562995772922'))->toBe(['5562995772922', '556295772922'])
+        ->and($identity->normalize(' 556295772922 '))->toBe('5562995772922')
+        ->and($identity->variants('556232123456'))->toBe(['556232123456'])
+        ->and($identity->variants('16502530000'))->toBe(['16502530000']);
+
+    $user = User::factory()->create();
+    $workspace = $user->fresh()->currentWorkspace;
+    $lead = Contact::factory()->create(['workspace_id' => $workspace->id, 'phone' => '556295772922']);
+    $resolved = DB::transaction(fn () => app(ContactIdentity::class)->locked($workspace->id, '5562995772922'));
+    expect($resolved->id)->toBe($lead->id)->and($lead->fresh()->phone)->toBe('556295772922');
+});
+
+test('deleting a mobile lead rejects old messages through either number variant', function () {
+    $user = User::factory()->create();
+    $workspace = $user->fresh()->currentWorkspace;
+    $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    $lead = Contact::factory()->create(['workspace_id' => $workspace->id, 'phone' => '5562995772922']);
+    $this->actingAs($user)->delete("/workspaces/{$workspace->id}/leads/{$lead->id}")->assertRedirect();
+    $projection = app(ChatProjection::class);
+    expect($projection->sync($connection, [], ['chatid' => '556295772922@s.whatsapp.net', 'messageTimestamp' => now()->subMinute()->valueOf()], true))->toBeNull();
+    $this->travel(1)->seconds();
+    expect($projection->sync($connection, [], ['chatid' => '556295772922@s.whatsapp.net', 'messageTimestamp' => now()->valueOf(), 'fromMe' => false], true))->not->toBeNull();
 });

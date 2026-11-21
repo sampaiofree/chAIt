@@ -925,6 +925,11 @@
                                             "null"
                                         ],
                                         "maxLength": 64
+                                    },
+                                    "reply_grouping_seconds": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 90
                                     }
                                 },
                                 "required": [
@@ -1282,8 +1287,11 @@
                                     },
                                     "ai_grouping_seconds": {
                                         "type": "integer",
-                                        "minimum": 5,
-                                        "maximum": 45
+                                        "minimum": 1,
+                                        "maximum": 90
+                                    },
+                                    "ai_load_history": {
+                                        "type": "boolean"
                                     },
                                     "ai_prompt": {
                                         "anyOf": [
@@ -1442,6 +1450,13 @@
                                             "type": "object",
                                             "additionalProperties": false,
                                             "properties": {
+                                                "title": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "maxLength": 120
+                                                },
                                                 "instruction": {
                                                     "type": [
                                                         "string",
@@ -1491,6 +1506,13 @@
                                                     ],
                                                     "maxLength": 64
                                                 },
+                                                "title": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "maxLength": 120
+                                                },
                                                 "instruction": {
                                                     "type": [
                                                         "string",
@@ -1519,6 +1541,13 @@
                                                         "null"
                                                     ],
                                                     "maxLength": 64
+                                                },
+                                                "title": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "maxLength": 120
                                                 },
                                                 "instruction": {
                                                     "type": [

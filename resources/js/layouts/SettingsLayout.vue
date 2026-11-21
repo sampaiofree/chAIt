@@ -11,7 +11,7 @@ defineProps<{ active: string }>();
 .settings-page {
     width: 100%;
     margin: 0 auto;
-    padding: 24px 40px 48px;
+    padding: var(--page-block-padding) var(--page-gutter) 32px;
     min-width: 0;
 }
 .settings-page :deep(> section) {
@@ -27,27 +27,19 @@ defineProps<{ active: string }>();
     margin: 0 0 8px;
 }
 .settings-page :deep(section > p) {
-    color: var(--muted-foreground);
+    color: var(--text-secondary);
     font-size: 14px;
     line-height: 1.6;
-    margin: 0 0 24px;
+    margin: 0 0 var(--section-gap);
 }
 .settings-page :deep(.settings-card) {
-    padding: 24px;
+    padding: var(--card-padding);
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    margin-top: 24px;
+    border-radius: var(--radius-card);
+    margin-top: var(--section-gap);
 }
 .settings-page :deep(.settings-card form) {
     margin-top: 0;
-}
-@media (max-width: 640px) {
-    .settings-page {
-        padding: 16px 16px 32px;
-    }
-    .settings-page :deep(.settings-card) {
-        padding: 20px;
-    }
 }
 </style>

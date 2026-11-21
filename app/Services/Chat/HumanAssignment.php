@@ -2,7 +2,6 @@
 
 namespace App\Services\Chat;
 
-use App\Enums\WorkspaceRole;
 use App\Models\Thread;
 use App\Models\ThreadAssignment;
 use App\Models\User;
@@ -19,12 +18,13 @@ class HumanAssignment
             $thread->contact()->lockForUpdate()->firstOrFail();
             $thread->refresh();
             $previous = $thread->assigned_to_user_id;
+            $actor->unsetRelation('memberships');
+            $assignee->unsetRelation('memberships');
             $membership = $actor->membershipFor($workspace);
-            abort_unless($membership && (
-                WorkspaceRole::from($membership->role)->atLeast(WorkspaceRole::Admin)
-                || $membership->can_view_unassigned
-                || $previous === $actor->id
-            ), 404);
+            abort_unless($membership && $membership->canSeeThread($thread), 404);
+            abort_unless($membership->canSeeOwnThreads(), 403);
+            $recipient = $assignee->membershipFor($workspace);
+            abort_unless($recipient?->joined_at && $recipient->canSeeOwnThreads() && ! User::whereKey($assignee->id)->value('access_blocked_at'), 422);
             abort_if($previous && $previous !== $assignee->id && ! $allowTransfer, 409, 'Esta conversa já tem responsável.');
 
             if ($previous !== $assignee->id) {

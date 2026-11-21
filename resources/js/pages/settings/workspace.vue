@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppNotice from '@/components/AppNotice.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { ref, watch } from 'vue';
 import SettingsLayout from '@/layouts/SettingsLayout.vue';
@@ -142,12 +143,12 @@ function removeIcon() {
                             >
                         </div>
                     </fieldset>
-                    <p v-if="notice" role="status" class="notice">
+                    <AppNotice v-if="notice" :key="notice" variant="success">
                         {{ notice }}
-                    </p>
-                    <p v-if="removeError" role="alert" class="form-error">
+                    </AppNotice>
+                    <AppNotice v-if="removeError" :key="removeError" variant="error">
                         {{ removeError }}
-                    </p>
+                    </AppNotice>
                     <div class="form-actions">
                         <AppButton
                             type="submit"

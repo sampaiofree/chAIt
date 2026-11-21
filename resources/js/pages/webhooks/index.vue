@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppNotice from '@/components/AppNotice.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { ref, watch } from 'vue';
 import { Plus, Copy } from '@lucide/vue';
@@ -16,6 +17,7 @@ const name = ref('');
 const busy = ref(false);
 const error = ref('');
 const notice = ref('');
+const noticeError = ref(false);
 watch(open, (value) => {
     if (!value) {
         name.value = '';
@@ -46,10 +48,12 @@ async function create() {
     }
 }
 async function copy(url: string) {
+    noticeError.value = false;
     try {
         await navigator.clipboard.writeText(url);
         notice.value = 'URL copiada.';
     } catch {
+        noticeError.value = true;
         notice.value =
             'Não foi possível copiar. Selecione a URL e copie manualmente.';
     }
@@ -71,7 +75,7 @@ async function copy(url: string) {
                     ><Plus :size="18" />Criar Webhook</AppButton
                 >
             </header>
-            <p v-if="notice" role="status">{{ notice }}</p>
+            <AppNotice v-if="notice" :key="notice" :variant="noticeError ? 'error' : 'success'">{{ notice }}</AppNotice>
             <div v-if="webhooks.length" class="webhook-list">
                 <article v-for="webhook in webhooks" :key="webhook.id">
                     <div>
@@ -121,14 +125,9 @@ async function copy(url: string) {
                             :aria-invalid="Boolean(error)"
                             aria-describedby="name-error"
                         />
-                        <p
-                            v-if="error"
-                            id="name-error"
-                            class="form-error"
-                            role="alert"
-                        >
+                        <AppNotice v-if="error" :key="error" variant="error">
                             {{ error }}
-                        </p>
+                        </AppNotice>
                     </div>
                     <div class="form-actions">
                         <AppButton
@@ -171,7 +170,7 @@ p {
 }
 .webhook-list {
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-card);
     background: var(--card);
 }
 article {
@@ -179,7 +178,7 @@ article {
     grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: center;
     gap: 16px;
-    padding: 20px;
+    padding: 16px var(--card-padding);
 }
 article + article {
     border-top: 1px solid var(--border);
@@ -199,11 +198,14 @@ article + article {
 .status {
     border-radius: var(--radius);
     background: var(--secondary);
-    padding: 4px 10px;
+    padding: 4px 8px;
     font-size: 12px;
 }
 .empty {
-    padding: 40px 20px;
+    padding: var(--card-padding);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--card);
     text-align: center;
     display: grid;
     justify-items: center;

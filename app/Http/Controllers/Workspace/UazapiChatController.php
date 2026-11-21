@@ -385,6 +385,7 @@ class UazapiChatController extends Controller
         $this->authorizeThread($request, $workspace, $thread);
         $data = $request->validate(['user_id' => ['required', 'integer']]);
         $membership = $workspace->memberships()->where('user_id', $data['user_id'])->whereNotNull('joined_at')->firstOrFail();
+        abort_unless($membership->canSeeOwnThreads(), 422, 'O responsável precisa ter acesso às próprias conversas.');
         $claimed = app(HumanAssignment::class)->claim($thread, $request->user(), $membership->user, $workspace, true);
 
         return response()->json(['data' => $this->serialize($claimed->fresh(['contact', 'assignedTo', 'notes.user']), true)]);
@@ -427,6 +428,9 @@ class UazapiChatController extends Controller
             throw ValidationException::withMessages(['expires_at' => 'Escolha uma data e um horário futuros.']);
         }
         DB::transaction(function () use ($request, $workspace, $thread, $automations, $audit, $expiresAt): void {
+            $thread->contact()->lockForUpdate()->firstOrFail();
+            $thread->refresh();
+            $this->mayViewUnassigned($request, $workspace, $thread);
             $automations->pause($thread, $request->user()->id, $expiresAt);
             $audit->record($workspace, 'conversation.automation_paused', $request->user(), $thread, null, [
                 'expires_at' => $expiresAt?->toIso8601String(),
@@ -443,6 +447,9 @@ class UazapiChatController extends Controller
         $this->mayViewUnassigned($request, $workspace, $thread);
         abort_unless(! in_array($thread->status, ['open', 'in_progress'], true) || $thread->human_opened_at === null, 409, 'Finalize o atendimento humano antes de retomar a automação.');
         DB::transaction(function () use ($request, $workspace, $thread, $automations, $audit): void {
+            $thread->contact()->lockForUpdate()->firstOrFail();
+            $thread->refresh();
+            $this->mayViewUnassigned($request, $workspace, $thread);
             $automations->resume($thread);
             $audit->record($workspace, 'conversation.automation_resumed', $request->user(), $thread, null, [
                 'uazapi_connection_id' => $thread->uazapi_connection_id,
@@ -458,6 +465,7 @@ class UazapiChatController extends Controller
             return app(ChatController::class)->operation($request, $workspace, $thread, 'send');
         }
         $this->authorizeThread($request, $workspace, $thread);
+        abort_unless($request->user()->membershipFor($workspace)->canSeeOwnThreads(), 403);
         if ($request->attributes->get('chat_operation_direct')) {
             abort_unless($thread->status === 'in_progress' && $thread->assigned_to_user_id === $request->user()->id, 403, 'A atribuição mudou antes do envio.');
         }
@@ -724,19 +732,21 @@ class UazapiChatController extends Controller
         $this->ensureWorkspaceAccess($request->user(), $workspace);
         abort_unless($thread->workspace_id === $workspace->id, 404);
 
+        $request->user()->unsetRelation('memberships');
         $membership = $request->user()->membershipFor($workspace);
-        $canViewAll = WorkspaceRole::from($membership->role)->atLeast(WorkspaceRole::Admin) || $membership->can_view_unassigned;
-        abort_unless($canViewAll || $thread->assigned_to_user_id === $request->user()->id, 404);
+        abort_unless($membership->canSeeThread($thread), 404);
     }
 
     private function mayViewUnassigned(Request $request, Workspace $workspace, Thread $thread): void
     {
+        $request->user()->unsetRelation('memberships');
         $membership = $request->user()->membershipFor($workspace);
-        abort_unless($thread->assigned_to_user_id === $request->user()->id || WorkspaceRole::from($membership->role)->atLeast(WorkspaceRole::Admin) || $membership->can_view_unassigned, 403);
+        abort_unless($membership->canSeeThread($thread) && $membership->canSeeOwnThreads(), 403);
     }
 
     private function mayActOnThread(Request $request, Thread $thread): void
     {
+        $this->authorizeThread($request, $thread->workspace, $thread);
         abort_unless($thread->assigned_to_user_id === $request->user()->id || WorkspaceRole::from($request->user()->membershipFor($thread->workspace)->role)->atLeast(WorkspaceRole::Admin), 403, 'Somente o responsável ou administrador pode alterar este atendimento.');
     }
 

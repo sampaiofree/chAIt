@@ -27,14 +27,18 @@ export function useNavigationItems() {
                   },
               ]
             : []),
-        {
-            id: 'conversations',
-            title: 'Conversas',
-            mobileTitle: 'Conversas',
-            href: '/dashboard',
-            icon: MessagesSquare,
-            active: page.url.startsWith('/dashboard'),
-        },
+        ...(page.props.canViewChat
+            ? [
+                  {
+                      id: 'conversations',
+                      title: 'Conversas',
+                      mobileTitle: 'Conversas',
+                      href: '/dashboard',
+                      icon: MessagesSquare,
+                      active: page.url.startsWith('/dashboard'),
+                  },
+              ]
+            : []),
         ...(page.props.canManageFlows && workspace.value
             ? [
                   {
@@ -86,5 +90,12 @@ export function useNavigationItems() {
         ),
     );
 
-    return { items, bottomItems, workspace };
+    const homeHref = computed(() =>
+        page.props.canViewChat
+            ? '/dashboard'
+            : items.value.find((item) =>
+                  ['leads', 'flows', 'settings'].includes(item.id),
+              )?.href || '/settings/profile',
+    );
+    return { items, bottomItems, workspace, homeHref };
 }

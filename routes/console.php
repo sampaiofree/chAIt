@@ -55,6 +55,7 @@ Schedule::command('flows:reconcile-sends')->everyMinute()->withoutOverlapping();
 
 Artisan::command('chat:recover', function () {
     app(ChatMaintenance::class)->recover();
+    app(\App\Services\Flows\FlowMessageGrouping::class)->recover();
 })->purpose('Reencaminha somente eventos e operações já aceitos pelo CHAIT');
 Artisan::command('chat:prune', function () {
     app(ChatMaintenance::class)->prune();

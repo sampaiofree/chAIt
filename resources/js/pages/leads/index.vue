@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppNotice from '@/components/AppNotice.vue';
 import { router, Link, useForm, Head } from '@inertiajs/vue3';
 import { computed, reactive, ref, watch } from 'vue';
 import AppDialog from '@/components/AppDialog.vue';
@@ -31,6 +32,7 @@ async function deleteLead(lead: any) {
     const approved = await confirm(
         `Excluir ${lead.display_name || 'Sem nome'} (${lead.phone || 'sem WhatsApp'})? O cadastro, as conversas e todas as automações serão removidos. Se voltar a conversar, será um novo lead. Esta ação não pode ser desfeita.`,
         'Excluir lead',
+        'danger',
     );
     if (!approved) {
         deletingId.value = null;
@@ -39,6 +41,15 @@ async function deleteLead(lead: any) {
     deletion.delete(`${root}/${lead.id}`, {
         preserveScroll: true,
         onSuccess: () => {
+            try {
+                for (const key of Object.keys(sessionStorage)) {
+                    if (!key.startsWith('chait-draft-contact:') || key.split(':')[2] !== String(props.workspace.id) || sessionStorage.getItem(key) !== String(lead.id)) continue;
+                    sessionStorage.removeItem(key.replace('chait-draft-contact:', 'chait-draft:'));
+                    const [, userId, workspaceId, threadId] = key.split(':');
+                    sessionStorage.removeItem(`chait-navigation:${userId}:${workspaceId}:scroll:${threadId}`);
+                    sessionStorage.removeItem(key);
+                }
+            } catch { /* Deletion remains available without browser storage. */ }
             void clearChatCache();
             if (!props.leads.data.length && props.leads.current_page > 1) {
                 router.get(
@@ -128,9 +139,9 @@ function search() {
     <Head title="Leads" />
     <AppDialog :dialog="dialog" @resolve="finish" />
     <main class="leads-page">
-        <p v-if="deleteError" class="form-error" role="alert">
+        <AppNotice v-if="deleteError" :key="deleteError" variant="error">
             {{ deleteError }}
-        </p>
+        </AppNotice>
         <header class="leads-header">
             <div>
                 <h1>Leads</h1>
@@ -286,6 +297,7 @@ function search() {
                     ><AppButton
                         v-if="canEdit"
                         variant="ghost"
+                        class="text-destructive hover:bg-[var(--danger-soft)] hover:text-destructive"
                         :disabled="deletingId !== null"
                         :aria-label="`Excluir lead ${lead.display_name || lead.phone}`"
                         @click="deleteLead(lead)"

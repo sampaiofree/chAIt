@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppFieldHelp from '@/components/AppFieldHelp.vue';
+import AppNotice from '@/components/AppNotice.vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
 import SettingsLayout from '@/layouts/SettingsLayout.vue';
 import AppButton from '@/components/AppButton.vue';
@@ -86,10 +88,9 @@ function save() {
                                         : 'profile-phone-help'
                                 "
                             />
-                            <small id="profile-phone-help" class="form-help"
-                                >Informe DDI + número, somente dígitos. Ex.:
-                                5511999999999.</small
-                            >
+                            <AppFieldHelp id="profile-phone-help"
+                                 label="Ajuda">Informe DDI + número, somente dígitos. Ex.:
+                                5511999999999.</AppFieldHelp>
                             <small
                                 v-if="form.errors.phone"
                                 id="profile-phone-error"
@@ -99,13 +100,9 @@ function save() {
                             >
                         </div>
                     </fieldset>
-                    <p
-                        v-if="form.recentlySuccessful"
-                        class="saved"
-                        role="status"
-                    >
+                    <AppNotice v-if="form.recentlySuccessful" variant="success">
                         Perfil atualizado.
-                    </p>
+                    </AppNotice>
                     <div class="form-actions">
                         <AppButton type="submit" :loading="form.processing"
                             >Salvar alterações</AppButton

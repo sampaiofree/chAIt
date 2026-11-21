@@ -14,7 +14,7 @@ use RuntimeException;
 
 class UazapiClient
 {
-    private function request(?UazapiConnection $connection = null, ?AiTurnBudget $budget = null): PendingRequest
+    private function request(?UazapiConnection $connection = null, ?AiTurnBudget $budget = null, int $timeout = 25): PendingRequest
     {
         $baseUrl = trim((string) config('services.uazapi.base_url'));
         if ($baseUrl === '') {
@@ -23,17 +23,17 @@ class UazapiClient
         $token = $connection?->instance_token ?: config('services.uazapi.admin_token');
 
         return Http::baseUrl(rtrim($baseUrl, '/'))
-            ->acceptJson()->asJson()->timeout($budget?->timeout(25) ?? 25)
+            ->acceptJson()->asJson()->timeout($budget?->timeout($timeout) ?? $timeout)
             ->withHeaders([$connection ? 'token' : 'admintoken' => $token]);
     }
 
-    private function execute(?UazapiConnection $connection, string $method, string $path, mixed $payload = null, ?AiTurnBudget $budget = null, bool $interactive = false, bool $read = false)
+    private function execute(?UazapiConnection $connection, string $method, string $path, mixed $payload = null, ?AiTurnBudget $budget = null, bool $interactive = false, bool $read = false, int $timeout = 25)
     {
         $bucket = $connection ? 'connection:'.$connection->id : 'admin:'.hash('sha256', (string) config('services.uazapi.base_url'));
         $started = hrtime(true);
         $release = config('chat.enabled') ? app(UazapiGate::class)->acquire($bucket, $interactive) : fn () => null;
         try {
-            $request = $this->request($connection, $budget);
+            $request = $this->request($connection, $budget, $timeout);
             $response = $method === 'get' ? $request->get($path, $payload ?? []) : $request->post($path, $payload);
             if (config('chat.enabled') && $response->status() === 429) {
                 $retryAfter = trim((string) $response->header('Retry-After'));
@@ -124,11 +124,11 @@ class UazapiClient
         return $this->send($this->execute($connection, 'post', '/message/find', ['id' => $messageId], $budget, read: true));
     }
 
-    public function messages(UazapiConnection $connection, string $chatId, int $offset = 0, ?string $trackId = null, ?AiTurnBudget $budget = null, bool $restrictToChat = false): array
+    public function messages(UazapiConnection $connection, string $chatId, int $offset = 0, ?string $trackId = null, ?AiTurnBudget $budget = null, bool $restrictToChat = false, bool $interactive = true, int $timeout = 25): array
     {
         return $this->send($this->execute($connection, 'post', '/message/find', array_filter([
             'chatid' => ($trackId === null || $restrictToChat) ? $chatId : null, 'limit' => 100, 'offset' => $offset, 'track_id' => $trackId,
-        ], fn ($value) => $value !== null && $value !== ''), $budget, interactive: true, read: true));
+        ], fn ($value) => $value !== null && $value !== ''), $budget, interactive: $interactive, read: true, timeout: $timeout));
     }
 
     public function markChatRead(UazapiConnection $connection, string $chatId, bool $read = true): array

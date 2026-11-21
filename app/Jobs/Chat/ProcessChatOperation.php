@@ -132,6 +132,7 @@ class ProcessChatOperation implements ShouldQueue
                 return;
             }
             $user = User::findOrFail($operation->user_id);
+            abort_unless($user->membershipFor($thread->workspace)?->canSeeThread($thread), 404);
             $access = app(ChatConnectionAccess::class)->state($thread->workspace);
             abort_unless($access['allowed'], 409, 'WhatsApp desconectado ou indisponível.');
             abort_unless($user->canAccessWorkspace($thread->workspace), 403);
@@ -147,7 +148,7 @@ class ProcessChatOperation implements ShouldQueue
             }
             if ($operation->kind === 'media') {
                 $member = $user->membershipFor($thread->workspace);
-                abort_unless(WorkspaceRole::from($member->role)->atLeast(WorkspaceRole::Admin) || $member->can_view_unassigned || $thread->assigned_to_user_id === $user->id, 404);
+                abort_unless($member->canSeeThread($thread), 404);
                 $messageId = (string) ($payload['message_id'] ?? '');
                 abort_unless($messageId !== '' && strlen($messageId) <= 191, 404);
                 if (! ($payload['media_verified'] ?? false)) {

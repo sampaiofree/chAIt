@@ -194,6 +194,8 @@ O administrador configura permissões **por usuário e por workspace**, independ
 - As permissões de conversa continuam controlando acesso ao histórico e às operações de atendimento.
 - Os dados mínimos necessários para identificar a pessoa em uma conversa autorizada (por exemplo, nome e número) não devem ser ocultados automaticamente só porque a pessoa não tem acesso à **listagem completa** de leads; essa fronteira deverá ser validada com as regras atuais do Chat.
 
+**Atualização de 21/11/2026:** Abrir conversa existente respeita Próprias/Não atribuídas/Todas. Criar conversa pela ficha exige Todas ou a combinação Próprias + Não atribuídas. Não se cria outra conversa para contornar uma atribuição inacessível. Um usuário com acesso somente à fila pode abrir uma conversa existente autorizada para consulta.
+
 ### 7.3. Regra operacional recomendada, ainda não aprovada separadamente
 
 **Cadastro manual:** não foi criada uma quinta permissão específica de “Criar leads”. Como padrão de implementação a validar, vincular **+ Novo Lead** a **Editar leads**, exigindo também acesso ao módulo de Leads. Evitar atribuir esse comportamento como decisão confirmada sem verificar o padrão de autorização existente.

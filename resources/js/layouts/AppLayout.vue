@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import { PanelLeft, ChevronRight } from '@lucide/vue';
+import AppBrand from '@/components/AppBrand.vue';
 import AppNavigation from '@/components/AppNavigation.vue';
 import AppBottomNavigation from '@/components/AppBottomNavigation.vue';
 import { useNavigation } from '@/composables/useNavigation';
@@ -24,6 +25,7 @@ const page = usePage<any>();
 const { expanded, mobileOpen, mobileChatDetail, toggle } = useNavigation(
     page.props.sidebarOpen === true,
 );
+const flowEditor = computed(() => /^\/workspaces\/\d+\/flows\/\d+(?:[/?#]|$)/.test(page.url));
 const title = computed(() =>
     page.url.startsWith('/admin/')
         ? 'Administração'
@@ -98,6 +100,7 @@ onBeforeUnmount(() => {
                                   : 'Expandir menu'
                         }}</TooltipContent></Tooltip
                     >
+                    <AppBrand v-if="isMobile" class="mobile-topbar-brand" />
                     <span class="topbar-divider"></span
                     ><span class="topbar-title">{{ title }}</span>
                     <ChevronRight :size="14" class="workspace-chevron" /><span
@@ -106,7 +109,7 @@ onBeforeUnmount(() => {
                     >
                 </header>
                 <div class="app-page"><slot /></div>
-                <AppBottomNavigation />
+                <AppBottomNavigation v-if="!flowEditor" />
             </div>
         </div>
         <Sheet v-model:open="mobileOpen">
@@ -149,7 +152,7 @@ onBeforeUnmount(() => {
     gap: 12px;
     height: var(--app-header-height);
     flex: none;
-    padding: 0 16px;
+    padding: 0 var(--page-gutter);
     border-bottom: 1px solid var(--border);
     background: var(--card);
 }
@@ -159,7 +162,7 @@ onBeforeUnmount(() => {
     background: var(--border);
 }
 .topbar-title {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
 }
 .topbar-workspace {
@@ -189,7 +192,19 @@ onBeforeUnmount(() => {
         display: none;
     }
     .app-topbar {
-        padding: 0 12px;
+        background: color-mix(in srgb, var(--accent) 13%, var(--card));
+        padding: 0 max(var(--page-gutter), env(safe-area-inset-right)) 0
+            max(var(--page-gutter), env(safe-area-inset-left));
+    }
+    .mobile-topbar-brand {
+        width: 114px;
+        max-width: 42%;
+    }
+    .topbar-divider,
+    .topbar-title,
+    .topbar-workspace,
+    .workspace-chevron {
+        display: none;
     }
     .mobile-chat-detail .app-topbar,
     .mobile-chat-detail :deep(.bottom-navigation) {

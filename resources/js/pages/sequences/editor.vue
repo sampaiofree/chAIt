@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppNotice from '@/components/AppNotice.vue';
+import AppFieldHelp from '@/components/AppFieldHelp.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { ArrowUp, ArrowDown, Plus, Trash2 } from '@lucide/vue';
@@ -66,6 +68,7 @@ const active = ref(props.sequence.is_active);
 const published = ref(props.published_version);
 const busy = ref(false);
 const notice = ref('');
+const noticeError = ref(false);
 const errors = ref<Record<string, string>>({});
 const flowSearch = ref('');
 const { dialog, confirm, finish } = useAppDialog();
@@ -115,6 +118,7 @@ async function remove(i: number) {
         await confirm(
             'Excluir esta etapa do rascunho? Participações já inscritas mantêm sua programação.',
             'Excluir etapa',
+            'danger',
         )
     ) {
         draft.steps.splice(i, 1);
@@ -133,6 +137,7 @@ function flowsFor(step: EditorStep) {
     );
 }
 function handleError(e: unknown) {
+    noticeError.value = true;
     notice.value =
         e instanceof Error ? e.message : 'Falha na conexão. Tente novamente.';
     errors.value = e instanceof SequenceRequestError ? e.fields : {};
@@ -151,10 +156,12 @@ async function saveDraft(): Promise<boolean> {
 async function save() {
     if (busy.value) return;
     busy.value = true;
+    noticeError.value = false;
     notice.value = '';
     try {
         await saveDraft();
-        notice.value = 'Rascunho salvo.';
+        noticeError.value = false;
+    notice.value = 'Rascunho salvo.';
     } catch (e) {
         handleError(e);
     } finally {
@@ -164,6 +171,7 @@ async function save() {
 async function publish() {
     if (busy.value) return;
     busy.value = true;
+    noticeError.value = false;
     notice.value = '';
     try {
         if (dirty.value) await saveDraft();
@@ -174,7 +182,8 @@ async function publish() {
         );
         published.value = result.data.version;
         active.value = true;
-        notice.value =
+        noticeError.value = false;
+    notice.value =
             'Sequência publicada. Novas inscrições usarão esta versão.';
         errors.value = {};
     } catch (e) {
@@ -200,7 +209,8 @@ async function toggle() {
             'POST',
         );
         active.value = !active.value;
-        notice.value = active.value
+        noticeError.value = false;
+    notice.value = active.value
             ? 'Novas entradas liberadas.'
             : 'Novas entradas bloqueadas.';
     } catch (e) {
@@ -220,6 +230,7 @@ const stopGuard = router.on('before', (event) => {
     void confirm(
         'As alterações do rascunho ainda não foram salvas. Deseja descartá-las?',
         'Descartar alterações',
+        'danger',
     ).then((accepted) => {
         confirmingNavigation = false;
         if (accepted) {
@@ -270,7 +281,7 @@ onBeforeUnmount(() => {
                 >
             </div>
         </header>
-        <p v-if="notice" class="notice" role="status">{{ notice }}</p>
+        <AppNotice v-if="notice" :key="notice" :variant="noticeError ? 'error' : 'success'">{{ notice }}</AppNotice>
         <fieldset :disabled="busy" class="definition-fields">
             <label for="sequence-title"
                 >Nome da sequência<Input
@@ -429,7 +440,7 @@ onBeforeUnmount(() => {
                         ></label
                     >
                 </fieldset>
-                <p :id="`timing-${step.key}`" class="help">
+                <AppFieldHelp :id="`timing-${step.key}`" label="Ajuda">
                     {{
                         step.schedule_type === 'interval'
                             ? 'A contagem começa após a conclusão do fluxo anterior e pausa enquanto houver atendimento/fluxo em andamento. Intervalos de 1 minuto a 365 dias.'
@@ -446,7 +457,7 @@ onBeforeUnmount(() => {
                             field(index, 'scheduled_at')
                         }}</span
                     >
-                </p>
+                </AppFieldHelp>
             </li>
         </ol>
         <section v-if="!draft.steps.length" class="empty">
@@ -477,7 +488,7 @@ onBeforeUnmount(() => {
     width: 100%;
     min-width: 0;
     margin: auto;
-    padding: 24px;
+    padding: var(--page-block-padding) var(--page-gutter);
 }
 .back {
     display: inline-block;
@@ -536,13 +547,13 @@ label {
     border-left: 2px solid var(--border);
     margin-bottom: 24px;
     display: grid;
-    gap: 20px;
+    gap: var(--section-gap);
 }
 .stage {
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 20px;
+    border-radius: var(--radius-card);
+    padding: var(--card-padding);
     position: relative;
     min-width: 0;
 }
@@ -595,19 +606,17 @@ label {
     padding: 24px 0;
 }
 .participations {
-    margin-top: 40px;
+    margin-top: var(--section-gap);
     display: grid;
     gap: 12px;
 }
 .participations article {
-    padding: 16px;
+    padding: var(--card-padding);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-card);
+    background: var(--card);
 }
 @media (max-width: 640px) {
-    .sequence-editor {
-        padding: 16px;
-    }
     .definition-fields,
     .stage-fields {
         grid-template-columns: 1fr;
@@ -618,9 +627,6 @@ label {
     }
     .stage::before {
         left: -24px;
-    }
-    .stage {
-        padding: 16px;
     }
     .stage-header {
         flex-wrap: wrap;

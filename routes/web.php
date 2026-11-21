@@ -15,6 +15,7 @@ use App\Http\Controllers\Workspace\SequenceController;
 use App\Http\Controllers\Workspace\UazapiChatController;
 use App\Http\Middleware\EnsureSystemAdmin;
 use App\Http\Middleware\RequireConnectedChat;
+use App\Models\Thread;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Chat\ChatConnectionAccess;
@@ -24,6 +25,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
+use Laravel\Fortify\Http\Controllers\AuthenticatedSessionController;
 
 Route::get('/register', function () {
     abort_unless(Features::enabled(Features::registration()), 404);
@@ -49,9 +51,9 @@ Route::middleware(['auth', EnsureSystemAdmin::class])->get('/admin/exclusoes', f
     })]);
 });
 
-Route::inertia('/', 'welcome', [
-    'canRegister' => Features::enabled(Features::registration()),
-])->name('home');
+Route::get('/', [AuthenticatedSessionController::class, 'create'])
+    ->middleware('guest')
+    ->name('home');
 
 Route::middleware(['auth', 'verified', RequireConnectedChat::class])->group(function () {
     Route::middleware(EnsureSystemAdmin::class)->prefix('admin/usuarios')->name('admin.users.')->group(function () {
@@ -62,9 +64,18 @@ Route::middleware(['auth', 'verified', RequireConnectedChat::class])->group(func
         Route::patch('{user}', [AdminUserController::class, 'update'])->name('update');
     });
     Route::get('workspaces/{workspace}/chat-access', function (Request $request, Workspace $workspace) {
+        $request->user()->unsetRelation('memberships');
         abort_unless($request->user()->canAccessWorkspace($workspace), 403);
 
-        return response()->json(app(ChatConnectionAccess::class)->state($workspace));
+        $ids = $request->validate(['draft_ids' => ['sometimes', 'array', 'max:200'], 'draft_ids.*' => ['integer', 'min:1']])['draft_ids'] ?? [];
+        $ids = array_map('intval', $ids);
+        $member = $request->user()->membershipFor($workspace);
+        $visible = $member->scopeVisibleThreads(Thread::whereIn('id', $ids))->pluck('id')->all();
+        $state = $member->canAccessChat()
+            ? app(ChatConnectionAccess::class)->state($workspace)
+            : ['allowed' => false, 'status' => 'forbidden'];
+
+        return response()->json([...$state, 'permissions_signature' => $member->chatPermissionsSignature(), 'revoked_draft_ids' => array_values(array_diff($ids, $visible))]);
     });
     Route::get('workspaces/{workspace}/leads', [LeadController::class, 'index'])->name('workspaces.leads.index');
     Route::post('workspaces/{workspace}/leads', [LeadController::class, 'store'])->name('workspaces.leads.store');

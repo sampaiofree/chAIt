@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppNotice from '@/components/AppNotice.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { ref, watch } from 'vue';
 import { Plus } from '@lucide/vue';
@@ -148,14 +149,9 @@ async function create() {
                         :aria-invalid="Boolean(error)"
                         aria-describedby="sequence-name-error"
                     />
-                    <p
-                        v-if="error"
-                        id="sequence-name-error"
-                        class="form-error"
-                        role="alert"
-                    >
+                    <AppNotice v-if="error" :key="error" variant="error">
                         {{ error }}
-                    </p>
+                    </AppNotice>
                 </div>
                 <div class="form-actions">
                     <AppButton
@@ -173,7 +169,7 @@ async function create() {
 </template>
 <style scoped>
 .sequences-page {
-    padding: 24px;
+    padding: var(--page-block-padding) var(--page-gutter);
     margin: 0 auto;
     width: 100%;
     min-width: 0;
@@ -214,7 +210,7 @@ label {
 }
 .sequence-list {
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-card);
     overflow: hidden;
     background: var(--card);
 }
@@ -223,7 +219,7 @@ label {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 80px 130px 90px;
     gap: 16px;
-    padding: 16px;
+    padding: 16px var(--card-padding);
     align-items: center;
     font-size: 14px;
 }
@@ -245,16 +241,16 @@ strong {
     display: none;
 }
 .empty {
-    padding: 40px 20px;
+    padding: var(--card-padding);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--card);
     text-align: center;
     display: grid;
     justify-items: center;
     gap: 12px;
 }
 @media (max-width: 640px) {
-    .sequences-page {
-        padding: 16px;
-    }
     .filters {
         flex-wrap: wrap;
     }

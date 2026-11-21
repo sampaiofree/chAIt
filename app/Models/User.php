@@ -65,7 +65,7 @@ class User extends Authenticatable
     {
         return $this->belongsToMany(Workspace::class, 'workspace_memberships')
             ->using(WorkspaceMembership::class)
-            ->withPivot(['role', 'invited_at', 'joined_at', 'last_seen_at', 'can_view_unassigned', 'can_manage_flows', 'can_use_flow_assistant'])
+            ->withPivot(['role', 'invited_at', 'joined_at', 'last_seen_at', 'can_view_unassigned', 'can_view_own', 'can_view_all', 'can_manage_flows', 'can_use_flow_assistant'])
             ->withTimestamps();
     }
 

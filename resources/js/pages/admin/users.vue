@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppNotice from '@/components/AppNotice.vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { ref, watch } from 'vue';
 import { Plus } from '@lucide/vue';
@@ -96,7 +97,7 @@ const editUrl = (id: number) =>
                 ><Plus :size="16" />Novo usuário</AppButton
             >
         </header>
-        <p v-if="success" class="notice" role="status">{{ success }}</p>
+        <AppNotice v-if="success" :key="success" variant="success">{{ success }}</AppNotice>
         <UserForm
             v-if="creating || editingUser"
             :key="editingUser?.id ?? 'new'"
@@ -232,9 +233,9 @@ const editUrl = (id: number) =>
     width: 100%;
     min-width: 0;
     margin: 0 auto;
-    padding: 24px 40px 48px;
+    padding: var(--page-block-padding) var(--page-gutter) 32px;
     display: grid;
-    gap: 20px;
+    gap: var(--section-gap);
 }
 .row-actions {
     display: flex;
@@ -265,25 +266,25 @@ h2 {
     font-weight: 600;
 }
 .page-header p {
-    color: var(--muted-foreground);
+    color: var(--text-secondary);
     font-size: 14px;
 }
 .panel {
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 20px;
+    border-radius: var(--radius-card);
+    padding: var(--card-padding);
 }
 .filters {
     display: flex;
     flex-wrap: wrap;
     align-items: end;
     gap: 12px;
-    padding-bottom: 18px;
+    padding-bottom: 16px;
 }
 .filter-field {
     display: grid;
-    gap: 5px;
+    gap: var(--form-label-gap);
     min-width: min(180px, 100%);
     flex: 1;
 }
@@ -293,10 +294,10 @@ h2 {
 }
 select {
     height: var(--control-height);
-    padding: 0 10px;
-    border: 1px solid var(--border);
+    padding: 0 12px;
+    border: 1px solid var(--input);
     border-radius: var(--radius);
-    background: var(--background);
+    background: var(--muted);
     color: var(--foreground);
 }
 .user-row {
@@ -341,9 +342,6 @@ select {
     font-size: 14px;
 }
 @media (max-width: 640px) {
-    .admin-page {
-        padding: 16px 16px 32px;
-    }
     .page-header {
         align-items: flex-start;
         flex-wrap: wrap;

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppNotice from '@/components/AppNotice.vue';
 import AppBrand from '@/components/AppBrand.vue';
 import AppButton from '@/components/AppButton.vue';
 import { Input } from '@/components/ui/input';
@@ -21,7 +22,9 @@ const error = computed(() => form.errors.email || form.errors.password);
             <a href="/" class="auth-brand"><AppBrand /></a>
             <h1>Bem-vindo de volta</h1>
             <p>Acesse seu workspace para continuar os atendimentos.</p>
-            <div v-if="status" class="success">{{ status }}</div>
+            <AppNotice v-if="status" :key="status" variant="success">{{
+                status
+            }}</AppNotice>
             <label
                 >E-mail<Input
                     v-model="form.email"
@@ -39,14 +42,17 @@ const error = computed(() => form.errors.email || form.errors.password);
                 ><input v-model="form.remember" type="checkbox" /> Manter
                 conectado</label
             >
-            <div v-if="error" class="error">{{ error }}</div>
+            <AppNotice v-if="error" :key="error" variant="error">{{
+                error
+            }}</AppNotice>
             <AppButton type="submit" :disabled="form.processing">{{
                 form.processing ? 'Entrando…' : 'Entrar'
             }}</AppButton
             ><Link v-if="canResetPassword" href="/forgot-password"
-                >Esqueci minha senha</Link
+                >Recuperar senha</Link
             ><small v-if="canRegister"
-                >Não tem conta? <Link href="/register">Criar conta</Link></small
+                >Não tem conta?
+                <Link href="/register">Fazer cadastro</Link></small
             >
             <small
                 ><a href="/privacidade">Privacidade</a> ·

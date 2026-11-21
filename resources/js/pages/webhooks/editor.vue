@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppNotice from '@/components/AppNotice.vue';
+import AppFieldHelp from '@/components/AppFieldHelp.vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import {
     computed,
@@ -349,6 +351,7 @@ const stopGuard = router.on('before', (event) => {
     void confirm(
         'Os dados preenchidos ainda não foram salvos.',
         'Descartar alterações?',
+        'danger',
     ).then((ok) => {
         if (ok) {
             allowNavigation = true;
@@ -425,13 +428,13 @@ onBeforeUnmount(() => {
                         ></label
                     >
                 </div>
-                <p v-if="notice" role="status" class="notice">{{ notice }}</p>
-                <div v-if="error" role="alert" class="error-summary">
+                <AppNotice v-if="notice" :key="notice" variant="success">{{ notice }}</AppNotice>
+                <AppNotice v-if="error" :key="error" variant="error">
                     <p>{{ error }}</p>
                     <p v-for="(message, key) in errors" :key="key">
                         {{ message }}
                     </p>
-                </div>
+                </AppNotice>
                 <fieldset :disabled="working">
                     <section class="section">
                         <h2>1. URL do Webhook</h2>
@@ -485,10 +488,10 @@ onBeforeUnmount(() => {
                                 placeholder='{"cliente":{"telefone":"5527999999999"}}'
                                 spellcheck="false"
                         /></label>
-                        <p class="help">
+                        <AppFieldHelp label="Ajuda">
                             O último exemplo fica armazenado até ser substituído
                             ou apagado.
-                        </p>
+                        </AppFieldHelp>
                         <div class="actions">
                             <AppButton
                                 variant="secondary"
@@ -677,14 +680,14 @@ onBeforeUnmount(() => {
                             maiúsculas e tipos. O primeiro fluxo correspondente
                             será iniciado.
                         </p>
-                        <p
+                        <AppNotice
                             v-if="conflicts.length"
-                            class="warning"
-                            role="status"
-                        >
+
+
+                         variant="warning">
                             Ações opostas para {{ conflicts.join(', ') }}.
                             Quando ambas ocorrerem, a última regra prevalece.
-                        </p>
+                        </AppNotice>
                         <p v-if="!tags.length">
                             Cadastre tags em Configurações → Campos e tags para
                             selecioná-las aqui.
@@ -920,7 +923,7 @@ onBeforeUnmount(() => {
             </form>
             <details class="receipts">
                 <summary>Últimos recebimentos e simulações</summary>
-                <p v-if="pollError" role="status">{{ pollError }}</p>
+                <AppNotice v-if="pollError" :key="pollError" variant="error">{{ pollError }}</AppNotice>
                 <p v-if="!snapshot.receipts.length">
                     Nenhum recebimento registrado.
                 </p>
@@ -1073,9 +1076,9 @@ fieldset {
 .section {
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 24px;
-    margin-top: 20px;
+    border-radius: var(--radius-card);
+    padding: var(--card-padding);
+    margin-top: var(--section-gap);
     min-width: 0;
 }
 .section > p {
@@ -1218,9 +1221,6 @@ code {
     }
 }
 @media (max-width: 640px) {
-    .section {
-        padding: 20px;
-    }
     .mapping {
         grid-template-columns: minmax(0, 1fr) auto;
     }

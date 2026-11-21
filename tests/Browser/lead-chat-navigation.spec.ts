@@ -10,7 +10,9 @@ async function setup(page: Page, includeTarget = true) {
     const first = {
         id: 9001,
         status: 'bot',
-        last_message_at: null,
+        last_message_at: '2026-11-21T12:00:00Z',
+        last_message_type: 'text',
+        last_message_preview: 'Olá, preciso de ajuda com meu atendimento',
         unread_count: 0,
         unread_version: 0,
         assigned_to: null,
@@ -39,7 +41,7 @@ async function setup(page: Page, includeTarget = true) {
     let available = true;
     let gate: Promise<void> | undefined;
 
-    await page.route('**/workspaces/*/chat-access', (route) =>
+    await page.route('**/workspaces/*/chat-access*', (route) =>
         route.fulfill({ json: { allowed: true, status: 'connected' } }),
     );
     await page.route('**/workspaces/*/uazapi/*', (route) =>
@@ -79,7 +81,7 @@ async function setup(page: Page, includeTarget = true) {
         await gate;
 
         return route.fulfill({
-            json: { data, selected_thread: selected, next_cursor: null },
+            json: { data, counts: { all: data.length, mine: 0, unassigned: data.length }, selected_thread: selected, next_cursor: null },
         });
     });
     await page.route(
@@ -297,4 +299,34 @@ test('opening the chat without a thread still selects the first cached conversat
     await expect(page.locator('.chat-heading .title b')).toHaveText(
         'Primeira conversa',
     );
+});
+
+test('drafts belong to each conversation and survive a reload', async ({ page }) => {
+    await setup(page);
+    const composer = page.locator('textarea').first();
+    await composer.fill('Rascunho da primeira conversa');
+    await page.locator('.thread').filter({ hasText: 'Lead selecionado' }).click();
+    await expect(composer).toHaveValue('');
+    await composer.fill('Rascunho do lead');
+    await page.locator('.thread').filter({ hasText: 'Primeira conversa' }).click();
+    await expect(composer).toHaveValue('Rascunho da primeira conversa');
+    await page.reload();
+    await expect(composer).toHaveValue('Rascunho da primeira conversa');
+});
+
+test('conversation list remains usable at the review sizes in both themes', async ({ page }) => {
+    await setup(page);
+    for (const theme of ['light', 'dark']) {
+        await page.evaluate((value) => document.documentElement.classList.toggle('dark', value === 'dark'), theme);
+        for (const width of [390, 768, 1024, 1440]) {
+            await page.setViewportSize({ width, height: 900 });
+            if (width < 1024 && await page.getByRole('button', { name: 'Voltar para conversas', exact: true }).isVisible()) {
+                await page.getByRole('button', { name: 'Voltar para conversas', exact: true }).click();
+            }
+            await expect(page.getByRole('group', { name: 'Atribuição das conversas' })).toBeVisible();
+            await expect(page.getByRole('button', { name: /^Não atribuídos/ })).toBeVisible();
+            await page.waitForTimeout(250);
+            await page.screenshot({ path: `artifacts/design-review/conversas-etapa2-${width}-${theme}.png` });
+        }
+    }
 });

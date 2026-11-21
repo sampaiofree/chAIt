@@ -281,3 +281,11 @@ O novo caminho é liberado por configuração, com migrations aditivas, Laravel 
 ## Exclusão recuperável dos arquivos dos fluxos
 
 Aplicar a migration `2026_11_17_000002_create_flow_asset_deletions` antes de liberar a versão. O scheduler existente executa `flows:cleanup-assets` a cada minuto; conferir com `php artisan schedule:list`. Para recuperação manual, executar `php artisan flows:cleanup-assets`. Não há novo worker. Solicitações persistem mesmo após apagar o fluxo e não são descartadas quando o armazenamento falha. Arquivos referenciados pelo fluxo, rascunho, versão ativa, execução ou envio pendente são preservados; versões apenas históricas não impedem a remoção. Não há varredura retroativa de arquivos órfãos.
+
+## Permissões de conversas — 21/11/2026
+
+Aplicar `2026_11_21_000001_add_chat_visibility_permissions` antes de liberar os novos controllers e assets. Ela adiciona `can_view_own` (padrão verdadeiro) e `can_view_all` (padrão falso) e copia o antigo acesso amplo para Todas, preservando o alcance dos usuários existentes. Não reexecutar manualmente a conversão após administradores configurarem as permissões.
+
+Após atualizar o código e o build, reiniciar os workers pelo procedimento habitual do Horizon. Conferir Equipe, um usuário com Próprias, outro com acesso exclusivo à fila e outro sem chat, incluindo a revogação com a tela aberta. Não usar retorno ao código antigo como reversão das permissões: ele interpreta Não atribuídas como acesso amplo. A reversão da migration foi exercitada somente no banco de teste isolado; em operação, preservar os campos e corrigir a versão adiante.
+
+Validação desta etapa: 288 testes de backend/1754 asserções, tipos, build, nove cenários de navegação e um cenário de permissões/revogação em Chromium. A migration foi aplicada no ambiente local; produção não foi alterada.

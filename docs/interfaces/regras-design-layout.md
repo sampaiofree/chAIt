@@ -99,7 +99,7 @@ Reutilizar `AppButton` e os componentes comuns. A mesma função deve ter a mesm
 - Em grids de formulário, alinhar itens e conteúdo dos labels ao início; ajuda ou erros abaixo de um campo não devem deslocar o controle vizinho. Em linhas de palavras-chave, alinhar a base dos campos e do botão de remoção, sem margens verticais nos labels.
 - Todo campo tem rótulo visível. Placeholder serve como exemplo ou orientação complementar.
 - Agrupar campos relacionados e manter alinhamento, altura e espaçamento consistentes.
-- Apresentar ajuda e erros junto ao campo; associá-los ao controle para leitores de tela.
+- Apresentar ajuda complementar em balão flutuante e erros junto ao campo; associá-los ao controle para leitores de tela.
 - Identificar campos opcionais e explicar requisitos relevantes antes do envio.
 - Preservar os valores quando houver erro de validação ou falha de envio.
 - Não apresentar erros somente em notificações temporárias.
@@ -223,3 +223,38 @@ A inspeção visual no navegador faz parte do aceite de layout. Tipos, build e t
 ## Histórico
 
 - **1.0 — 2026-10-14:** consolidação dos padrões de identidade, navegação, formulários, componentes, responsividade e hierarquia dos blocos de fluxo.
+
+## Avisos e ajuda flutuante — padrão obrigatório (21/11/2026)
+
+Novas telas e alterações devem usar os componentes compartilhados abaixo. Abrir ajuda ou apresentar feedback não pode deslocar campos, botões ou conteúdo.
+
+| Situação | Componente e comportamento |
+| --- | --- |
+| Explicação complementar | `AppFieldHelp`: rótulo e ícone Info; balão abre por clique, toque ou teclado e fecha por Escape, clique fora ou novamente no ícone. |
+| Feedback de uma ação | `AppNotice` declarativo ou `useAppNotifications().notify()` imperativo. Área global no canto superior direito, abaixo do cabeçalho; largura disponível no celular. |
+| Sucesso ou informação transitória | Variantes `success` e `info`: 5 segundos, com pausa durante foco ou passagem do mouse. |
+| Erro, alerta ou condição contínua | Variantes `error` e `warning`: permanecem até fechar ou resolver. Para informação contínua, usar `duration=0`. |
+| Preenchimento inválido | Erro persistente junto ao campo, com `aria-invalid` e associação por `aria-describedby`. |
+| Confirmação obrigatória | `AppDialog`; preservar confirmação, cancelamento, fila e retorno de foco. |
+
+Exemplos:
+
+```vue
+<AppFieldHelp label="Histórico">Explicação complementar do campo.</AppFieldHelp>
+<AppNotice v-if="error" :key="error" variant="error">{{ error }}</AppNotice>
+<AppNotice v-if="saved" variant="success">Alterações salvas.</AppNotice>
+```
+
+```ts
+const { notify, dismiss } = useAppNotifications();
+notify('Alterações salvas.', { variant: 'success' });
+const id = notify('Conexão indisponível.', { variant: 'warning' });
+// Ao resolver a condição:
+dismiss(id);
+```
+
+O componente declarativo remove seu aviso ao desmontar. Usar uma chave baseada na mensagem quando uma nova mensagem puder substituir a anterior, inclusive após fechamento manual. Avisos com ações preservam os botões no slot. Não duplicar o mesmo aviso em um banner local. Dentro de um diálogo, a área de notificações fica no próprio diálogo para preservar o acesso por teclado e leitores de tela.
+
+Ajuda usa portal e tratamento de colisões, sem expandir o formulário. Manter títulos, rótulos, instruções essenciais, estados vazios e dados da operação visíveis. `FlowFieldHelp` é uma camada de compatibilidade sobre `AppFieldHelp`.
+
+Checklist obrigatório: verificar ausência de deslocamento, fechamento, foco, ações de recuperação, telas pequenas, teclado virtual, temas claro/escuro e sobreposição em modais. Usar os componentes compartilhados; não criar balões ou pilhas de avisos por página.

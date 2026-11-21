@@ -69,6 +69,7 @@ class HandleInertiaRequests extends Middleware
             'canManageFlows' => fn () => $request->user()?->currentWorkspace
                 ? $request->user()->canManageFlows($request->user()->currentWorkspace)
                 : false,
+            'canViewChat' => fn () => $request->user()?->currentWorkspace && ($m = $request->user()->membershipFor($request->user()->currentWorkspace)) ? ($m->seesAllThreads() || $m->can_view_own || $m->can_view_unassigned) : false,
             'canViewLeads' => fn () => $request->user()?->currentWorkspace ? $request->user()->hasLeadPermission($request->user()->currentWorkspace, 'can_view_leads') : false,
             'sidebarOpen' => $request->hasCookie('sidebar_state') && $request->cookie('sidebar_state') === 'true',
         ];

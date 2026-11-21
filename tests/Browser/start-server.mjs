@@ -13,6 +13,7 @@ const metadata = join(tmpdir(), `chait-browser-schema-${port}.json`);
 const env = {
     ...process.env,
     APP_ENV: 'testing',
+    CHAIT_PUBLIC_REGISTRATION_ENABLED: 'true',
     CHAIT_REALTIME_ENABLED: process.env.CHAIT_BROWSER_REALTIME || 'false',
     BROADCAST_CONNECTION: 'null',
     REVERB_APP_ID: 'browser-test',

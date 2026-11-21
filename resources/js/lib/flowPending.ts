@@ -10,12 +10,15 @@ type Resources = {
     flows?: { id: number }[];
     sequences?: { id: number }[];
 };
-export function flowPendingReasons(
+export function flowPendingIssues(
     type: string,
     data: Record<string, unknown>,
     reference: Resources,
-): string[] {
-    const reasons = new Set<string>();
+) {
+    const reasons = new Map<string, string>();
+    function add(message: string, field: string) {
+        if (!reasons.has(message)) reasons.set(message, field);
+    }
     const rows = (key: string) =>
         (data[key] || []) as Record<string, unknown>[];
     const exists = (kind: keyof Resources, id: unknown) =>
@@ -23,16 +26,16 @@ export function flowPendingReasons(
 
     if (type === 'content') {
         if (!rows('items').length) {
-            reasons.add('Adicione uma mensagem ou arquivo.');
+            add('Adicione uma mensagem ou arquivo.', 'content-add');
         }
 
-        for (const item of rows('items')) {
+        for (const [index, item] of rows('items').entries()) {
             if (item.kind === 'media' && !item.asset_id) {
-                reasons.add('Anexe os arquivos pendentes.');
+                add('Anexe os arquivos pendentes.', `item-${index}-media`);
             }
 
             if (item.kind === 'text' && !String(item.text || '').trim()) {
-                reasons.add('Preencha os textos das mensagens.');
+                add('Preencha os textos das mensagens.', `item-${index}-text`);
             }
 
             if (item.kind === 'button') {
@@ -45,7 +48,10 @@ export function flowPendingReasons(
                     (button.kind === 'url' && !button.url) ||
                     (button.kind === 'copy' && !button.copy_text)
                 ) {
-                    reasons.add('Configure o botão e sua mensagem.');
+                    add(
+                        'Configure o botão e sua mensagem.',
+                        `item-${index}-button`,
+                    );
                 }
             }
         }
@@ -55,39 +61,46 @@ export function flowPendingReasons(
         type === 'wait_reply' &&
         (!exists('fields', data.field_id) || !data.timeout_seconds)
     ) {
-        reasons.add('Escolha o campo de destino e o prazo de resposta.');
+        add(
+            'Escolha o campo de destino e o prazo de resposta.',
+            exists('fields', data.field_id) ? 'timeout_seconds' : 'field_id',
+        );
     }
 
     if (type === 'jump_flow' && !exists('flows', data.target_flow_id)) {
-        reasons.add('Selecione o fluxo de destino.');
+        add('Selecione o fluxo de destino.', 'target_flow_id');
     }
 
     if (type === 'operations') {
         if (!rows('actions').length) {
-            reasons.add('Adicione uma operação.');
+            add('Adicione uma operação.', 'operations-add');
         }
 
-        for (const action of rows('actions')) {
+        for (const [index, action] of rows('actions').entries()) {
             if (
                 ['add_tag', 'remove_tag'].includes(String(action.kind)) &&
                 !exists('tags', action.tag_id)
             ) {
-                reasons.add('Selecione a etiqueta da operação.');
+                add('Selecione a etiqueta da operação.', `action-${index}`);
             }
 
             if (
                 action.kind === 'set_field' &&
                 (!exists('fields', action.field_id) || action.value == null)
             ) {
-                reasons.add('Selecione o campo e preencha seu valor.');
+                add(
+                    'Selecione o campo e preencha seu valor.',
+                    `action-${index}`,
+                );
             }
 
             if (
                 action.kind === 'notify_member' &&
                 (!exists('members', action.user_id) || !action.text)
             ) {
-                reasons.add(
+                add(
                     'Selecione quem receberá a notificação e preencha a mensagem.',
+                    `action-${index}`,
                 );
             }
 
@@ -95,7 +108,7 @@ export function flowPendingReasons(
                 action.kind === 'add_to_sequence' &&
                 !exists('sequences', action.sequence_id)
             ) {
-                reasons.add('Selecione a sequência de destino.');
+                add('Selecione a sequência de destino.', `action-${index}`);
             }
 
             if (
@@ -103,7 +116,7 @@ export function flowPendingReasons(
                 (!action.pause_mode ||
                     (action.pause_mode === 'timed' && !action.pause_seconds))
             ) {
-                reasons.add('Configure o período da pausa.');
+                add('Configure o período da pausa.', `action-${index}`);
             }
         }
     }
@@ -116,21 +129,27 @@ export function flowPendingReasons(
                     !String(o.instruction || '').trim(),
             )
         ) {
-            reasons.add('Preencha o nome e as instruções de cada saída.');
+            add('Preencha o nome e as instruções de cada saída.', 'ai_outputs');
         }
 
         if (!String(data.ai_prompt || '').trim()) {
-            reasons.add('Preencha as instruções da IA.');
+            add('Preencha as instruções da IA.', 'ai_prompt');
         }
 
         if (!data.ai_inactivity_seconds) {
-            reasons.add('Configure o prazo de inatividade da IA.');
+            add(
+                'Configure o prazo de inatividade da IA.',
+                'ai_inactivity_seconds',
+            );
         }
 
         if (
             rows('ai_media').some((item) => !item.asset_id || !item.instruction)
         ) {
-            reasons.add('Anexe as mídias da IA e preencha suas instruções.');
+            add(
+                'Anexe as mídias da IA e preencha suas instruções.',
+                'ai_media',
+            );
         }
 
         if (
@@ -138,8 +157,9 @@ export function flowPendingReasons(
                 (item) => !exists('tags', item.tag_id) || !item.instruction,
             )
         ) {
-            reasons.add(
+            add(
                 'Configure as etiquetas autorizadas e suas instruções.',
+                'ai_tags',
             );
         }
 
@@ -148,33 +168,40 @@ export function flowPendingReasons(
                 (item) => !exists('fields', item.field_id) || !item.instruction,
             )
         ) {
-            reasons.add('Configure os campos autorizados e suas instruções.');
+            add(
+                'Configure os campos autorizados e suas instruções.',
+                'ai_fields',
+            );
         }
     }
 
-    if (
-        type === 'condition' &&
-        (!['all', 'any'].includes(String(data.condition_operator)) ||
-            !rows('checks').length ||
-            rows('checks').some(
-                (check) =>
-                    Object.keys(
-                        conditionCheckErrors(
-                            check as ConditionCheck,
-                            reference,
-                        ),
-                    ).length,
-            ))
-    ) {
-        reasons.add('Complete as verificações da condição.');
+    if (type === 'condition') {
+        const checks = rows('checks');
+        const invalidCheck = checks.findIndex(
+            (check) =>
+                Object.keys(
+                    conditionCheckErrors(check as ConditionCheck, reference),
+                ).length,
+        );
+        if (!['all', 'any'].includes(String(data.condition_operator))) {
+            add('Escolha como combinar as verificações.', 'condition-operator');
+        }
+        if (!checks.length) {
+            add('Adicione uma verificação à condição.', 'condition-add');
+        } else if (invalidCheck >= 0) {
+            add(
+                'Complete as verificações da condição.',
+                `condition-check-${invalidCheck}`,
+            );
+        }
     }
 
     if (
         type === 'menu' &&
         Object.keys(menuErrors(data as FlowMenuData)).length
     ) {
-        reasons.add('Complete a configuração do menu.');
+        add('Complete a configuração do menu.', 'menu');
     }
 
-    return [...reasons];
+    return Array.from(reasons, ([message, field]) => ({ message, field }));
 }

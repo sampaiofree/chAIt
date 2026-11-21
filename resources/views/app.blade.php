@@ -25,11 +25,11 @@
         {{-- Inline style to set the HTML background color based on our theme in app.css --}}
         <style>
             html {
-                background-color: #fafafa;
+                background-color: #f8fafc;
             }
 
             html.dark {
-                background-color: #09090b;
+                background-color: #0b1220;
             }
             .startup-brand { position: relative; display: block; width: 180px; max-width: 80vw; line-height: 0; }
             .startup-brand img { display: block; width: 100%; height: auto; }
@@ -45,7 +45,7 @@
         <link rel="apple-touch-icon" href="/brand/app-icon.png">
 
         <link rel="preconnect" href="https://fonts.bunny.net">
-        <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
+        <link href="https://fonts.bunny.net/css?family=inter:400,500,600,700" rel="stylesheet" />
 
         @vite(['resources/css/app.css', 'resources/js/app.ts', "resources/js/pages/{$page['component']}.vue"])
         <x-inertia::head>

@@ -3,7 +3,9 @@
 namespace App\Jobs\Chat;
 
 use App\Jobs\ProcessAiTurn;
+use App\Jobs\ProcessFlowMessageBatch;
 use App\Models\AiSession;
+use App\Models\FlowMessageBatch;
 use App\Models\UazapiInbox;
 use App\Models\WorkspaceOpenAiIntegration;
 use App\Queue\Middleware\WorkspaceCapacity;
@@ -15,6 +17,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -26,8 +29,11 @@ class PrepareAiInput implements ShouldQueue
 
     public int $timeout = 180;
 
-    public function __construct(public int $sessionId, public string $messageId, public int $inboxId, public bool $opening = false)
+    public ?int $batchId = null;
+
+    public function __construct(public int $sessionId, public string $messageId, public int $inboxId, public bool $opening = false, ?int $batchId = null)
     {
+        $this->batchId = $batchId;
         $this->onQueue('media');
     }
 
@@ -51,14 +57,16 @@ class PrepareAiInput implements ShouldQueue
         }
         $inbox = UazapiInbox::find($this->inboxId);
         try {
-            if (! $inbox || ! $inbox->payload || $inbox->expires_at->isPast()) {
+            if (($this->batchId && ! FlowMessageBatch::whereKey($this->batchId)->exists()) || ! $inbox || ! $inbox->payload || $inbox->expires_at->isPast()) {
                 return;
             }
             $payload = $inbox->payload;
-            if (! isset($payload['prepared_input'])) {
+            if (! isset($payload['prepared_input']) && ! isset($payload['prepared_error'])) {
                 $session = AiSession::findOrFail($this->sessionId);
                 if ($session->status !== 'active') {
-                    $inbox->consumed();
+                    if (! $this->batchId) {
+                        $inbox->consumed();
+                    }
 
                     return;
                 }
@@ -74,10 +82,19 @@ class PrepareAiInput implements ShouldQueue
                         }
                     }
                 }
+                unset($part);
                 $payload['prepared_input'] = $input;
-                $inbox->update(['payload' => $payload]);
+                if (! $this->storePayload($payload)) {
+                    foreach ($input['content'] as $part) {
+                        if (isset($part['local_file']['path'])) {
+                            Storage::disk('local')->delete($part['local_file']['path']);
+                        }
+                    }
+
+                    return;
+                }
             }
-            ProcessAiTurn::dispatch($this->sessionId, $this->opening ? null : $this->messageId, $this->inboxId);
+            $this->resumeTurn();
         } catch (UazapiDeferredException $error) {
             if ($inbox && $error->reason === 'read_error') {
                 $payload = $inbox->fresh()->payload;
@@ -85,9 +102,11 @@ class PrepareAiInput implements ShouldQueue
                 if ($payload['media_attempts'] >= 3) {
                     $payload['prepared_error'] = true;
                 }
-                $inbox->update(['payload' => $payload]);
+                if (! $this->storePayload($payload)) {
+                    return;
+                }
                 if (isset($payload['prepared_error'])) {
-                    ProcessAiTurn::dispatch($this->sessionId, $this->opening ? null : $this->messageId, $this->inboxId);
+                    $this->resumeTurn();
                 } else {
                     $this->release((2 ** $payload['media_attempts']) + random_int(0, 1));
                 }
@@ -98,11 +117,37 @@ class PrepareAiInput implements ShouldQueue
             if ($inbox && $inbox->payload) {
                 $payload = $inbox->payload;
                 $payload['prepared_error'] = true;
-                $inbox->update(['payload' => $payload]);
-                ProcessAiTurn::dispatch($this->sessionId, $this->opening ? null : $this->messageId, $this->inboxId);
+                if (! $this->storePayload($payload)) {
+                    return;
+                }
+                $this->resumeTurn();
             }
         } finally {
             $lock->release();
         }
+    }
+
+    private function storePayload(array $payload): bool
+    {
+        return DB::transaction(function () use ($payload): bool {
+            $inbox = UazapiInbox::whereKey($this->inboxId)->lockForUpdate()->first();
+            if (! $inbox?->payload || $inbox->expires_at->isPast()
+                || ($this->batchId && ! FlowMessageBatch::whereKey($this->batchId)->exists())) {
+                return false;
+            }
+
+            return $inbox->update(['payload' => $payload]);
+        }, 3);
+    }
+
+    private function resumeTurn(): void
+    {
+        if ($this->batchId) {
+            ProcessFlowMessageBatch::dispatch($this->batchId, true);
+
+            return;
+        }
+
+        ProcessAiTurn::dispatch($this->sessionId, $this->opening ? null : $this->messageId, $this->inboxId);
     }
 }

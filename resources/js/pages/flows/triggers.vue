@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppNotice from '@/components/AppNotice.vue';
 import AutomationNavigation from '@/components/AutomationNavigation.vue';
 import AppIconButton from '@/components/AppIconButton.vue';
 import { ChevronUp, ChevronDown, Plus } from '@lucide/vue';
@@ -227,7 +228,7 @@ async function save() {
             </AppButton>
         </section>
         <footer>
-            <p role="status">{{ notice }}</p>
+            <AppNotice v-if="notice" :key="notice" :variant="notice === 'Configurações salvas.' ? 'success' : 'error'">{{ notice }}</AppNotice>
             <AppButton :disabled="busy" @click="save" variant="primary">
                 {{ busy ? 'Salvando…' : 'Salvar gatilhos' }}
             </AppButton>
@@ -243,15 +244,15 @@ async function save() {
     width: 100%;
     min-width: 0;
     margin: 0 auto;
-    padding: 24px;
+    padding: var(--page-block-padding) var(--page-gutter);
     color: var(--foreground);
     font-family: var(--font-sans), sans-serif;
 }
 .triggers-page header {
-    margin-bottom: 26px;
+    margin-bottom: var(--section-gap);
 }
 .triggers-page header a {
-    color: var(--primary);
+    color: var(--link);
     text-decoration: none;
 }
 .triggers-page header small {
@@ -261,7 +262,8 @@ async function save() {
 }
 .triggers-page h1 {
     margin: 8px 0;
-    font-size: 28px;
+    font-size: 24px;
+    font-weight: 600;
 }
 .triggers-page h2 {
     margin: 0 0 8px;
@@ -273,10 +275,10 @@ async function save() {
     line-height: 1.6;
 }
 .triggers-page section {
-    margin: 18px 0;
-    padding: 20px;
+    margin: var(--section-gap) 0;
+    padding: var(--card-padding);
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: var(--radius-card);
     background: var(--card);
 }
 .triggers-page label {
@@ -290,18 +292,18 @@ async function save() {
 .triggers-page input:not([type='checkbox']),
 .triggers-page select {
     min-width: 0;
-    padding: 10px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--card);
+    padding: 8px 12px;
+    border: 1px solid var(--input);
+    border-radius: var(--radius);
+    background: var(--muted);
     color: var(--foreground);
     font: inherit;
 }
 .rule {
     display: grid;
     grid-template-columns:
-        48px minmax(130px, 1.2fr) minmax(130px, 1fr) minmax(150px, 1fr)
-        minmax(150px, 1fr) auto;
+        48px minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr)
+        minmax(0, 1fr) auto;
     align-items: end;
     gap: 10px;
     padding: 10px 0;
@@ -352,6 +354,16 @@ footer p {
 @container (max-width: 640px) {
     .triggers-page {
         padding: 16px;
+    }
+}
+@container (max-width: 820px) {
+    .rule {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+        padding-block: 16px;
+    }
+    .order {
+        display: flex;
     }
 }
 </style>

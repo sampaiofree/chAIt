@@ -1,7 +1,17 @@
 <script setup lang="ts">
 import { templateDisplay, type ContactTemplate } from '@/lib/contactTemplate';
 import {
+    ArrowUpRight,
+    Box,
+    Check,
+    TriangleAlert,
+    X,
+    GitBranch,
+    List,
+    Play,
     Plus,
+    Sparkles,
+    Zap,
     MessageSquare,
     MousePointer2,
     Clock3,
@@ -17,7 +27,7 @@ import {
 } from '@/lib/flowCondition';
 import type { ContentButton } from '@/lib/flowContentButton';
 import { computed, watch, nextTick } from 'vue';
-import { flowPendingReasons } from '@/lib/flowPending';
+import { flowPendingIssues } from '@/lib/flowPending';
 import { flowOutputs, menuErrors, type FlowMenuData } from '@/lib/flowMenu';
 import type { FlowCatalog } from '@/composables/useFlowAssistant';
 
@@ -33,6 +43,8 @@ type PreviewItem = {
 };
 const props = defineProps<{
     catalog: FlowCatalog;
+    selected?: boolean;
+    readOnly?: boolean;
     id: string;
     data: FlowMenuData & {
         label: string;
@@ -62,21 +74,19 @@ const props = defineProps<{
     };
 }>();
 const pendingReasons = computed(() =>
-    flowPendingReasons(props.data.nodeType, props.data, props.reference || {}),
+    flowPendingIssues(props.data.nodeType, props.data, props.reference || {}),
 );
-const kind = computed(
-    () =>
-        ({
-            start: 'Início',
-            content: 'Conteúdo',
-            wait_reply: 'Aguardar resposta',
-            operations: 'Operações',
-            jump_flow: 'Ir para fluxo',
-            ai: 'IA',
-            condition: 'Condição',
-            menu: 'Menu',
-        })[props.data.nodeType] ?? 'Bloco',
-);
+const blockTypes: Record<string, { label: string; icon: typeof Box }> = {
+    start: { label: 'Início', icon: Play },
+    content: { label: 'Conteúdo', icon: MessageSquare },
+    wait_reply: { label: 'Aguardar resposta', icon: Clock3 },
+    operations: { label: 'Operações', icon: Zap },
+    jump_flow: { label: 'Ir para fluxo', icon: ArrowUpRight },
+    ai: { label: 'IA', icon: Sparkles },
+    condition: { label: 'Condição', icon: GitBranch },
+    menu: { label: 'Menu', icon: List },
+};
+const blockType = computed(() => blockTypes[props.data.nodeType] ?? { label: 'Bloco', icon: Box });
 const previewItems = computed(() => (props.data.items ?? []).slice(0, 2));
 const remaining = computed(() =>
     Math.max(0, (props.data.items?.length ?? 0) - 2),
@@ -205,7 +215,7 @@ const exits = computed(() => [
 <template>
     <article
         class="flow-node"
-        :class="`node-${data.nodeType}`"
+        :class="[`node-${data.nodeType}`, { 'flow-node--selected': selected }]"
         :data-flow-type="data.nodeType"
     >
         <Handle
@@ -215,8 +225,13 @@ const exits = computed(() => [
             :position="Position.Top"
         />
         <header class="node-header">
-            <small>{{ kind }}</small
-            ><strong :title="data.label">{{ data.label }}</strong>
+            <span class="node-type-icon" aria-hidden="true">
+                <component :is="blockType.icon" :size="17" />
+            </span>
+            <div class="node-title">
+                <small v-if="data.label?.trim().toLocaleLowerCase() !== blockType.label.toLocaleLowerCase()">{{ blockType.label }}</small>
+                <strong :title="data.label">{{ data.label }}</strong>
+            </div>
         </header>
         <div v-if="data.nodeType === 'content'" class="node-preview">
             <p v-if="!previewItems.length" class="node-empty">
@@ -391,8 +406,8 @@ const exits = computed(() => [
                 !['condition', 'menu'].includes(data.nodeType)
             "
             class="node-pending"
-            :title="pendingReasons.join(' ')"
-            >Configuração pendente</small
+            :title="pendingReasons.map(({ message }) => message).join(' ')"
+            ><TriangleAlert :size="13" aria-hidden="true" /> Configuração pendente</small
         >
         <div v-if="exits.length" class="node-exits">
             <div
@@ -407,8 +422,10 @@ const exits = computed(() => [
                         >Falha, tempo sem resposta ou limite de mensagens</small
                     ></span
                 >
-                <span
-                    >{{ exit.label
+                <span class="node-exit-label">
+                    <Check v-if="exit.id === 'yes' || exit.id === 'replied'" class="exit-positive" :size="13" aria-hidden="true" />
+                    <X v-else-if="exit.id === 'no' || exit.id === 'not_replied'" class="exit-negative" :size="13" aria-hidden="true" />
+                    {{ exit.label
                     }}<small v-if="data.nodeType === 'ai'">{{
                         exitDestination(exit.id)
                     }}</small></span
@@ -422,6 +439,7 @@ const exits = computed(() => [
                 <button
                     v-if="exit.id !== 'human'"
                     class="add-step"
+                    :disabled="readOnly"
                     :aria-label="`Adicionar bloco após ${exit.label}`"
                     :title="`Adicionar bloco após ${exit.label}`"
                     @click.stop="emits('add', id, exit.id)"
@@ -475,7 +493,7 @@ const exits = computed(() => [
 .node-pending {
     display: block;
     margin-top: 8px;
-    color: var(--destructive);
+    color: var(--warning);
     font-size: 11px;
 }
 
@@ -501,7 +519,7 @@ const exits = computed(() => [
     font-size: 11px;
 }
 .condition-preview > .condition-pending {
-    color: var(--destructive);
+    color: var(--warning);
 }
 
 .flow-node {
@@ -509,29 +527,43 @@ const exits = computed(() => [
     width: 224px;
     padding: 0 14px 10px;
     border: 1px solid var(--border);
-    border-radius: 13px;
+    border-radius: var(--radius-card);
     background: var(--card);
-    box-shadow: 0 5px 16px #1d402a0c;
     color: var(--foreground);
 }
 .node-header {
-    padding: 12px 14px 10px;
-    border-top: 4px solid var(--flow-type-color);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
     border-bottom: 1px solid var(--border);
-    border-radius: 12px 12px 0 0;
+    border-radius: calc(var(--radius-card) - 1px) calc(var(--radius-card) - 1px) 0 0;
     margin: 0 -14px 12px;
     background: var(--flow-type-soft);
+    /*box-shadow: inset 0 2px var(--flow-type-color);*/
 }
-.vue-flow__node.selected > .flow-node {
+.node-type-icon {
+    display: grid;
+    flex: 0 0 34px;
+    height: 34px;
+    place-items: center;
+    border-radius: var(--radius);
+    background: var(--flow-type-soft);
+    color: var(--flow-type-text);
+}
+.node-title {
+    min-width: 0;
+}
+.flow-node--selected {
     outline: 2px solid var(--ring);
-    outline-offset: 3px;
+    outline-offset: 2px;
 }
 .node-header small {
     display: block;
-    color: var(--flow-type-text);
-    font-size: 10px;
+    color: var(--muted-foreground);
+    font-size: 11px;
     font-weight: 500;
-    margin-bottom: 3px;
+    margin-bottom: 2px;
 }
 .node-header strong {
     display: -webkit-box;
@@ -539,9 +571,9 @@ const exits = computed(() => [
     -webkit-box-orient: vertical;
     overflow: hidden;
     overflow-wrap: anywhere;
-    font-size: 12px;
-    font-weight: 500;
-    line-height: 1.5;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.35;
 }
 .node-preview {
     display: grid;
@@ -633,7 +665,7 @@ const exits = computed(() => [
     overflow-wrap: anywhere;
 }
 .node-menu .condition-pending {
-    color: var(--destructive);
+    color: var(--warning);
     font-size: 12px;
 }
 .node-exit {
@@ -644,12 +676,12 @@ const exits = computed(() => [
     font-size: 11px;
 }
 .terminal-mark {
-    color: var(--primary);
+    color: var(--link);
     font-size: 12px;
 }
 .add-step {
-    width: 40px;
-    height: 40px;
+    width: 30px;
+    height: 30px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -672,8 +704,20 @@ const exits = computed(() => [
 <style scoped>
 @media (max-width: 1023px) {
     .add-step {
-        width: 44px;
-        height: 44px;
+        width: 30px;
+        height: 30px;
     }
 }
+</style>
+
+<style scoped>
+.node-exits { display: grid; gap: 2px; margin-inline: 0; }
+.node-exit { justify-content: space-between; min-height: 40px; }
+.node-exit + .node-exit { border-top: 1px solid var(--border); }
+.node-exit-label { min-width: 0; overflow-wrap: anywhere; color: var(--foreground); font-weight: 500; }
+.node-exit-label svg { display: inline-block; vertical-align: middle; margin-right: 4px; }
+.exit-positive { color: var(--success); }
+.exit-negative { color: var(--danger); }
+.condition-preview-line { padding: 6px 8px; border-radius: var(--radius); background: var(--muted); }
+.node-pending { display: flex; align-items: center; gap: 5px; border-radius: var(--radius); background: var(--warning-soft); padding: 6px 8px; }
 </style>

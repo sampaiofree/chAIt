@@ -3,10 +3,12 @@
 use Illuminate\Support\Facades\Mail;
 use Laravel\Fortify\Features;
 
+beforeEach(function () {
+    config(['fortify.features' => [...config('fortify.features'), Features::registration()]]);
+});
+
 test('public registration routes and links are unavailable when disabled', function () {
-    if (Features::enabled(Features::registration())) {
-        $this->markTestSkipped('Public registration is enabled.');
-    }
+    config(['fortify.features' => array_values(array_diff(config('fortify.features'), [Features::registration()]))]);
 
     $this->get('/register')->assertNotFound();
     $this->post('/register', [
@@ -18,7 +20,7 @@ test('public registration routes and links are unavailable when disabled', funct
 
     $this->assertDatabaseMissing('users', ['email' => 'test@example.com']);
     $this->get('/')->assertInertia(fn ($page) => $page
-        ->component('welcome')
+        ->component('auth/login')
         ->where('canRegister', false));
     $this->get('/login')->assertInertia(fn ($page) => $page
         ->component('auth/login')
@@ -32,7 +34,7 @@ test('registration screen can be rendered', function () {
 
     $response->assertOk();
     $this->get('/')->assertInertia(fn ($page) => $page
-        ->component('welcome')
+        ->component('auth/login')
         ->where('canRegister', true));
     $this->get('/login')->assertInertia(fn ($page) => $page
         ->component('auth/login')

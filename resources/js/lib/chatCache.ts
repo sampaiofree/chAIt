@@ -1,6 +1,7 @@
 const lifetime = 7 * 24 * 60 * 60 * 1000;
 type Entry = { key: string; time: number; value: any };
 const memory = new Map<string, Entry>();
+let epoch = 0;
 let database: Promise<IDBDatabase | null> | undefined;
 function db() {
     if (!database) {
@@ -23,6 +24,7 @@ function db() {
     return database;
 }
 export async function cacheGet<T>(key: string): Promise<T | null> {
+    const generation = epoch;
     let entry = memory.get(key);
 
     if (!entry) {
@@ -40,7 +42,7 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
         }
     }
 
-    if (!entry || Date.now() - entry.time > lifetime) {
+    if (generation !== epoch || !entry || Date.now() - entry.time > lifetime) {
         return null;
     }
 
@@ -49,6 +51,7 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
     return entry.value as T;
 }
 export async function cachePut(key: string, value: unknown) {
+    const generation = epoch;
     const entry = {
         key,
         time: Date.now(),
@@ -57,7 +60,7 @@ export async function cachePut(key: string, value: unknown) {
     memory.set(key, entry);
     const storage = await db();
 
-    if (!storage) {
+    if (!storage || generation !== epoch) {
         return;
     }
 
@@ -80,6 +83,7 @@ export async function cachePut(key: string, value: unknown) {
     }
 }
 export async function clearChatCache() {
+    epoch++;
     memory.clear();
     const storage = await db();
 

@@ -3,7 +3,6 @@
 namespace App\Services\Flows;
 
 use App\Jobs\ProcessAiTurn;
-use App\Jobs\ProcessFlowExecution;
 use App\Models\AiSession;
 use App\Models\Flow;
 use App\Models\FlowExecution;
@@ -112,13 +111,20 @@ class FlowInboundProcessor
                         $messageId = (string) (data_get($message, 'id') ?? data_get($message, 'messageid') ?? data_get($message, 'key.id') ?? '');
                         if ($session && $messageId !== '') {
                             if ($inboxId) {
-                                UazapiInbox::whereKey($inboxId)->increment('consumers');
+                                $type = strtolower((string) ($message['messageType'] ?? $message['type'] ?? 'text'));
+                                $isText = $buttonReply || in_array($type, ['text', 'conversation', 'extendedtextmessage', 'extended_text_message'], true);
+                                if (! $isText || $text !== '') {
+                                    app(FlowMessageGrouping::class)->receive(
+                                        $active, $session, null, $inboxId, $isText ? 'text' : 'media', $messageId, $buttonReply['selection'] ?? null,
+                                    );
+                                }
+                            } else {
+                                ProcessAiTurn::dispatch($session->id, $messageId)->afterCommit();
                             }
-                            ProcessAiTurn::dispatch($session->id, $messageId, $inboxId)->afterCommit();
                         }
                     }
                     if ($active->status === 'waiting_reply' && $text !== '') {
-                        $this->answerWait($active, $text);
+                        $this->collectReply($active, $inboxId, $buttonReply['selection'] ?? null);
                     }
 
                     return;
@@ -145,11 +151,11 @@ class FlowInboundProcessor
         $reply = app(FlowContentButton::class)->resolve($execution->connection, $execution->contact_id,
             ['messageType' => 'ButtonsResponseMessage', 'buttonOrListid' => $early['selection']]);
         if ($reply && $reply['execution_id'] === $execution->id) {
-            $this->answerWait($execution, $reply['text']);
+            $this->collectReply($execution, null, $early['selection']);
         }
     }
 
-    private function inboundText(array $message): string
+    public function inboundText(array $message): string
     {
         $type = strtolower((string) (data_get($message, 'messageType') ?? data_get($message, 'type') ?? 'text'));
         if (! in_array($type, ['text', 'conversation', 'extendedtextmessage', 'extended_text_message'], true)) {
@@ -159,7 +165,7 @@ class FlowInboundProcessor
         if (is_string($content)) {
             $content = json_decode($content, true) ?: $content;
         }
-        $text = data_get($message, 'text') ?? data_get($content, 'text') ?? data_get($content, 'conversation') ?? (is_string($content) ? $content : '');
+        $text = data_get($message, 'text') ?? data_get($content, 'text') ?? data_get($content, 'conversation') ?? data_get($content, 'extendedTextMessage.text') ?? (is_string($content) ? $content : '');
 
         return is_string($text) ? trim($text) : '';
     }
@@ -175,21 +181,12 @@ class FlowInboundProcessor
         };
     }
 
-    private function answerWait(FlowExecution $execution, string $text): void
+    private function collectReply(FlowExecution $execution, ?int $inboxId, ?string $selection): void
     {
-        $wait = DB::table('flow_waits')->where('flow_execution_id', $execution->id)->where('status', 'waiting')->lockForUpdate()->first();
-        if (! $wait || now()->gte($wait->expires_at)) {
-            return;
+        $waitId = DB::table('flow_waits')->where('flow_execution_id', $execution->id)->where('status', 'waiting')->lockForUpdate()->value('id');
+        if ($waitId) {
+            app(FlowMessageGrouping::class)->receive($execution, null, $waitId, $inboxId, 'text', selection: $selection);
         }
-        DB::table('contact_custom_field_values')->updateOrInsert(
-            ['contact_id' => $execution->contact_id, 'field_id' => $wait->field_id],
-            ['workspace_id' => $execution->workspace_id, 'value' => $text, 'created_at' => now(), 'updated_at' => now()],
-        );
-        DB::table('flow_waits')->where('id', $wait->id)->where('status', 'waiting')->update(['status' => 'replied', 'completed_at' => now(), 'updated_at' => now()]);
-        $context = $execution->context ?? [];
-        $context['resume_handle'] = 'replied';
-        $execution->forceFill(['status' => 'running', 'context' => $context])->save();
-        ProcessFlowExecution::dispatch($execution->id)->afterCommit();
     }
 
     private function startFlow(int $flowId, int $contactId, Thread $thread, UazapiConnection $connection, string $source): void

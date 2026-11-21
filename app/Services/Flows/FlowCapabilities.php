@@ -9,7 +9,7 @@ class FlowCapabilities
 {
     public static function aiDefaults(): array
     {
-        return ['ai_outputs' => self::aiOutputDefaults(), 'ai_grouping_seconds' => 5, 'ai_initial_context' => '', 'ai_prompt' => '', 'ai_model' => 'gpt-6.1-sol', 'ai_inactivity_seconds' => 3600, 'ai_expiry_action' => 'end', 'ai_max_messages' => null, 'ai_limit_action' => 'human', 'ai_media' => [], 'ai_tags' => [], 'ai_fields' => []];
+        return ['ai_outputs' => self::aiOutputDefaults(), 'ai_grouping_seconds' => FlowMessageGrouping::DEFAULT_SECONDS, 'ai_initial_context' => '', 'ai_load_history' => false, 'ai_prompt' => '', 'ai_model' => 'gpt-6.1-sol', 'ai_inactivity_seconds' => 3600, 'ai_expiry_action' => 'end', 'ai_max_messages' => null, 'ai_limit_action' => 'human', 'ai_media' => [], 'ai_tags' => [], 'ai_fields' => []];
     }
 
     public static function aiOutputDefaults(): array
@@ -24,11 +24,11 @@ class FlowCapabilities
         'start' => ['label', 'description'],
         'content' => ['label', 'description', 'items'],
         'menu' => ['label', 'description', 'menu_format', 'question', 'options', 'invalid_reply_text', 'max_invalid_replies', 'timeout_seconds', 'list_button_text'],
-        'wait_reply' => ['label', 'description', 'field_id', 'timeout_seconds'],
+        'wait_reply' => ['label', 'description', 'field_id', 'timeout_seconds', 'reply_grouping_seconds'],
         'condition' => ['label', 'description', 'checks', 'condition_operator'],
         'operations' => ['label', 'description', 'actions'],
         'jump_flow' => ['label', 'description', 'target_flow_id'],
-        'ai' => ['ai_outputs', 'label', 'description', 'ai_grouping_seconds', 'ai_initial_context', 'ai_prompt', 'ai_model', 'ai_inactivity_seconds', 'ai_expiry_action', 'ai_max_messages', 'ai_limit_action', 'ai_media', 'ai_tags', 'ai_fields'],
+        'ai' => ['ai_outputs', 'label', 'description', 'ai_grouping_seconds', 'ai_initial_context', 'ai_load_history', 'ai_prompt', 'ai_model', 'ai_inactivity_seconds', 'ai_expiry_action', 'ai_max_messages', 'ai_limit_action', 'ai_media', 'ai_tags', 'ai_fields'],
     ];
 
     public const OUTPUTS = [
@@ -97,7 +97,9 @@ class FlowCapabilities
             'nodes.*.data.ai_outputs.*.id' => ['required', 'string', 'max:48', 'regex:/^[A-Za-z0-9_-]+$/D'],
             'nodes.*.data.ai_outputs.*.label' => ['nullable', 'string', 'max:120'],
             'nodes.*.data.ai_outputs.*.instruction' => ['nullable', 'string', 'max:2000'],
-            'nodes.*.data.ai_grouping_seconds' => ['sometimes', 'integer', 'between:5,45'],
+            'nodes.*.data.ai_grouping_seconds' => ['sometimes', 'integer', 'between:1,90'],
+            'nodes.*.data.reply_grouping_seconds' => ['sometimes', 'integer', 'between:1,90'],
+            'nodes.*.data.ai_load_history' => ['sometimes', 'boolean:strict'],
             'nodes.*.data.ai_prompt' => ['nullable', 'string', 'max:8000'],
             'nodes.*.data.ai_model' => ['nullable', 'in:gpt-6-luna,gpt-6.1-sol,gpt-6-astra'],
             'nodes.*.data.ai_inactivity_seconds' => ['nullable', 'integer', 'between:300,604800'],
@@ -106,12 +108,15 @@ class FlowCapabilities
             'nodes.*.data.ai_limit_action' => ['nullable', 'in:continue,human'],
             'nodes.*.data.ai_media' => ['sometimes', 'array', 'max:20'],
             'nodes.*.data.ai_media.*.asset_id' => ['nullable', 'integer', 'min:1'],
+            'nodes.*.data.ai_media.*.title' => ['nullable', 'string', 'max:120'],
             'nodes.*.data.ai_media.*.instruction' => ['nullable', 'string', 'max:2000'],
             'nodes.*.data.ai_tags' => ['sometimes', 'array', 'max:50'],
             'nodes.*.data.ai_tags.*.tag_id' => ['nullable', 'integer', 'min:1'],
+            'nodes.*.data.ai_tags.*.title' => ['nullable', 'string', 'max:120'],
             'nodes.*.data.ai_tags.*.instruction' => ['nullable', 'string', 'max:2000'],
             'nodes.*.data.ai_fields' => ['sometimes', 'array', 'max:50'],
             'nodes.*.data.ai_fields.*.field_id' => ['nullable', 'integer', 'min:1'],
+            'nodes.*.data.ai_fields.*.title' => ['nullable', 'string', 'max:120'],
             'nodes.*.data.ai_fields.*.instruction' => ['nullable', 'string', 'max:2000'],
             'nodes.*.data.ai_fields.*.allow_overwrite' => ['sometimes', 'boolean'],
             'nodes.*.data.actions.*.id' => ['required', 'string', 'max:64', 'distinct'],
@@ -139,7 +144,7 @@ class FlowCapabilities
         $usage = [
             'start' => 'Início único existente. A IA pode mover, mas não criar, remover ou reconfigurar. Não aceita entrada.',
             'content' => 'Executa textos, mídias, atrasos e no máximo um elemento Botão na ordem dos itens. Botão contém sua mensagem e uma ação URL, Resposta ou Copiar; nunca espera cliques e mantém somente next. Resposta entra como mensagem recebida, com o rótulo enviado. Use Menu para caminhos por escolha. Enviar uma pergunta não espera nem coleta resposta; conecte Aguardar Resposta para coletar. Mídias exigem seleção manual.',
-            'wait_reply' => 'Espera texto não vazio e grava no campo personalizado do contato. Exige campo e prazo para publicar. Não interpreta intenção nem valida opções; use Condição após a coleta.',
+            'wait_reply' => 'Agrupa textos recebidos e grava no campo personalizado do contato. A janela padrão é de 5 segundos, configurável de 1 a 90. Exige campo e prazo para publicar. Não interpreta intenção nem valida opções; use Condição após a coleta.',
             'condition' => 'Consulta etiquetas e campos de texto, sem coletar, enviar ou alterar dados. Combina checks com all/any. Para identificar opção não reconhecida, teste todas as alternativas antes do último Não.',
             'operations' => 'Executa ações em ordem. Abrir atendimento humano ou pausar encerra a execução e deve ser a última ação, sem continuação automática. Recursos de membros e sequências exigem seleção manual.',
             'jump_flow' => 'Transfere para outro fluxo publicado e ativo do workspace, sem retorno nem saída. Destino exige seleção manual; não usar para criar ciclos.',

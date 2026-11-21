@@ -184,8 +184,10 @@ Campos de configuração:
 
 Fluxo esperado:
 
+O **Intervalo para agrupar mensagens** aceita de 1 a 90 segundos. O padrão é 5 segundos, inclusive em versões publicadas sem valor explícito. A janela começa no primeiro texto válido, reinicia a cada texto e fecha após o período de silêncio ou três vezes o intervalo desde o primeiro texto. O texto agrupado é salvo com uma quebra de linha entre as mensagens.
+
 1. A automação chega ao bloco e registra uma espera ativa para aquele contato/conexão.
-2. Se uma mensagem válida para essa espera chegar antes do vencimento, armazena o conteúdo no campo do **respectivo lead** e segue pelo caminho `Respondeu`.
+2. Se o primeiro texto válido chegar antes do vencimento, o fluxo espera fechar o lote, armazena o conteúdo no campo do **respectivo lead** e segue pelo caminho `Respondeu`.
 3. Se o prazo terminar sem resposta, segue por `Não respondeu` **sem preencher o campo com resposta inexistente**.
 4. Uma resposta recebida **depois** de consumido ou expirado o prazo não reabre automaticamente a etapa encerrada.
 

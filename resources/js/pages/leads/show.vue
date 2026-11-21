@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppNotice from '@/components/AppNotice.vue';
+import AppFieldHelp from '@/components/AppFieldHelp.vue';
 import { useForm, Link, Head, router } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import AppButton from '@/components/AppButton.vue';
@@ -140,7 +142,7 @@ function save() {
                     ><AppButton variant="secondary" disabled
                         ><MessagesSquare :size="16" />Abrir conversa</AppButton
                     >
-                    <p class="form-help">
+                    <AppFieldHelp label="Ajuda">
                         {{
                             !connected
                                 ? 'Conecte o WhatsApp para abrir a conversa.'
@@ -148,11 +150,11 @@ function save() {
                                   ? 'Contato sem WhatsApp válido.'
                                   : 'Sem permissão para abrir esta conversa.'
                         }}
-                    </p></template
+                    </AppFieldHelp></template
                 >
-                <p v-if="conversationError" class="form-error" role="alert">
+                <AppNotice v-if="conversationError" :key="conversationError" variant="error">
                     {{ conversationError }}
-                </p>
+                </AppNotice>
             </div>
         </header>
         <p v-if="!canEdit" class="leads-readonly">
@@ -198,9 +200,9 @@ function save() {
                                     :model-value="lead.phone || ''"
                                     readonly
                                 />
-                                <p class="form-help">
+                                <AppFieldHelp label="Ajuda">
                                     O número de WhatsApp não pode ser alterado.
-                                </p>
+                                </AppFieldHelp>
                             </div>
                             <div class="form-field">
                                 <label for="lead-email">E-mail</label
@@ -236,65 +238,6 @@ function save() {
                                 </p>
                             </div>
                         </fieldset>
-                    </section>
-                    <section class="leads-card">
-                        <div class="leads-section-header">
-                            <div>
-                                <h2>Observações</h2>
-                                <p>
-                                    Informações gerais do contato, separadas das
-                                    notas do atendimento.
-                                </p>
-                            </div>
-                        </div>
-                        <div class="form-field">
-                            <label for="lead-observations" class="sr-only"
-                                >Observações do contato</label
-                            ><Textarea
-                                id="lead-observations"
-                                v-model="form.observations"
-                                rows="6"
-                                maxlength="10000"
-                                placeholder="Adicione informações relevantes sobre este contato…"
-                                :disabled="!canEdit || form.processing"
-                            />
-                            <p
-                                v-if="form.errors.observations"
-                                class="form-error"
-                                role="alert"
-                            >
-                                {{ form.errors.observations }}
-                            </p>
-                        </div>
-                    </section>
-                </div>
-                <div class="leads-column">
-                    <section class="leads-card">
-                        <div class="leads-section-header">
-                            <div>
-                                <h2>Etiquetas</h2>
-                                <p>Organize e identifique seus contatos.</p>
-                            </div>
-                            <AppButton
-                                v-if="canCreateTags"
-                                variant="ghost"
-                                size="sm"
-                                @click="tagOpen = true"
-                                ><Plus :size="16" />Criar etiqueta</AppButton
-                            >
-                        </div>
-                        <LeadTagPicker
-                            v-model="form.tag_ids"
-                            :tags="tags"
-                            :disabled="!canEdit || form.processing"
-                        />
-                        <p
-                            v-if="form.errors.tag_ids"
-                            class="form-error"
-                            role="alert"
-                        >
-                            {{ form.errors.tag_ids }}
-                        </p>
                     </section>
                     <section class="leads-card">
                         <div class="leads-section-header">
@@ -338,6 +281,65 @@ function save() {
                                 Nenhum campo personalizado cadastrado.
                             </p>
                         </fieldset>
+                    </section>
+                </div>
+                <div class="leads-column">
+                    <section class="leads-card">
+                        <div class="leads-section-header">
+                            <div>
+                                <h2>Etiquetas</h2>
+                                <p>Organize e identifique seus contatos.</p>
+                            </div>
+                            <AppButton
+                                v-if="canCreateTags"
+                                variant="ghost"
+                                size="sm"
+                                @click="tagOpen = true"
+                                ><Plus :size="16" />Criar etiqueta</AppButton
+                            >
+                        </div>
+                        <LeadTagPicker
+                            v-model="form.tag_ids"
+                            :tags="tags"
+                            :disabled="!canEdit || form.processing"
+                        />
+                        <p
+                            v-if="form.errors.tag_ids"
+                            class="form-error"
+                            role="alert"
+                        >
+                            {{ form.errors.tag_ids }}
+                        </p>
+                    </section>
+                    <section class="leads-card">
+                        <div class="leads-section-header">
+                            <div>
+                                <h2>Observações</h2>
+                                <p>
+                                    Informações gerais do contato, separadas das
+                                    notas do atendimento.
+                                </p>
+                            </div>
+                        </div>
+                        <div class="form-field">
+                            <label for="lead-observations" class="sr-only"
+                                >Observações do contato</label
+                            ><Textarea
+                                id="lead-observations"
+                                v-model="form.observations"
+                                rows="6"
+                                maxlength="10000"
+                                placeholder="Adicione informações relevantes sobre este contato…"
+                                :disabled="!canEdit || form.processing"
+                            />
+                            <p
+                                v-if="form.errors.observations"
+                                class="form-error"
+                                role="alert"
+                            >
+                                {{ form.errors.observations }}
+                            </p>
+                        </div>
                     </section>
                 </div>
             </div>

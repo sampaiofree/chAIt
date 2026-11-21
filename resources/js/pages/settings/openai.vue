@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppNotice from '@/components/AppNotice.vue';
 import AppButton from '@/components/AppButton.vue';
 import { Input } from '@/components/ui/input';
 import SettingsLayout from '@/layouts/SettingsLayout.vue';
@@ -95,17 +96,14 @@ async function submit(method: 'PUT' | 'DELETE') {
                         Remover chave
                     </AppButton>
                 </div>
-                <p v-if="error" role="alert" class="error">{{ error }}</p>
-                <p v-if="notice" role="status">{{ notice }}</p>
+                <AppNotice v-if="error" :key="error" variant="error">{{ error }}</AppNotice>
+                <AppNotice v-if="notice" :key="notice" variant="success">{{ notice }}</AppNotice>
             </article>
         </section>
     </SettingsLayout>
 </template>
 
 <style scoped>
-section {
-    padding: 38px;
-}
 section > small {
     color: var(--muted-foreground);
 }
@@ -121,11 +119,6 @@ p {
 article {
     display: grid;
     gap: var(--form-field-gap);
-    margin-top: 24px;
-    padding: 24px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--card);
 }
 label {
     display: grid;
@@ -142,10 +135,5 @@ label {
 
 .error {
     color: var(--destructive);
-}
-@media (max-width: 650px) {
-    section {
-        padding: 24px 16px;
-    }
 }
 </style>

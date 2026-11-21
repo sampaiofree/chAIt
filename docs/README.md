@@ -1,8 +1,8 @@
 # Documentação do chAIt
 
-> **Atualizado em:** 2026-11-17
-> **Base desta revisão:** revisão geral estática de 17/10/2026, sem testes ou homologação externa naquela revisão. Em 17/11/2026, inclusão pontual do planejamento de mensagens para IA, com evidências de testes locais registradas no documento específico; não representa nova revisão geral dos módulos.
-> **Fase atual:** fundação do workspace, autenticação, chat WhatsApp, editor/runtime de fluxos, blocos, Assistente IA de Fluxos, Sequências, Webhooks Externos e configurações estão implementados localmente. Leads ainda não tem módulo próprio. O chat em tempo real depende de ativação e infraestrutura; integrações e operação real mantêm homologações parciais registradas nos documentos específicos.
+> **Atualizado em:** 2026-11-21
+> **Base desta revisão:** revisão geral estática de 17/10/2026, sem testes ou homologação externa naquela revisão. Em 17/11/2026, inclusão pontual do planejamento de mensagens para IA, com evidências de testes locais registradas no documento específico; Em 21/11/2026, atualização pontual de Conversas, Leads e permissões de visibilidade; não representa nova revisão geral dos módulos.
+> **Fase atual:** fundação do workspace, autenticação, chat WhatsApp, editor/runtime de fluxos, blocos, Assistente IA de Fluxos, Sequências, Webhooks Externos e configurações estão implementados localmente. Leads tem listagem, ficha e cadastro manual implementados. O chat em tempo real depende de ativação e infraestrutura; integrações e operação real mantêm homologações parciais registradas nos documentos específicos.
 
 ## Decisões aprovadas
 
@@ -17,19 +17,21 @@
 - Manter o histórico completo de mensagens na UAZAPI, aceitando sua retenção limitada. A revisão de 17/10 mantém prévia local de até 200 caracteres e conteúdo temporário criptografado por até 24 horas nos dois modos, com lista local alimentada apenas por novas mensagens recebidas; ver [política e operação](operacao/chat-realtime.md).
 - Atendimento humano somente por gatilho definido; sem ele, processamento normal da conversa.
 - Responsável ou administrador pode responder, finalizar e criar notas.
-- Dois seletores na lista; contato com nome, email, CPF e notas; anexos documento/imagem/vídeo e busca na coluna de conversas.
+- Abas de atribuição e filtros na lista; contato com nome, email, CPF e notas; anexos documento/imagem/vídeo e busca na coluna de conversas.
 - Mensagem de voz gravada pelo microfone, com prévia antes do envio e limite de dois minutos/10 MB.
-- Bolinha verde para mensagens não lidas, leitura compartilhada no workspace e painel de conversa fixo com rolagem no histórico.
+- Indicador numérico para mensagens não lidas, leitura compartilhada no workspace e painel de conversa fixo com rolagem no histórico.
 
 Desktop e celular usarão a mesma aplicação web, com layout/navegação adaptados. Instalação como PWA permanece proposta opcional no [registro de decisões](planejamento/decisoes.md).
 
 **Implementado localmente:** chat com voz e leitura compartilhada; configuração UAZAPI; editor com oito tipos de nó, pastas, publicação, gatilhos, importação/exportação e prévia compartilhada com Assistente IA; Sequências; Webhooks Externos e campos do contato nos fluxos. O bloco IA de atendimento inclui mídias autorizadas, tags, campos, modalidades recebidas e limpeza remota. O histórico completo não é copiado para o SaaS; capturas em campos do CRM e a retenção temporária do tempo real têm contratos próprios.
 
-**Outras áreas confirmadas no código:** autenticação e verificação de e-mail, perfil, segurança/2FA, aparência, equipe e permissões existentes, workspace e ícone, configuração WhatsApp/OpenAI, etiquetas e campos personalizados. A navegação atual expõe Conversas, Fluxos, Automação e Configurações. Não há rotas nem páginas próprias para Leads/Contatos; o cadastro de contatos é alimentado pelas integrações e pelas ações atuais do chat/webhooks. O briefing de Leads permanece plano não implementado.
+**Outras áreas confirmadas no código:** autenticação e verificação de e-mail, perfil, segurança/2FA, aparência, equipe e permissões existentes, workspace e ícone, configuração WhatsApp/OpenAI, etiquetas e campos personalizados. A navegação atual expõe Conversas, Leads, Fluxos, Automação e Configurações. Há rotas e páginas próprias para Leads; o cadastro de contatos é alimentado pelas integrações e pelas ações atuais do chat/webhooks. O módulo de Leads está implementado conforme o estado registrado no documento específico.
 
 **Homologações registradas:** IA/OpenAI e quatro tipos de mídia com entradas sintéticas e CRM isolado; duas etapas reais de Sequências; apresentação e envio de Botões/Lista e Elemento Botão na conexão local 1; apresentação de Menu no iPhone. Isso não comprova todos os cenários em produção. Seleções interativas pelo webhook público e validação em outras conexões permanecem pendentes conforme os módulos. O código mantém `CHAIT_REALTIME_ENABLED=false` por padrão; implantação, capacidade e tráfego real do novo caminho exigem validação própria.
 
 ## Índice
+
+O [plano de implementação de UX](ux/plano-de-implementacao.md) registra a direção visual, a sequência de trabalho e o andamento da revisão do aplicativo.
 
 | Documento                                                               | Responsabilidade                                                          | Situação                                                                                                       |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
@@ -40,7 +42,7 @@ Desktop e celular usarão a mesma aplicação web, com layout/navegação adapta
 | [Homologação local com túnel](operacao/homologacao-local-tunel.md)       | Acesso de webhook ao ambiente local para homologação.                     | Guia operacional, requer endpoint público temporário.                                                          |
 | [Liberação dos recursos de fluxos](operacao/liberacao-recursos-fluxos.md) | Implantação e validação de botões, menus e campos dinâmicos. | Liberados por decisão do responsável em 17/10/2026; validação real a cargo dele. |
 | [Ajuste da integração UAZAPI sem sincronização](ajuste-integracao-uazapi-sem-sincronizacao.md) | Decisão e contrato da lista local sem importação geral de chats. | Implementado; operação vigente detalhada no guia de tempo real. |
-| [Chat e multiatendimento](modulos/chat-multiatendimento.md)             | Isolamento, permissões, atribuição, finalização e notas.                  | Fundação implementada; validação operacional da instância continua pendente.                                   |
+| [Chat e multiatendimento](modulos/chat-multiatendimento.md)             | Isolamento, permissões, atribuição, finalização e notas.                  | Fundação e três permissões de visibilidade implementadas e verificadas localmente; homologação da instância continua pendente.                                   |
 | [Interface do chat](interfaces/chat.md)                                 | Desktop em quatro áreas e navegação mobile.                               | Primeira interface responsiva implementada; refinamento e teste em dispositivos continuam.                     |
 | [Regras de design e layout](interfaces/regras-design-layout.md)         | Guia reutilizável para novas telas e revisão de interface.                | Consolida os padrões aprovados; recomendações adicionais identificadas como propostas.                         |
 | [Briefing de layout e design](interfaces/design-interface-chait.md)     | Decisões da revisão visual, implementação e evidências de validação.      | Revisão implementada e validada localmente.                                                                    |
@@ -57,12 +59,12 @@ Desktop e celular usarão a mesma aplicação web, com layout/navegação adapta
 | [Webhooks Externos](modulos/webhooks-externos.md)                       | Recepção JSON, mapeamentos e sincronização de contatos/tags.              | Implementado e testado localmente; sem gatilhos externos de automação.                                         |
 | [Meta WhatsApp Tech Provider](integracoes/meta-tech-provider.md)        | Roteiro de credenciamento e integração oficial.                           | Plano de execução v1.1; não comprova credenciamento ou implementação.                                          |
 | [Campos do contato nos fluxos](modulos/campos-do-contato-fluxos.md)     | Chips, resolução, proteção de referências e continuidade operacional.     | Liberado em todas as conexões; substituições nativas UAZAPI seguem como comportamento conhecido.                   |
-| [Leads](modulos/leads.md)                                               | Listagem, filtros e ficha do contato.                                     | Não implementado; briefing funcional aprovado.                                                                 |
+| [Leads](modulos/leads.md)                                               | Listagem, filtros e ficha do contato.                                     | Implementado; refinamento de UX em andamento.                                                                 |
 | [Interface mobile](interfaces/mobile.md)                                | Experiência e navegação no celular.                                       | Comportamento observado e distinções em relação ao recorte inicial.                                            |
 | [Ordem de implementação](planejamento/ordem-de-implementacao.md)        | Sequência recomendada e dependências.                                     | Planejamento original; não comprova o estado atual de entrega.                                                 |
 | [Checklist de implementação e homologação](planejamento/implementar/checklist-pendencias.md) | Itens ainda não implementados e recursos prontos que aguardam liberação/homologação. | Revisão geral de 17/10/2026; etapas de mensagens para IA incluídas em 17/11/2026. |
 | [Notificações operacionais de fluxos](planejamento/notificacoes-operacionais-fluxos.md) | Proposta de notificações sobre falhas e resultados desconhecidos. | Não implementado; consta como pendência no checklist. |
-| [Mensagens para IA: ordenação, agrupamento e concorrência](planejamento/mensagens-ia-ordenacao-agrupamento.md) | Comparativo Chait/Facilitai, evidências e evolução em quatro etapas. | Planejado em 17/11/2026; melhorias não implementadas. |
+| [Mensagens para IA: ordenação, agrupamento e concorrência](planejamento/mensagens-ia-ordenacao-agrupamento.md) | Comparativo Chait/Facilitai, evidências e evolução em quatro etapas. | Diagnóstico de 17/11/2026 e roteiro de evolução. |
 | [PostgreSQL no desenvolvimento](desenvolvimento/postgresql.md)          | Ambiente local, migração e testes isolados.                               | Guia de desenvolvimento.                                                                                       |
 | [Histórico e versões alternativas](historico/README.md)                 | Briefings anteriores, variantes e referências já consolidadas.            | Conteúdo preservado para consulta.                                                                             |
 
@@ -165,3 +167,5 @@ Ao decidir um ponto, atualizar o registro, o documento responsável, os critéri
 ### Verificação reutilizável de WhatsApp
 
 [Serviço de verificação de números](integracoes/verificacao-whatsapp.md): contrato tipado, exemplo de uso e regras do cadastro manual de Leads (17/11/2026).
+
+- [Padrão obrigatório de avisos e ajuda flutuante](interfaces/regras-design-layout.md#avisos-e-ajuda-flutuante--padrão-obrigatório-21112026): componentes, duração, acessibilidade e exemplos para novas adições.

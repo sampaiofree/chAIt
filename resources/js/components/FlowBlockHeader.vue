@@ -7,8 +7,6 @@ import {
     onMounted,
     onBeforeUnmount,
 } from 'vue';
-import { Pencil } from '@lucide/vue';
-import AppIconButton from '@/components/AppIconButton.vue';
 import { Input } from '@/components/ui/input';
 
 const props = defineProps<{
@@ -16,6 +14,7 @@ const props = defineProps<{
     nodeType: string;
     kind: string;
     name: string;
+    readOnly?: boolean;
 }>();
 const emit = defineEmits<{
     'update:name': [value: string];
@@ -75,6 +74,12 @@ watch(
         draft.value = props.name;
     },
 );
+watch(
+    () => props.readOnly,
+    (readOnly) => {
+        if (readOnly) editing.value = false;
+    },
+);
 async function startEditing() {
     draft.value = props.name;
     closeAfterClick = false;
@@ -122,42 +127,17 @@ function cancel() {
     >
         <div class="block-heading">
             <small>{{ kind }}</small>
-            <div class="block-title">
-                <h2 :title="name">{{ name }}</h2>
-                <AppIconButton
-                    label="Editar nome interno do bloco"
-                    @click="startEditing"
-                    ><Pencil :size="16"
-                /></AppIconButton>
+            <div class="block-title nodrag">
+                <h2 v-if="readOnly">{{ name }}</h2>
+                <h2 v-else-if="!editing"><button type="button" class="title-button" aria-label="Editar nome interno do bloco" :title="name" @click="startEditing">{{ name }}</button></h2>
+                <div v-else class="inline-name-editor">
+                    <Input ref="input" :id="`block-name-${blockId}`" v-model="draft" aria-label="Nome interno do bloco" maxlength="120" required :aria-invalid="attempted && invalid" :aria-describedby="attempted && invalid ? `block-name-error-${blockId}` : undefined" @blur="commitOnBlur" @keydown.enter.prevent="commit(true)" @keydown.esc.prevent.stop="cancel" />
+                    <small v-if="attempted && invalid" :id="`block-name-error-${blockId}`" class="form-error" role="alert">Informe um nome de até 120 caracteres.</small>
+                </div>
             </div>
         </div>
         <slot name="close" />
     </header>
-    <div v-if="editing" class="block-name-editor nodrag">
-        <label :for="`block-name-${blockId}`">Nome interno do bloco</label>
-        <Input
-            ref="input"
-            :id="`block-name-${blockId}`"
-            v-model="draft"
-            maxlength="120"
-            required
-            :aria-invalid="attempted && invalid"
-            :aria-describedby="`block-name-help-${blockId}${attempted && invalid ? ` block-name-error-${blockId}` : ''}`"
-            @blur="commitOnBlur"
-            @keydown.enter.prevent="commit(true)"
-            @keydown.esc.prevent.stop="cancel"
-        />
-        <small :id="`block-name-help-${blockId}`" class="form-help"
-            >Visível apenas para sua equipe</small
-        >
-        <small
-            v-if="attempted && invalid"
-            :id="`block-name-error-${blockId}`"
-            class="form-error"
-            role="alert"
-            >Informe um nome de até 120 caracteres.</small
-        >
-    </div>
 </template>
 <style scoped>
 .block-header {
@@ -165,7 +145,7 @@ function cancel() {
     align-items: flex-start;
     gap: 8px;
     padding: 12px;
-    border-top: 4px solid var(--flow-type-color);
+    /*border-top: 4px solid var(--flow-type-color);*/
     border-bottom: 1px solid var(--border);
     border-radius: var(--radius) var(--radius) 0 0;
     background: var(--flow-type-soft);
@@ -199,16 +179,14 @@ function cancel() {
     overflow: hidden;
     margin: 0;
 }
-.block-name-editor {
-    display: grid;
-    gap: 6px;
-    padding: 12px;
-    background: var(--secondary);
-    border-radius: var(--radius);
-    margin-bottom: 20px;
+.title-button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    cursor: text;
+    overflow-wrap: anywhere;
 }
-.block-name-editor label {
-    font-size: 12px;
-    font-weight: 500;
-}
+.title-button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.inline-name-editor { width: 100%; min-width: 0; }
+.inline-name-editor input { width: 100%; font-size: 14px; font-weight: 600; }
 </style>

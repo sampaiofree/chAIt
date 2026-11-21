@@ -73,7 +73,11 @@ class AssistantTools
                 }
                 $schema = $this->object($props);
             } else {
-                $schema = ['type' => in_array('integer', $rules, true) ? 'integer' : (in_array('boolean', $rules, true) ? 'boolean' : 'string')];
+                $schema = ['type' => match (true) {
+                    in_array('integer', $rules, true) => 'integer',
+                    in_array('boolean', $rules, true), in_array('boolean:strict', $rules, true) => 'boolean',
+                    default => 'string',
+                }];
                 foreach ($rules as $rule) {
                     if (str_starts_with($rule, 'in:')) {
                         $schema['enum'] = explode(',', substr($rule, 3));
@@ -330,6 +334,9 @@ class AssistantTools
             foreach ($value as $key => $item) {
                 if (in_array($key, ['api_key', 'token', 'password', 'secret', 'authorization', 'phone', 'email', 'cpf'], true)) {
                     continue;
+                }
+                if (is_array($item) && in_array($key, ['ai_media', 'ai_tags', 'ai_fields'], true)) {
+                    $item = array_map(static fn ($resource) => is_array($resource) ? array_diff_key($resource, ['title' => true]) : $resource, $item);
                 }
                 $out[$key] = in_array($key, ['asset_id', 'user_id', 'target_flow_id', 'sequence_id', 'original_name'], true) ? null : $this->sanitize($item);
             }

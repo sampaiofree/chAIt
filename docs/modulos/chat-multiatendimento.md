@@ -34,7 +34,7 @@ A **primeira entrega aprovada** é um chat multiatendimento para WhatsApp integr
 - Listagem e leitura de conversas e mensagens do WhatsApp por integração com a UAZAPI.
 - Envio e recebimento de mensagens; anexos iniciais: **documento, imagem e vídeo**, com suporte operacional a validar na UAZAPI.
 - Campo de busca na coluna de conversas por nome e telefone do contato.
-- Dois filtros em listas suspensas: atribuição **Todos / Meus chats / Não atribuídos** e status **Todos / Abertos**. A decisão inicial incluía Concluídos, mas a tela atual não oferece essa opção; ver seção 6.4.
+- Abas de atribuição **Todos / Meus / Não atribuídos** e painel de filtros com **Atendimentos abertos** e etiquetas. A decisão inicial incluía Concluídos, mas a tela atual não oferece essa opção; ver seção 6.4.
 - Cadastro inicial do contato com **nome, email e CPF**; notas internas aparecem no perfil da conversa.
 - Atribuição pelo primeiro envio humano ou por ação explícita no perfil.
 - Regras de visibilidade por usuário.
@@ -116,16 +116,21 @@ O administrador define as permissões no **cadastro/vínculo do usuário ao work
 | **Ver minhas conversas**         | Pode visualizar conversas atribuídas a si.                              |
 | **Ver conversas não atribuídas** | Pode visualizar conversas sem responsável.                              |
 
-**Modelo de briefing:** caixas combináveis para Todas/Minhas/Não atribuídas. **Implementação atual:** `workspace_memberships` oferece `can_view_unassigned`, `can_manage_flows` e `can_use_flow_assistant`, além do papel. Dono/admin ou membro com `can_view_unassigned=true` têm acesso amplo às conversas do workspace; sem essa permissão, o membro vê somente as atribuídas a si. Portanto o nome da permissão não restringe a consulta somente às não atribuídas, e não há três checks de visibilidade independentes na tela atual. Os seletores da lista apenas filtram esse conjunto autorizado. Esta descrição registra o código, sem aprovar retroativamente a diferença em relação ao briefing.
+**Implementação de 21/11/2026:** três controles por vínculo: `can_view_own`, `can_view_unassigned` e `can_view_all`. Todas inclui os demais grupos; proprietário e administradores têm acesso completo pelo papel. Novos atendentes começam com Próprias. A migração preserva o alcance antigo: o antigo acesso amplo recebe Todas; os demais mantêm Próprias. Desmarcar Todas faz valer as escolhas individuais preservadas.
 
-**Observação:** _visualizar_ não significa automaticamente _poder responder_, _transferir_ ou _assumir_. As ações devem ter autorização própria.
+- Somente Não atribuídas permite consultar a fila e confirmar leitura compartilhada. Abrir atendimento, assumir, responder e alterar automações exigem também Próprias ou Todas.
+- Sem os três acessos, o menu oculta Conversas e a entrada segue Leads → Fluxos → Perfil, conforme as permissões disponíveis.
+- Retirar acesso preserva atribuições existentes para reorganização administrativa. A próxima verificação periódica (15 segundos) ou evento de tempo real invalida o conteúdo da tela. Rascunhos inacessíveis são descartados na verificação de acesso ou ao remover a conversa; respostas atrasadas não restauram o histórico.
+- Consultas, contadores, mídias, jobs e publicações aplicam a autorização vigente. Acesso à conversa é verificado antes de consultar a conexão no provedor. Permissões de Leads continuam independentes.
+
+**Verificação local:** 288 testes de backend (1754 asserções), tipos e build aprovados. Nove cenários de navegação de Leads/chat e o novo cenário de permissões/revogação passaram em Chromium. Inspeção de equipe nos temas claro/escuro em 390 e 1440 px. Migração aplicada no banco local; não representa implantação ou homologação real do WhatsApp.
 
 ### 4.1 Matriz mínima de acesso
 
 | Ação                                   | Regra aprovada                                                                                                                                                            |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Ler conversa                           | Exige visibilidade conforme permissões do vínculo no workspace.                                                                                                           |
-| Assumir conversa | Quem pode visualizar pode acionar **Assumir para mim** no perfil, inclusive quando há outro responsável. A troca é explícita e auditada. |
+| Assumir conversa | Quem pode visualizar e tem Próprias ou Todas pode acionar **Assumir para mim** no perfil, inclusive quando há outro responsável. A troca é explícita e auditada. |
 | Enviar resposta humana | Em conversa sem responsável, o primeiro envio abre e atribui ao remetente. Em conversa ocupada por outra pessoa, o envio é bloqueado inclusive para administradores. |
 | Finalizar atendimento                  | Atendente atribuído ao lead/conversa ou administrador do workspace.                                                                                                       |
 | Escolher outro responsável | Somente administrador pode atribuir a outro membro do mesmo workspace pelo perfil. |
@@ -139,7 +144,7 @@ O administrador define as permissões no **cadastro/vínculo do usuário ao work
 1. Uma conversa sem responsável aparece aos usuários com permissão para visualizá-la.
 2. O primeiro envio de texto, anexo ou áudio abre e atribui a conversa ao remetente. **Assumir para mim** no perfil faz a mesma transição sem enviar mensagem. **Abrir atendimento** no perfil abre sem atribuir.
 3. O Laravel verifica workspace, permissão, status e atribuição atual.
-4. O Laravel atribui a conversa **atomicamente**. O primeiro envio não toma uma conversa ocupada; quem pode visualizá-la pode transferi-la explicitamente para si no perfil. Administradores também podem escolher outro membro do workspace.
+4. O Laravel atribui a conversa **atomicamente**. O primeiro envio não toma uma conversa ocupada; quem pode visualizá-la e tem Próprias ou Todas pode transferi-la explicitamente para si no perfil. Administradores também podem escolher outro membro do workspace.
 5. A aplicação registra quem assumiu e quando; libera a resposta humana para o responsável.
 
 **Implementação:** transação com bloqueio do contato; envio concorrente perde com HTTP `409` se outro usuário assumiu primeiro. A interface atualiza a conversa.
@@ -148,8 +153,8 @@ O administrador define as permissões no **cadastro/vínculo do usuário ao work
 
 ### 5.2 Transferência explícita
 
-- **Assumir para mim** transfere imediatamente uma conversa visível ao usuário, mesmo que outro membro seja o responsável. Nunca ocorre pelo simples envio.
-- O administrador pode escolher outro membro ativo do workspace como responsável. Atendentes comuns não escolhem terceiros.
+- **Assumir para mim** exige Próprias ou Todas e transfere imediatamente uma conversa visível ao usuário, mesmo que outro membro seja o responsável. Nunca ocorre pelo simples envio.
+- O administrador pode escolher outro membro ativo, sem bloqueio de conta e com acesso às próprias conversas (inclusive por Todas), como responsável. Atendentes comuns não escolhem terceiros.
 - A troca libera o registro de atribuição anterior, cria o novo registro e grava o ator na auditoria. Quem só pode ver as próprias conversas perde visibilidade quando deixa de ser responsável.
 - O comportamento anterior de permissão `can_transfer` por vínculo fica como histórico de briefing; esse campo não existe na implementação atual.
 
@@ -208,7 +213,7 @@ Sem esse gatilho, a conversa tem o comportamento normal do chat: avaliação de 
 
 ### 6.4 Filtros e cadastro inicial
 
-- Atribuição na tela: **Todos**, **Meus chats**, **Não atribuídos**. Todos não amplia as permissões do backend; Meus chats usa atribuição ativa e Não atribuídos usa responsável nulo.
+- Atribuição na tela: abas **Todos**, **Meus**, **Não atribuídos**, com totais calculados sobre as conversas autorizadas e demais filtros ativos. Todos não amplia as permissões do backend; Meus chats usa atribuição ativa e Não atribuídos usa responsável nulo.
 - Status na tela atual: **Todos** e **Abertos**. No backend, `status=open` inclui `open` e `in_progress`, portanto também atendimentos aguardando responsável. Os dois caminhos do chat ainda aceitam `status=completed` pela API, mas a opção Concluídos não está no seletor atual.
 - A decisão anterior de Abertos somente em atendimento e a opção Concluídos são registros do recorte original; a revisão descreve a diferença observada, sem atribuir aprovação retroativa à mudança.
 - Nome, e-mail e CPF são opcionais no endpoint de edição do perfil. Nome aceita até 255 caracteres; e-mail deve ser válido, até 255; CPF é string de até 14 caracteres, sem validação de dígitos verificadores nesse endpoint. Não há unicidade de e-mail/CPF nessa edição.
@@ -320,7 +325,7 @@ Os checks preservam registros anteriores; não representam execução de testes 
 
 - [ ] Usuário com acesso a dois workspaces alterna entre eles sem visualizar contatos ou conversas não autorizados de outro workspace.
 - [ ] Um mesmo telefone pode existir como contato em dois workspaces, sem compartilhamento de dados.
-- [ ] Conferir a autorização atual por papel, `can_view_unassigned` e atribuição na listagem e nos detalhes, distinguindo-a do modelo de três checks do briefing.
+- [x] Três permissões de visibilidade, isolamento e operações verificadas localmente em 21/11/2026; ver seção 4.
 - [ ] Primeiro envio por atendente com acesso abre e atribui conversa sem responsável; envio em conversa ocupada não transfere, inclusive para administrador.
 - [ ] Dois atendentes tentando enviar primeiro não conseguem ambos obter a atribuição.
 - [ ] Transferência autorizada muda imediatamente o responsável, registra auditoria e atualiza a visibilidade.
@@ -335,12 +340,12 @@ Os checks preservam registros anteriores; não representam execução de testes 
 - [ ] Uma conversa finalizada deixa de corresponder ao filtro **Meus chats** por atribuição ativa.
 - [ ] Finalização e criação de notas internas são autorizadas ao responsável e ao administrador; outros usuários são bloqueados.
 - [ ] Mensagem recebida após finalização não abre atendimento humano sem gatilho definido para isso.
-- [ ] Filtros usam dois seletores com as opções aprovadas e respeitam permissões.
+- [x] Abas de atribuição e filtros respeitam as permissões; contadores consideram busca, status e etiquetas antes da paginação.
 - [ ] O painel de contato oferece nome, email, CPF e o histórico de notas internas, sem exigir campos adicionais.
 - [ ] A primeira entrega oferece anexos documento, imagem e vídeo, gravação de mensagem de voz pelo microfone e um campo de busca na coluna das conversas.
 - [x] Voz usa as mesmas permissões de resposta e isolamento de workspace; conversão temporária e envio simulado `ptt` são cobertos por testes locais sem conteúdo persistido.
 - [x] Rejeição explícita é distinguida de confirmação pendente; timeout não reenvia e histórico concilia por `track_id`.
-- [x] Bolinha de não lidas e leitura compartilhada pelo provedor; mensagem concorrente à confirmação preserva o contador local.
+- [x] Indicador numérico de não lidas e leitura compartilhada pelo provedor; mensagem concorrente à confirmação preserva o contador local.
 - [x] Caminho anterior: contador e versão protegem a leitura compartilhada sem histórico completo local. No modo de tempo real, prévias e payloads temporários seguem a seção 3; este registro não comprova homologação operacional do novo caminho.
 - [x] Painel do chat ocupa a altura da tela; histórico rola sem mover cabeçalho ou compositor.
 - [ ] Validar áudio real de ponta a ponta e navegadores/dispositivos antes do aceite operacional.

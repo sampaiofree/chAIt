@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppNotice from '@/components/AppNotice.vue';
 import { openChatRealtime } from '@/lib/chatRealtime';
 import AppButton from '@/components/AppButton.vue';
 import SettingsLayout from '@/layouts/SettingsLayout.vue';
@@ -229,11 +230,11 @@ onUnmounted(() => {
                     @click="refresh(true)"
                     >Verificar conexão</AppButton
                 >
-                <p v-if="realtimeEnabled" class="notice">
+                <AppNotice v-if="realtimeEnabled" variant="warning">
                     Status conhecido pela última confirmação. Atualização
                     automática por eventos.
-                </p>
-                <p v-if="error" class="notice">{{ error }}</p>
+                </AppNotice>
+                <AppNotice v-if="error" :key="error" variant="error">{{ error }}</AppNotice>
                 <div class="details">
                     <div>
                         <small>Número</small
@@ -309,9 +310,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-section {
-    padding: 38px;
-}
 section h1 {
     font-size: 24px;
     margin: 6px 0;
@@ -329,10 +327,10 @@ section > p {
 }
 .connection-card {
     position: relative;
-    margin-top: 24px;
-    padding: 22px;
+    margin-top: var(--section-gap);
+    padding: var(--card-padding);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius-card);
     background: var(--card);
 }
 .connection-title {
@@ -417,9 +415,6 @@ section > p {
     font-size: 12px;
 }
 @media (max-width: 650px) {
-    section {
-        padding: 24px 16px;
-    }
     .details {
         grid-template-columns: 1fr;
     }

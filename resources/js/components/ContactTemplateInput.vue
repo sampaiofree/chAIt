@@ -409,8 +409,10 @@ onBeforeUnmount(() => {
 </script>
 <template>
     <div ref="wrapper" class="contact-template-field">
-        <div v-if="chips" class="contact-field-tools">
+        <div v-if="chips || $slots.label" class="contact-field-tools">
+            <slot name="label" />
             <button
+                v-if="chips"
                 type="button"
                 :aria-expanded="opened"
                 @pointerdown.prevent
@@ -524,8 +526,8 @@ onBeforeUnmount(() => {
     width: 100%;
     padding: 0.5rem 0.75rem;
     border: 1px solid var(--input);
-    border-radius: 0.5rem;
-    background: transparent;
+    border-radius: var(--radius);
+    background: var(--muted);
     color: var(--foreground);
     font-size: 0.875rem;
     line-height: 1.5;
@@ -554,7 +556,13 @@ onBeforeUnmount(() => {
 .contact-field-tools {
     display: flex;
     justify-content: flex-end;
-    margin-bottom: 0.25rem;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+.contact-field-tools :slotted(*) {
+    margin-right: auto;
+    min-width: 0;
 }
 .contact-field-tools > button {
     color: var(--brand-strong);

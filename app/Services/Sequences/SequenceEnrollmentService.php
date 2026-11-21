@@ -20,6 +20,12 @@ class SequenceEnrollmentService
 
         return app(FlowExecutionManager::class)->locked($thread->workspace_id, $thread->uazapi_connection_id, $thread->contact_id,
             function (AutomationContext $context) use ($thread, $sequence, $source, $idempotencyKey, $actor): array {
+                if ($source === 'manual' && $actor) {
+                    $thread->refresh();
+                    $actor->unsetRelation('memberships');
+                    abort_unless($actor->membershipFor($thread->workspace)?->canSeeThread($thread), 404);
+                    abort_unless($actor->canManageFlows($thread->workspace) && $actor->membershipFor($thread->workspace)->canSeeOwnThreads(), 403);
+                }
                 $request = DB::table('sequence_enrollment_requests')->where('workspace_id', $thread->workspace_id)->where('idempotency_key', $idempotencyKey)->first();
                 if ($request) {
                     $previous = SequenceEnrollment::findOrFail($request->enrollment_id);

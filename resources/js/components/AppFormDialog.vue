@@ -110,7 +110,7 @@ function restoreFocus(event: Event) {
                 ></AlertDialogHeader
             ><AlertDialogFooter
                 ><AlertDialogCancel>Continuar editando</AlertDialogCancel
-                ><AlertDialogAction @click="discard"
+                ><AlertDialogAction variant="destructive" @click="discard"
                     >Descartar</AlertDialogAction
                 ></AlertDialogFooter
             ></AlertDialogContent

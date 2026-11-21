@@ -5,6 +5,7 @@ use App\Jobs\ExpireFlowWait;
 use App\Models\AiSession;
 use App\Models\Contact;
 use App\Models\FlowExecution;
+use App\Models\FlowMessageBatch;
 use App\Models\Thread;
 use App\Models\UazapiConnection;
 use App\Models\UazapiInbox;
@@ -15,6 +16,7 @@ use App\Services\Flows\FlowCapabilities;
 use App\Services\Flows\FlowContentButton;
 use App\Services\Flows\FlowGraphValidator;
 use App\Services\Flows\FlowInboundProcessor;
+use App\Services\Flows\FlowMessageGrouping;
 use App\Services\Flows\FlowRuntime;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -140,6 +142,9 @@ test('early content reply survives HTTP confirmation trailing text and delay and
     $this->travel(4)->seconds();
     contentButtonRun($f); // trailing text
     contentButtonRun($f); // activate wait and consume
+    expect(contentButtonValue($f))->toBeNull();
+    $this->travel(5)->seconds();
+    app(FlowMessageGrouping::class)->process(FlowMessageBatch::sole()->id);
     expect(contentButtonValue($f))->toBe('Tenho interesse');
     expect(DB::table('flow_waits')->sole()->status)->toBe('replied');
     expect($f['execution']->fresh()->context)->not->toHaveKey('early_button_reply');
@@ -157,6 +162,9 @@ test('active wait captures the original sent label and preserves the published v
     $graph['nodes'][1]['data']['items'] = [];
     $f['flow']->update(['graph' => $graph]);
     app(FlowInboundProcessor::class)->handle($f['connection'], $f['thread'], contentButtonReply($f));
+    expect(contentButtonValue($f))->toBeNull();
+    $this->travel(5)->seconds();
+    app(FlowMessageGrouping::class)->process(FlowMessageBatch::sole()->id);
     expect(contentButtonValue($f))->toBe('Tenho interesse');
     $wait = DB::table('flow_waits')->sole();
     $this->travel(301)->seconds();
@@ -285,6 +293,9 @@ test('webhook receipt and early reply commit together and failed processing can 
     expect($f['execution']->fresh()->context)->toHaveKey('early_button_reply');
     expect(DB::table('uazapi_webhook_receipts')->count())->toBe(1);
     contentButtonRun($f);
+    expect(contentButtonValue($f))->toBeNull();
+    $this->travel(5)->seconds();
+    app(FlowMessageGrouping::class)->process(FlowMessageBatch::sole()->id);
     expect(contentButtonValue($f))->toBe('Tenho interesse');
     expect(json_encode(DB::table('uazapi_webhook_receipts')->get()))->not->toContain('Tenho interesse', 'Quer conhecer');
 });
@@ -384,3 +395,61 @@ test('all content button kinds publish at application limits in production witho
     expect(app(FlowGraphValidator::class)->validateForPublish($graph, $f['workspace'], $f['flow'])['schema_version'])->toBe(2);
     expect(app(AssistantTools::class)->validate($graph, $f['workspace'])['pending'])->toBe([]);
 })->with(['url', 'reply', 'copy']);
+
+test('continuous replies close at three times the pause and survive the first answer deadline', function () {
+    $this->freezeSecond();
+    $f = contentButtonFixture();
+    Http::fake(['*/send/menu' => Http::response(['id' => 'sent', 'status' => 'Sent'])]);
+    contentButtonRun($f);
+    contentButtonRun($f);
+    $wait = DB::table('flow_waits')->sole();
+    $this->travel(298)->seconds();
+
+    foreach (range(1, 5) as $index) {
+        $message = ['id' => 'part-'.$index, 'text' => 'Parte '.$index];
+        $inbox = UazapiInbox::create([
+            'workspace_id' => $f['workspace']->id, 'uazapi_connection_id' => $f['connection']->id,
+            'event_type' => 'messages', 'chat_id' => $f['thread']->external_chat_id,
+            'dedupe_hash' => hash('sha256', 'part-'.$index), 'payload' => ['message' => $message],
+            'status' => 'processed', 'expires_at' => now()->addDay(),
+        ]);
+        app(FlowInboundProcessor::class)->handle($f['connection'], $f['thread'], $message, $inbox->id);
+        if ($index < 5) {
+            $this->travel(4)->seconds();
+        }
+    }
+
+    (new ExpireFlowWait($wait->id))->handle();
+    $batch = FlowMessageBatch::sole();
+    expect($batch->due_at->equalTo($batch->cutoff_at))->toBeTrue();
+    app(FlowMessageGrouping::class)->process($batch->id);
+    expect(contentButtonValue($f))->toBe("Parte 1\nParte 2\nParte 3\nParte 4");
+    expect(DB::table('flow_waits')->sole()->status)->toBe('replied');
+    expect(FlowMessageBatch::count())->toBe(0);
+});
+
+test('interrupting a wait cancels its batch and releases the retained message', function () {
+    $this->freezeSecond();
+    $f = contentButtonFixture();
+    Http::fake(['*/send/menu' => Http::response(['id' => 'sent', 'status' => 'Sent'])]);
+    contentButtonRun($f);
+    contentButtonRun($f);
+    $message = ['id' => 'pending-reply', 'text' => 'Resposta pendente'];
+    $inbox = UazapiInbox::create([
+        'workspace_id' => $f['workspace']->id, 'uazapi_connection_id' => $f['connection']->id,
+        'event_type' => 'messages', 'chat_id' => $f['thread']->external_chat_id,
+        'dedupe_hash' => hash('sha256', 'pending-reply'), 'payload' => ['message' => $message],
+        'status' => 'processed', 'expires_at' => now()->addDay(),
+    ]);
+    app(FlowInboundProcessor::class)->handle($f['connection'], $f['thread'], $message, $inbox->id);
+    expect($inbox->fresh()->consumers)->toBe(2);
+    $id = FlowMessageBatch::sole()->id;
+
+    app(FlowRuntime::class)->finish($f['execution']->fresh(), 'interrupted', 'Atendimento humano iniciado.');
+    $this->travel(6)->seconds();
+    app(FlowMessageGrouping::class)->process($id);
+
+    expect($inbox->fresh()->consumers)->toBe(1)
+        ->and(contentButtonValue($f))->toBeNull()
+        ->and(DB::table('flow_waits')->sole()->status)->toBe('cancelled');
+});

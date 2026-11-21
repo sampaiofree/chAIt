@@ -2,11 +2,11 @@
 
 namespace App\Services\ExternalWebhooks;
 
-use App\Models\Contact;
 use App\Models\ContactCustomFieldValue;
 use App\Models\ExternalWebhook;
 use App\Models\Workspace;
 use App\Services\Contacts\ContactIdentity;
+use App\Services\Contacts\ContactPhoneIdentity;
 use App\Services\Contacts\InternationalPhone;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -33,7 +33,7 @@ class WebhookProcessor
         foreach ($config['mappings'] as $i => $mapping) {
             $value = $this->fields->resolve($payload, $mapping['source_path']);
             if ($mapping['target_kind'] === 'native' && $mapping['target'] === 'phone') {
-                $phone = $this->phones->normalize($value);
+                $phone = app(ContactPhoneIdentity::class)->normalize($value);
 
                 continue;
             }
@@ -93,7 +93,7 @@ class WebhookProcessor
     /** Call inside a transaction; all CRM changes form one unit. */
     public function apply(ExternalWebhook $webhook, array $prepared): array
     {
-        $existed = Contact::where('workspace_id', $webhook->workspace_id)->where('phone', $prepared['phone'])->exists();
+        $existed = app(ContactIdentity::class)->findLocked($webhook->workspace_id, $prepared['phone']) !== null;
         $contact = app(ContactIdentity::class)->locked($webhook->workspace_id, $prepared['phone']);
         $contact->fill($prepared['native']);
         $changed = ! $existed || $contact->isDirty();

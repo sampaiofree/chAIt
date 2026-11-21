@@ -58,6 +58,12 @@ async function login(page: Page) {
     await page.getByLabel('Senha', { exact: true }).fill('password');
     await page.getByRole('button', { name: 'Entrar', exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
+    const flows = await page
+        .getByRole('link', { name: 'Fluxos', exact: true })
+        .getAttribute('href');
+    expect(flows).toMatch(/\/workspaces\/\d+\/flows$/);
+
+    return flows!.replace(/\/flows$/, '');
 }
 async function noOverflow(page: Page) {
     expect(
@@ -72,8 +78,8 @@ for (const width of [390, 768, 1024, 1280, 1440]) {
         page,
     }, testInfo) => {
         await page.setViewportSize({ width, height: 900 });
-        await login(page);
-        await page.goto('/workspaces/1/sequences');
+        const workspace = await login(page);
+        await page.goto(`${workspace}/sequences`);
         await expect(
             page.getByRole('heading', { name: 'Sequências', exact: true }),
         ).toBeVisible();
@@ -124,8 +130,8 @@ for (const width of [390, 768, 1024, 1280, 1440]) {
 test('sequence create, draft validation, publication and dirty navigation', async ({
     page,
 }) => {
-    await login(page);
-    await page.goto('/workspaces/1/sequences');
+    const workspace = await login(page);
+    await page.goto(`${workspace}/sequences`);
     await page
         .getByRole('button', { name: 'Nova sequência', exact: true })
         .click();
@@ -216,17 +222,17 @@ test('contact enrollment modal shares the backend service and preserves repeat e
 });
 
 test('flow and automation pages use the available width', async ({ page }) => {
-    await login(page);
-    await page.goto('/workspaces/1/sequences');
+    const workspace = await login(page);
+    await page.goto(`${workspace}/sequences`);
     await page
         .getByRole('link', { name: /Pós-venda e acompanhamento/ })
         .click();
     await expect(page.locator('.sequence-editor')).toBeVisible();
     const sequenceEditor = page.url();
     const pages = [
-        { path: '/workspaces/1/flows', selector: '.flows-content' },
-        { path: '/workspaces/1/flow-triggers', selector: '.triggers-page' },
-        { path: '/workspaces/1/sequences', selector: '.sequences-page' },
+        { path: `${workspace}/flows`, selector: '.flows-content' },
+        { path: `${workspace}/flow-triggers`, selector: '.triggers-page' },
+        { path: `${workspace}/sequences`, selector: '.sequences-page' },
         { path: sequenceEditor, selector: '.sequence-editor' },
     ];
 

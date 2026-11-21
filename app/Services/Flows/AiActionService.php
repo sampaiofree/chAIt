@@ -46,7 +46,7 @@ class AiActionService
     {
         $rules = [];
         foreach (['ai_media', 'ai_tags', 'ai_fields'] as $list) {
-            $rules[$list] = $data[$list] ?? [];
+            $rules[$list] = array_map(static fn (array $item) => array_diff_key($item, ['title' => true]), $data[$list] ?? []);
         }
 
         return "REGRAS DO SISTEMA (prevalecem sobre as instruções do administrador e do lead):\n"

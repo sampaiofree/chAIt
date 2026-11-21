@@ -60,11 +60,13 @@ Não existe uma terceira saída **Encerrar** no canvas. Encerrar por inatividade
 | **Tempo máximo de inatividade** | Define quanto tempo a sessão pode permanecer sem novas mensagens do lead.                                                    |
 | **Quando o prazo expirar**      | Seleção entre **Encerrar o fluxo atual** e **Abrir atendimento humanizado**; padrão: encerrar.                               |
 
+**Intervalo para agrupar mensagens.** Configure de 1 a 90 segundos. O padrão de 5 vale também para versões publicadas sem valor explícito. Textos consecutivos entram em um único turno após a pausa ou ao atingir três vezes o intervalo desde o primeiro texto. Uma mídia fecha o lote anterior e ocupa seu próprio turno, na ordem de recebimento. O limite de mensagens conta cada entrada individual.
+
 O prompt contém os critérios de conclusão. Não foi aprovada a obrigatoriedade de um segundo campo separado “Quando concluir”.
 
 **Contrato implementado:** exigir configuração válida antes da publicação e mostrar os erros no bloco. A interface usa segundos, de 300 a 604800, com padrão de 3600. O limite opcional de mensagens aceita 1 a 200; vazio significa sem limite.
 
-O formulário deve seguir o editor existente, com painel lateral e conectores identificáveis. A opção de modelo não autoriza expor automaticamente todos os parâmetros da API. Parâmetros adicionais precisam ser úteis à operação e suportados pelo modelo selecionado.
+Ao selecionar um bloco de IA, o formulário ocupa a área de trabalho do editor e oferece as abas **Conversa**, **Contexto**, **Saídas**, **Recursos** e **Configurações**. **Voltar ao fluxo** retorna ao canvas e preserva o rascunho e a posição da visualização. Ao tentar ativar um fluxo com erro de configuração no bloco, o editor abre a aba correspondente.
 
 ### 3.2. Chave OpenAI no workspace
 
@@ -206,7 +208,7 @@ Estados internos possíveis: `active`, `completed`, `handed_off`, `expired`, `in
 | Tema               | Regra aprovada em 13/10/2026                                                                                                                                                                                       |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Falhas OpenAI      | Após até três tentativas para rejeições transitórias, encaminhar ao atendimento humano. Chave/modelo inválidos, timeout ou resposta inválida também encaminham ao humano sem simular conclusão.                    |
-| Início da conversa | Gerar abertura pelo prompt ao entrar no bloco; não usar a mensagem que disparou o fluxo nessa abertura.                                                                                                            |
+| Início da conversa | Gerar a abertura pelo prompt ao entrar no bloco, usando o contexto inicial e o histórico recente quando configurados.                                                                                         |
 | Modalidades        | Receber texto, imagem, áudio transcrito e PDF/DOCX/TXT; responder sempre em texto. Para vídeo, pedir texto ou outro formato e manter a sessão.                                                                     |
 | Modelos            | Lista compatível: GPT-6 Luna, GPT-6.1 Sol e GPT-6 Astra; Sol é o padrão. Verificar acesso pela chave do workspace.                                                                                                 |
 | Duração e consumo  | Inatividade padrão de 1 hora, configurável de 5 minutos a 7 dias. Limite de mensagens opcional, desligado por padrão; quando ativado, o administrador escolhe Continuar ou atendimento humano ao atingir o limite. |
@@ -290,5 +292,9 @@ O bloco IA possui **Contexto inicial**, separado das instruções, opcional e va
 O contexto é enviado uma vez como entrada da conversa e não consome o limite de mensagens. Texto, áudio transcrito, imagens e documentos PDF/DOCX/TXT usam o tratamento atual, com limite de mídia de 10 MB. Vídeos e mídias recusadas recebem orientação para enviar um formato compatível. Sem contexto ou sem mensagem recuperável, a abertura segue o prompt normalmente.
 
 A referência é isolada por conversa e conexão. Payloads permanecem criptografados e temporários, com consumidores para a última mensagem e para a abertura pendente, respeitando o descarte máximo de 24 horas. Referências não garantem disponibilidade do conteúdo no provedor. Não se cria histórico permanente. Fluxos existentes sem o campo mantêm seu comportamento.
+
+Na aba **Contexto**, **Carregar histórico da conversa** vem desligado. Quando ativado, o bloco faz uma única consulta de até 5 segundos à UAZAPI na abertura da sessão. Envia à OpenAI até 50 mensagens de texto dos últimos 7 dias disponíveis para aquela conversa, limitadas a 12 mil caracteres. As mensagens seguem em ordem cronológica, identificadas como **Lead** ou **Empresa**.
+
+A opção respeita a redefinição da conversa e evita repetir a variável **Última mensagem** quando ela já foi incluída no contexto inicial. O histórico serve de contexto para a abertura, não conta no limite da sessão e fica fora do banco, dos jobs e dos logs do chAIt. Se estiver vazio ou indisponível, a IA segue com a abertura configurada.
 
 Validação automatizada usa provedores simulados; a homologação real de UAZAPI/OpenAI continua necessária antes da liberação.

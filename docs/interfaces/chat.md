@@ -19,6 +19,8 @@ Descrever a experiência visual e de navegação do módulo de chat na versão i
 
 **Prioridade aprovada:** chat web com adaptação para celular é a primeira entrega. Desktop e mobile usam a mesma aplicação Vue 3 + Inertia, com navegação adaptada ao dispositivo. Não haverá frontend mobile independente. Instalação como PWA é uma proposta opcional ainda não aprovada.
 
+> **Atualização pontual de 21/11/2026:** a descrição vigente da fila, dos contadores e dos rascunhos está na seção 3.2; registros anteriores permanecem como histórico.
+
 ## 2. Decisões aprovadas e referência atual
 
 | ID    | Decisão                                                                                                                                                                             | Estado                                                                |
@@ -65,8 +67,11 @@ Da esquerda para a direita:
 - Busca por nome e telefone e botão de filtros aparecem na mesma linha. O cabeçalho visual da lista foi removido; falhas de conexão aparecem em aviso próprio.
 - Conversas permanece como tela inicial após login e troca de workspace. Sem WhatsApp conectado, a tela orienta a configuração com o título **Conecte seu WhatsApp para começar** e, para administradores, botão **Conectar WhatsApp** para Configurações → WhatsApp. Atendentes são orientados a procurar o administrador. Não há modal automático de conexão nem promessa de acesso a conversas locais nesse estado.
 - A consulta inicial mostra **Preparando suas conversas…**. Indisponibilidade temporária mostra **Estamos verificando sua conexão**, com nova verificação automática e botão **Verificar novamente**, sem pedir novo pareamento. Ao confirmar a conexão, o chat reaparece automaticamente. Falhas apenas no tempo real usam aviso discreto dentro do chat, sem interromper a navegação ou outros modais.
+- As abas **Todos / Meus / Não atribuídos** ficam visíveis acima da busca. Cada contador considera busca, status e etiquetas, antes da paginação e dentro das permissões do usuário. A atribuição também continua disponível no painel de filtros.
+- A lista apresenta nome e horário na primeira linha; prévia e status na segunda, com contador de mensagens não lidas. O responsável permanece no perfil.
+- A seleção, a busca, os filtros, a preferência do painel e posições de rolagem são restaurados por aba quando possível. Rascunhos de texto são separados por usuário, workspace e conversa em `sessionStorage`, sobrevivem à atualização e são removidos no logout; se o armazenamento falhar, ficam em memória durante a navegação. A restauração da rolagem depende do histórico carregado.
 - O painel de filtros reúne atribuição (**Todos**, **Meus chats**, **Não atribuídos**), **Atendimentos abertos** e etiquetas do contato. Abertos inclui `open` e `in_progress`. Várias etiquetas usam correspondência por qualquer uma; os grupos de critérios e a busca se combinam.
-- Os filtros são aplicados na API antes do limite e da paginação e preservam a autorização por papel, atribuição e `can_view_unassigned`, descrita em Chat e multiatendimento §4; **Todos** não amplia esse conjunto. O backend ainda aceita `status=completed`, embora Concluídos não apareça no painel.
+- Os filtros são aplicados na API antes do limite e da paginação e preservam a autorização por papel, atribuição e Próprias/Não atribuídas/Todas, descrita em Chat e multiatendimento §4; **Todos** não amplia esse conjunto. O backend ainda aceita `status=completed`, embora Concluídos não apareça no painel.
 - Selecionar uma conversa atualiza a área central, mantendo a navegação no desktop.
 
 ### 3.3 Coluna 3 — Conversa
@@ -174,14 +179,14 @@ Checks preservam evidências anteriores; não significam nova execução de test
 - [x] Estados de gravação, prévia/descarte, limite de dois minutos e escolha WebM/OGG/MP4 cobertos por testes automatizados de frontend.
 - [x] Cancelamento por troca de conversa, perda de permissão e desmontagem libera microfone e timers; permissão tardia não inicia gravação.
 - [ ] Validar gravação, player e layout em Chrome/Edge, Firefox, Safari e navegadores móveis reais, incluindo permissão negada.
-- [x] Conversas não lidas exibem uma bolinha de 7 px abaixo do horário; mensagens recentes visualizadas confirmam leitura para todo o workspace.
+- [x] Conversas não lidas exibem indicador numérico junto ao horário; mensagens recentes visualizadas confirmam leitura para todo o workspace.
 - [x] Leitura aguarda confirmação do provedor e usa versão por conversa para preservar novas mensagens concorrentes.
 - [x] Cabeçalho e compositor permanecem visíveis; histórico rola separadamente e novas mensagens não deslocam uma leitura antiga.
 - [ ] Validar no servidor contratado a operação de marcar chat como lido e a confirmação no WhatsApp.
 - [ ] Confirmar no WhatsApp do destinatário que `ptt` chega como mensagem de voz reproduzível no servidor contratado.
 
 - [ ] No desktop, o chat possui quatro áreas identificáveis e o menu alterna entre ícones e ícones + textos.
-- [ ] A lista possui busca e dois seletores com as opções atuais **Todos / Meus chats / Não atribuídos** e **Todos / Abertos**, sem expor chats proibidos.
+- [x] A lista possui busca, abas de atribuição e filtro de atendimentos abertos, respeitando as permissões; a revisão das demais opções do filtro foi adiada.
 - [ ] No desktop, selecionar uma conversa troca a área central sem navegar para uma página de detalhes separada.
 - [ ] No mobile, selecionar uma conversa abre uma tela única, sem tentar manter quatro colunas.
 - [ ] No mobile, o ícone à direita do cabeçalho abre o perfil; a foto não funciona como botão.
@@ -227,3 +232,9 @@ Checks preservam evidências anteriores; não significam nova execução de test
 ## Sequência no painel do contato — 14/10/2026
 
 Seção **Sequência** com participação atual/último resultado, etapa, saldo/data, impedimentos e última transição. Gestão de fluxos com acesso ao contato pode abrir **Adicionar à sequência** em modal; o aviso explica que a participação anterior será encerrada e o fluxo corrente continuará. Não há remoção ou reinício manual nesta versão. Ver [Sequências](../modulos/sequencias.md).
+
+### Permissões de conversas — 21/11/2026
+
+Equipe apresenta os três controles agrupados em Conversas. Todas inclui próprias, não atribuídas e de outros atendentes. Acesso exclusivo à fila mostra o compositor em consulta e oculta ações de atendimento/automação. O seletor de responsáveis mostra somente membros ativos elegíveis. Sem acesso ao chat, menu e marca levam à primeira área permitida: Leads, Fluxos ou Perfil.
+
+O endpoint `chat-access` acrescenta `permissions_signature` e aceita até 200 `draft_ids[]`, retornando `revoked_draft_ids` somente dos identificadores enviados. A assinatura é verificada no intervalo existente; tempo real utiliza `access.changed`. Revogação invalida requisições, conteúdo e caches; transferência remove os rascunhos da conversa inacessível. As APIs de equipe expõem `can_view_own` e `can_view_all`, além de `can_view_unassigned` com significado restrito à fila.

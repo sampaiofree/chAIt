@@ -40,6 +40,7 @@ function voiceThread(): array
     $user = User::factory()->create();
     $workspace = $user->fresh()->currentWorkspace;
     $connection = UazapiConnection::factory()->create(['workspace_id' => $workspace->id]);
+    \Illuminate\Support\Facades\Cache::put('chat-access:'.$connection->id, ['allowed' => true, 'status' => 'connected'], 86400);
     $contact = Contact::factory()->create(['workspace_id' => $workspace->id]);
     $thread = Thread::factory()->create([
         'workspace_id' => $workspace->id, 'uazapi_connection_id' => $connection->id,
@@ -230,19 +231,20 @@ test('voice sending rejects foreign workspaces and disconnected connections befo
         $thread->update(['status' => 'in_progress', 'assigned_to_user_id' => $user->id]);
         $expected = 409;
     }
-    Http::fake();
+    Http::fake(['*/instance/status' => Http::response(['status' => 'disconnected'])]);
     Process::fake();
     $this->actingAs($sender)->postJson(route('workspaces.conversations.send', [$routeWorkspace, $thread]), [
         'file' => voiceFixture(), 'media_type' => 'voice', 'track_id' => (string) Str::uuid(),
     ])->assertStatus($expected);
     Process::assertNothingRan();
-    Http::assertNothingSent();
+    if ($scenario === 'disconnected') Http::assertSentCount(1);
+    else Http::assertNothingSent();
 })->with(['foreign-workspace', 'disconnected']);
 
 test('agents can start an unassigned conversation by sending voice', function () {
     [$user, $workspace, $connection, $thread] = voiceThread();
     $agent = User::factory()->create();
-    WorkspaceMembership::factory()->create(['workspace_id' => $workspace->id, 'user_id' => $agent->id, 'role' => 'agent', 'can_view_unassigned' => true]);
+    WorkspaceMembership::factory()->create(['workspace_id' => $workspace->id, 'user_id' => $agent->id, 'role' => 'agent', 'can_view_unassigned' => true, 'can_view_all' => true]);
     Http::fake(['*/send/media' => Http::response(['id' => 'voice', 'messageType' => 'audioMessage', 'status' => 'Sent'])]);
     $this->actingAs($agent)->postJson(route('workspaces.conversations.send', [$workspace, $thread]), [
         'file' => voiceFixture(), 'media_type' => 'voice', 'track_id' => (string) Str::uuid(),
@@ -305,7 +307,7 @@ test('permissions and connection are rechecked after conversion before provider 
     [$user, $workspace, $connection, $thread] = voiceThread();
     if ($change === 'transfer') {
         $sender = User::factory()->create();
-        WorkspaceMembership::factory()->create(['workspace_id' => $workspace->id, 'user_id' => $sender->id, 'role' => 'agent', 'can_view_unassigned' => true]);
+        WorkspaceMembership::factory()->create(['workspace_id' => $workspace->id, 'user_id' => $sender->id, 'role' => 'agent', 'can_view_unassigned' => true, 'can_view_all' => true]);
         $thread->update(['status' => 'in_progress', 'assigned_to_user_id' => $sender->id]);
     } else {
         $sender = $user;
@@ -319,7 +321,7 @@ test('permissions and connection are rechecked after conversion before provider 
                 $thread->update(['assigned_to_user_id' => $user->id]);
             } elseif ($change === 'role') {
                 WorkspaceMembership::query()->where('workspace_id', $workspace->id)->where('user_id', $sender->id)
-                    ->update(['role' => 'agent', 'can_view_unassigned' => true]);
+                    ->update(['role' => 'agent', 'can_view_unassigned' => true, 'can_view_all' => true]);
             } else {
                 $connection->update(['status' => 'disconnected']);
             }

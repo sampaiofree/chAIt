@@ -39,7 +39,7 @@ const { bottomItems } = useNavigationItems();
             calc(6px + env(safe-area-inset-bottom))
             max(4px, env(safe-area-inset-left));
         border-top: 1px solid var(--border);
-        background: var(--card);
+        background: color-mix(in srgb, var(--accent) 13%, var(--card));
     }
     .bottom-navigation-link {
         display: flex;
@@ -53,7 +53,7 @@ const { bottomItems } = useNavigationItems();
         border-radius: var(--radius);
         color: var(--muted-foreground);
         text-decoration: none;
-        font-size: 10px;
+        font-size: clamp(10px, 3vw, 12px);
         font-weight: 500;
         line-height: 1.2;
     }

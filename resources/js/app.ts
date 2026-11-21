@@ -1,5 +1,6 @@
 import { createInertiaApp, router } from '@inertiajs/vue3';
 import { createApp, h } from 'vue';
+import AppNotifications from '@/components/AppNotifications.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { clearChatCache } from '@/lib/chatCache';
 
@@ -19,6 +20,9 @@ document.addEventListener('submit', (event) => {
     }
 
     event.preventDefault();
+    for (const key of Object.keys(sessionStorage)) {
+        if (key.startsWith('chait-draft:') || key.startsWith('chait-draft-contact:') || key.startsWith('chait-navigation:')) sessionStorage.removeItem(key);
+    }
     cacheChannel?.postMessage('clear');
     void clearChatCache().finally(() => form.submit());
 });
@@ -82,10 +86,10 @@ createInertiaApp({
             applyAppearance();
         });
 
-        createApp({ render: () => h(App, props) })
+        createApp({ render: () => [h(App, props), h(AppNotifications)] })
             .use(plugin)
             .mount(el);
         document.getElementById('app-startup')?.remove();
     },
-    progress: { color: '#16a34a' },
+    progress: { color: '#4f46e5' },
 });

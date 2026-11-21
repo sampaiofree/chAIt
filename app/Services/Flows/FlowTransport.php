@@ -116,6 +116,10 @@ class FlowTransport
     public function graph(array $document, Workspace $workspace, ?User $actor = null): array
     {
         $resources = $this->resources($document, $workspace, $actor);
+        $positions = array_column($document['nodes'], 'position');
+        $usable = count($positions) === count($document['nodes']) && collect($positions)->every(fn ($position) => is_array($position)
+            && is_numeric($position['x'] ?? null) && is_numeric($position['y'] ?? null)
+            && abs((float) $position['x']) <= 100000 && abs((float) $position['y']) <= 100000);
         $ids = [];
         $nodes = [];
         foreach ($document['nodes'] as $index => $node) {
@@ -137,7 +141,8 @@ class FlowTransport
                 }
                 unset($field);
             }
-            $nodes[] = ['id' => $ids[$node['id']], 'type' => $node['type'], 'data' => $data, 'position' => ['x' => 0, 'y' => 0]];
+            $position = $usable ? ['x' => (float) $positions[$index]['x'], 'y' => (float) $positions[$index]['y']] : ['x' => 0, 'y' => 0];
+            $nodes[] = ['id' => $ids[$node['id']], 'type' => $node['type'], 'data' => $data, 'position' => $position];
         }
         $edges = [];
         foreach ($document['edges'] as $index => $edge) {
@@ -168,16 +173,7 @@ class FlowTransport
             }
             throw ValidationException::withMessages($errors);
         }
-        $positions = array_column($document['nodes'], 'position');
-        $usable = count($positions) === count($nodes) && collect($positions)->every(fn ($position) => is_array($position)
-            && is_numeric($position['x'] ?? null) && is_numeric($position['y'] ?? null)
-            && abs((float) $position['x']) <= 100000 && abs((float) $position['y']) <= 100000);
-        if ($usable) {
-            foreach ($graph['nodes'] as $index => &$node) {
-                $node['position'] = ['x' => (float) $positions[$index]['x'], 'y' => (float) $positions[$index]['y']];
-            }
-            unset($node);
-        } else {
+        if (! $usable) {
             $graph['nodes'] = $this->layout($graph);
         }
 
