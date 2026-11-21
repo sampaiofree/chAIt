@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AppNotice from '@/components/AppNotice.vue';
+import AppLoading from '@/components/AppLoading.vue';
 import { cacheGet, cachePut, clearChatCache } from '@/lib/chatCache';
 import {
     mergeChatMessages,
@@ -41,7 +42,6 @@ import {
     CircleOff,
     MessagesSquare,
     Phone,
-    LoaderCircle,
 } from '@lucide/vue';
 import { Mic } from '@lucide/vue';
 import { useAppDialog } from '@/composables/useAppDialog';
@@ -143,12 +143,8 @@ const nextCursor = ref<string | null>(null);
 const loadingThreads = ref(false);
 const threadsReady = ref(false);
 const threadsError = ref(false);
-const showThreadSkeleton = ref(false);
-let threadSkeletonTimer: ReturnType<typeof setTimeout> | undefined;
 const historyLoading = ref(false);
 const historyError = ref(false);
-const showSkeleton = ref(false);
-let skeletonTimer: ReturnType<typeof setTimeout> | undefined;
 let searchGeneration = 0;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 let listAbort: AbortController | undefined;
@@ -219,8 +215,10 @@ const selected = ref<Thread | null>(null);
 const navigationKey = `chait-navigation:${me.value.id}:${workspace.value.id}`;
 let restoredNavigation: any = {};
 try { restoredNavigation = JSON.parse(sessionStorage.getItem(navigationKey) || '{}'); } catch { /* Empty navigation state. */ }
+const isMobileEntry = window.matchMedia('(max-width: 1023px)').matches;
 const initialThreadId = Number(
-    new URLSearchParams(page.url.split('?')[1] || '').get('thread_id') || restoredNavigation.threadId,
+    new URLSearchParams(page.url.split('?')[1] || '').get('thread_id') ||
+        (!isMobileEntry ? restoredNavigation.threadId : null),
 );
 const pendingThreadId = ref<number | null>(
     Number.isSafeInteger(initialThreadId) && initialThreadId > 0
@@ -500,11 +498,6 @@ async function loadThreads(append = false) {
     const request = listAbort;
     loadingThreads.value = true;
     threadsError.value = false;
-    clearTimeout(threadSkeletonTimer);
-    if (!threadsReady.value)
-        threadSkeletonTimer = setTimeout(() => {
-            showThreadSkeleton.value = true;
-        }, 150);
     const key = listCacheKey();
     let completed = false;
     if (!append)
@@ -520,9 +513,10 @@ async function loadThreads(append = false) {
                 threads.value = cached.data;
                 nextCursor.value = cached.next_cursor;
                 threadsReady.value = true;
-                clearTimeout(threadSkeletonTimer);
-                showThreadSkeleton.value = false;
-                if (!selected.value) {
+                if (
+                    !selected.value &&
+                    (!isMobileEntry || pendingThreadId.value !== null)
+                ) {
                     const requestedId = pendingThreadId.value;
                     const cachedSelection = requestedId
                         ? cached.data.find(
@@ -571,6 +565,7 @@ async function loadThreads(append = false) {
                     : null);
         if (
             !selected.value &&
+            (!isMobileEntry || pendingThreadId.value !== null) &&
             result.selected_thread &&
             (pendingThreadId.value === null ||
                 result.selected_thread.id === pendingThreadId.value)
@@ -587,8 +582,6 @@ async function loadThreads(append = false) {
     } finally {
         if (listAbort === request) {
             loadingThreads.value = false;
-            clearTimeout(threadSkeletonTimer);
-            showThreadSkeleton.value = false;
         }
     }
 }
@@ -603,11 +596,6 @@ async function loadHistory() {
     if (initial) {
         historyLoading.value = true;
         historyError.value = false;
-        showSkeleton.value = false;
-        clearTimeout(skeletonTimer);
-        skeletonTimer = setTimeout(() => {
-            showSkeleton.value = true;
-        }, 150);
     }
     const key = cacheKey(`history:${target.id}`);
     let completed = false;
@@ -625,7 +613,6 @@ async function loadHistory() {
             renderedThreadId = target.id;
             historyNextOffset.value = cached.next_offset;
             historyLoading.value = false;
-            clearTimeout(skeletonTimer);
             await nextTick();
             if (
                 selected.value?.id === target.id &&
@@ -817,7 +804,6 @@ async function loadHistory() {
     }
     if (selected.value?.id === target.id && generation === historyGeneration) {
         historyLoading.value = false;
-        clearTimeout(skeletonTimer);
         contactForm.display_name = target.contact.display_name ?? '';
         contactForm.email = target.contact.email ?? '';
         contactForm.cpf = target.contact.cpf ?? '';
@@ -1849,8 +1835,6 @@ watch([search, assignment, statusFilter, appliedTagIds, profileCollapsed, () => 
 onUnmounted(() => {
     clearInterval(accessTimer);
     mobileChatDetail.value = false;
-    clearTimeout(skeletonTimer);
-    clearTimeout(threadSkeletonTimer);
     clearTimeout(realtimeInitialTimer);
     window.clearInterval(dateLabelTimer);
     document.removeEventListener('visibilitychange', refreshDateLabels);
@@ -1866,35 +1850,34 @@ onUnmounted(() => {
 <template>
     <Head title="Conversas" />
     <section
-        v-if="!chatAllowed"
+        v-if="!chatAllowed && chatAccessStatus === 'checking'"
+        class="connection-setup"
+    >
+        <AppLoading label="Carregando conversas…" />
+    </section>
+    <section
+        v-else-if="!chatAllowed"
         class="connection-setup"
         aria-labelledby="connection-setup-title"
         :aria-busy="accessChecking"
     >
         <div class="connection-setup-content">
             <div class="connection-setup-icon" aria-hidden="true">
-                <LoaderCircle
-                    v-if="chatAccessStatus === 'checking'"
-                    :size="28"
-                    class="animate-spin"
-                />
-                <MessagesSquare v-else :size="28" />
+                <MessagesSquare :size="28" />
             </div>
             <div role="status" aria-live="polite">
                 <h1 id="connection-setup-title">
                     {{
-                        chatAccessStatus === 'checking'
-                            ? 'Preparando suas conversas…'
-                            : chatAccessStatus === 'disconnected'
-                              ? 'Conecte seu WhatsApp para começar'
-                              : 'Estamos verificando sua conexão'
+                        chatAccessStatus === 'disconnected'
+                            ? 'Conecte seu WhatsApp para começar'
+                            : 'Estamos verificando sua conexão'
                     }}
                 </h1>
                 <p v-if="chatAccessStatus === 'disconnected'">
                     Para receber e responder mensagens, conecte o WhatsApp deste
                     workspace em Configurações.
                 </p>
-                <p v-else-if="chatAccessStatus !== 'checking'">
+                <p v-else>
                     A confirmação da conexão está temporariamente indisponível.
                     Vamos verificar novamente automaticamente em instantes.
                 </p>
@@ -1908,10 +1891,7 @@ onUnmounted(() => {
                     Peça ao administrador do workspace para conectar o WhatsApp.
                 </p>
             </template>
-            <div
-                v-if="chatAccessStatus !== 'checking'"
-                class="connection-setup-actions"
-            >
+            <div class="connection-setup-actions">
                 <Button
                     v-if="isAdmin && chatAccessStatus === 'disconnected'"
                     as-child
@@ -2056,16 +2036,10 @@ onUnmounted(() => {
                             Tentar novamente
                         </button>
                     </AppNotice>
-                    <div
+                    <AppLoading
                         v-else-if="loadingThreads && !threadsReady"
-                        class="skeleton-list"
-                        role="status"
-                        aria-label="Carregando conversas"
-                    >
-                        <template v-if="showThreadSkeleton"
-                            ><span v-for="n in 5" :key="n"></span
-                        ></template>
-                    </div>
+                        label="Carregando conversas…"
+                    />
                     <p
                         v-else-if="threadsReady && !threads.length"
                         class="empty"
@@ -2160,16 +2134,10 @@ onUnmounted(() => {
                                     : 'Carregar mensagens anteriores'
                             }}</AppButton
                         >
-                        <div
+                        <AppLoading
                             v-if="historyLoading"
-                            class="skeleton-messages"
-                            role="status"
-                            aria-label="Carregando mensagens"
-                        >
-                            <template v-if="showSkeleton"
-                                ><span v-for="n in 4" :key="n"></span
-                            ></template>
-                        </div>
+                            label="Carregando mensagens…"
+                        />
                         <AppNotice v-else-if="historyError" variant="error">
                             Não foi possível carregar as mensagens.
                             <button type="button" @click="loadHistory()">
@@ -4233,26 +4201,6 @@ onUnmounted(() => {
         min-height: 44px;
     }
 }
-.skeleton-list,
-.skeleton-messages {
-    display: grid;
-    gap: 12px;
-    padding: 16px;
-}
-.skeleton-list span,
-.skeleton-messages span {
-    display: block;
-    height: 54px;
-    border-radius: 10px;
-    background: var(--muted);
-}
-.skeleton-messages span {
-    height: 38px;
-    width: 65%;
-}
-.skeleton-messages span:nth-child(even) {
-    justify-self: end;
-}
 @media (prefers-reduced-motion: no-preference) {
     @media (max-width: 1023px) {
         .chat-pane:not(.mobile-hidden),
@@ -4261,10 +4209,6 @@ onUnmounted(() => {
             animation: pane-enter 160ms ease-out;
         }
     }
-    .skeleton-list span,
-    .skeleton-messages span {
-        animation: skeleton-pulse 1.2s ease-in-out infinite alternate;
-    }
 }
 @keyframes pane-enter {
     from {
@@ -4272,11 +4216,6 @@ onUnmounted(() => {
     }
     to {
         opacity: 1;
-    }
-}
-@keyframes skeleton-pulse {
-    to {
-        opacity: 0.45;
     }
 }
 </style>

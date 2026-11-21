@@ -31,6 +31,43 @@
             html.dark {
                 background-color: #0b1220;
             }
+            #app-startup {
+                position: fixed;
+                inset: 0;
+                z-index: 1000;
+                display: grid;
+                place-content: center;
+                justify-items: center;
+                gap: 24px;
+                padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+                background: #f8fafc;
+                color: #64748b;
+                text-align: center;
+                font: 14px/1.5 ui-sans-serif, system-ui, sans-serif;
+            }
+            html.dark #app-startup { background: #0b1220; color: #94a3b8; }
+            .startup-status { display: flex; align-items: center; gap: 8px; }
+            .startup-spinner {
+                width: 16px;
+                height: 16px;
+                border: 2px solid currentColor;
+                border-right-color: transparent;
+                border-radius: 50%;
+            }
+            #app-startup-retry {
+                min-height: 44px;
+                padding: 8px 16px;
+                border: 1px solid currentColor;
+                border-radius: 8px;
+                background: transparent;
+                color: inherit;
+                font: inherit;
+                cursor: pointer;
+            }
+            @media (prefers-reduced-motion: no-preference) {
+                .startup-spinner { animation: startup-spin 1s linear infinite; }
+            }
+            @keyframes startup-spin { to { transform: rotate(360deg); } }
             .startup-brand { position: relative; display: block; width: 180px; max-width: 80vw; line-height: 0; }
             .startup-brand img { display: block; width: 100%; height: auto; }
             .startup-brand-light { display: none !important; position: absolute; inset: 0; filter: brightness(0) invert(1); }
@@ -53,12 +90,13 @@
         </x-inertia::head>
     </head>
     <body class="font-sans antialiased">
-        <div id="app-startup" role="status" style="position:fixed;inset:0;display:grid;place-content:center;text-align:center;background:inherit;z-index:1000">
+        <div id="app-startup" role="status" aria-live="polite" aria-label="Carregando aplicativo">
             <span class="startup-brand" role="img" aria-label="chAIt">
                 <img src="/brand/logo.png" alt="">
                 <img class="startup-brand-light startup-brand-start" src="/brand/logo.png" alt="" aria-hidden="true">
                 <img class="startup-brand-light startup-brand-end" src="/brand/logo.png" alt="" aria-hidden="true">
-            </span><span>Carregando…</span>
+            </span>
+            <span class="startup-status"><span class="startup-spinner" aria-hidden="true"></span>Carregando…</span>
             <button id="app-startup-retry" type="button" hidden onclick="location.reload()">Recarregar</button>
         </div>
         <script>setTimeout(function(){var b=document.getElementById('app-startup-retry');if(b)b.hidden=false},10000);</script>

@@ -208,6 +208,50 @@ Use UAZAPI e IA simuladas nos testes automatizados. Não execute testes PHP/nave
 
 Para identificar um webhook aceito mas sem conversa projetada no primeiro deploy, use o [diagnóstico de recebimento UAZAPI](diagnostico-uazapi-primeiro-deploy.md). A migração `2026_10_17_000003_track_uazapi_inbox_decisions` adiciona apenas códigos de decisão e contagem de entregas, sem guardar telefone ou conteúdo.
 
+### Cabeçalhos FastCGI e reabertura com sessão existente
+
+Em 21/11/2026, o Nginx de `chait.3f7.org` registrou `upstream sent too big header` em `GET /dashboard`. Uma abertura de `/login` com sessão existente redireciona ao dashboard, cuja resposta pode ser rejeitada com 502 antes de chegar ao navegador. O middleware `AddLinkHeadersForPreloadedAssets` limita o cabeçalho `Link` a dez assets; os preloads do HTML continuam completos. Os testes de documento e navegador usam o manifest do build de produção, inclusive quando o Vite local está ativo.
+
+No PortalJE, o virtual host é `/etc/nginx/sites-enabled/chait.3f7.org`; o upstream PHP é `unix:/run/php/php8.3-fpm-chait.sock`. Resolva o arquivo de destino e salve uma cópia fora de `sites-enabled`, para que o backup não seja carregado como outro virtual host:
+
+```bash
+chait_nginx_config=$(readlink -f /etc/nginx/sites-enabled/chait.3f7.org)
+chait_nginx_backup="/root/chait-nginx-$(date +%Y%m%d-%H%M%S).conf"
+cp -p "$chait_nginx_config" "$chait_nginx_backup"
+```
+
+No bloco `location` PHP que contém esse `fastcgi_pass`, defina as diretivas abaixo, substituindo valores existentes se houver. Aplique somente ao virtual host do chAIt, preservando o socket, os parâmetros FastCGI e as demais configurações:
+
+```nginx
+fastcgi_buffer_size 16k;
+fastcgi_buffers 8 16k;
+fastcgi_busy_buffers_size 32k;
+```
+
+O buffer inicial recebe os cabeçalhos da resposta PHP; ultrapassá-lo torna a resposta inválida. Consulte a [documentação FastCGI do Nginx](https://nginx.org/en/docs/http/ngx_http_fastcgi_module.html#fastcgi_buffer_size). Valide e, somente se a validação passar, recarregue:
+
+```bash
+nginx -t && systemctl reload nginx
+```
+
+Se a configuração falhar, restaure a cópia antes de qualquer recarga:
+
+```bash
+cp -p "$chait_nginx_backup" "$chait_nginx_config"
+nginx -t && systemctl reload nginx
+```
+
+Após publicar o ajuste PHP pelo procedimento de atualização, valide `/login` sem sessão e a reabertura no iOS com a sessão já salva, com “Manter conectado” e com sessão expirada. Com autenticação válida, confirme a cadeia `/login` → `/dashboard`, a resposta final 200 e a recarga completa do dashboard, além da navegação Inertia. Sem autenticação válida, confirme o formulário de login. Não apague cookies de usuários para contornar o problema.
+
+Confira os registros gerados no intervalo da validação:
+
+```bash
+tail -n 50 /var/log/nginx/chait.access.log
+tail -n 50 /var/log/nginx/chait.error.log
+```
+
+O aceite exige ausência de novos `upstream sent too big header` e 502 nas tentativas testadas. Para correlacionar uma ocorrência entre iOS, Cloudflare e origem, registre data/hora com fuso, URL, status e `CF-Ray` da mesma tentativa; confira a zona e os logs disponíveis na Cloudflare. Os registros históricos do Nginx confirmam a rejeição dos cabeçalhos, mas não identificam sozinhos uma tentativa específica do iOS. Não registre cookies, tokens ou conteúdo de mensagens e não presuma que o horário do servidor é o de São Paulo.
+
 ## Scheduler e Sequências
 
 A migration `2026_10_14_000001_create_sequences` é aplicada pelo comando normal de deploy. Ela acrescenta versões, etapas, participações e contexto exclusivo; preserva contatos, conversas e execuções existentes. O gerenciador adota uma execução legada ativa por contexto; se houver duplicidades, o início é recusado e deve ser revisado antes de liberar automações. Não apagar execuções para contornar esse diagnóstico.

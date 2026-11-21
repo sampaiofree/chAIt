@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { usePage } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
+import AppLoading from '@/components/AppLoading.vue';
 import { PanelLeft, ChevronRight } from '@lucide/vue';
 import AppBrand from '@/components/AppBrand.vue';
 import AppNavigation from '@/components/AppNavigation.vue';
@@ -22,6 +23,24 @@ import {
 } from '@/components/ui/tooltip';
 
 const page = usePage<any>();
+const navigating = ref(false);
+let pendingVisit: object | undefined;
+const stopNavigationStart = router.on('start', ({ detail: { visit } }) => {
+    if (visit.method !== 'get' || visit.async || visit.prefetch) {
+        return;
+    }
+
+    pendingVisit = visit;
+    navigating.value = true;
+});
+const stopNavigationFinish = router.on('finish', ({ detail: { visit } }) => {
+    if (visit !== pendingVisit) {
+        return;
+    }
+
+    pendingVisit = undefined;
+    navigating.value = false;
+});
 const { expanded, mobileOpen, mobileChatDetail, toggle } = useNavigation(
     page.props.sidebarOpen === true,
 );
@@ -60,6 +79,8 @@ function closeMobile() {
 }
 media.addEventListener('change', closeMobile);
 onBeforeUnmount(() => {
+    stopNavigationStart();
+    stopNavigationFinish();
     media.removeEventListener('change', closeMobile);
     window.visualViewport?.removeEventListener('resize', updateViewport);
     window.removeEventListener('resize', updateViewport);
@@ -108,7 +129,10 @@ onBeforeUnmount(() => {
                         >{{ page.props.currentWorkspace?.name }}</span
                     >
                 </header>
-                <div class="app-page"><slot /></div>
+                <div class="app-content">
+                    <div class="app-page" :aria-busy="navigating"><slot /></div>
+                    <AppLoading v-if="navigating" class="navigation-loading" />
+                </div>
                 <AppBottomNavigation v-if="!flowEditor" />
             </div>
         </div>
@@ -175,6 +199,26 @@ onBeforeUnmount(() => {
 .workspace-chevron {
     color: var(--muted-foreground);
     flex: none;
+}
+.app-content {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+}
+.navigation-loading {
+    position: absolute;
+    z-index: 10;
+    top: 12px;
+    right: max(12px, env(safe-area-inset-right));
+    max-width: calc(100% - 24px);
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: var(--shadow-popover);
+    pointer-events: none;
 }
 .app-page {
     flex: 1;

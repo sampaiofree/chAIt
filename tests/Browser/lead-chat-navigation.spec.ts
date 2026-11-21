@@ -1,10 +1,27 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Page, Route } from '@playwright/test';
 
 test.skip(
     process.env.CHAIT_BROWSER_REALTIME === 'true',
     'Uses the polling browser fixture.',
 );
+
+async function clearChatCache(page: Page) {
+    await page.evaluate(async () => {
+        const database = await new Promise<IDBDatabase>((resolve, reject) => {
+            const request = indexedDB.open('chait-chat-cache', 1);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+        await new Promise<void>((resolve, reject) => {
+            const transaction = database.transaction('entries', 'readwrite');
+            transaction.objectStore('entries').clear();
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+        });
+        database.close();
+    });
+}
 
 async function setup(page: Page, includeTarget = true) {
     const first = {
@@ -254,20 +271,7 @@ test('a direct mobile link opens the requested conversation with an empty cache'
 }) => {
     const fixture = await setup(page, false);
     await fixture.openLead();
-    await page.evaluate(async () => {
-        const database = await new Promise<IDBDatabase>((resolve, reject) => {
-            const request = indexedDB.open('chait-chat-cache', 1);
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-        await new Promise<void>((resolve, reject) => {
-            const transaction = database.transaction('entries', 'readwrite');
-            transaction.objectStore('entries').clear();
-            transaction.oncomplete = () => resolve();
-            transaction.onerror = () => reject(transaction.error);
-        });
-        database.close();
-    });
+    await clearChatCache(page);
     await page.setViewportSize({ width: 390, height: 844 });
     const requestStart = fixture.requestedIds.length;
     const release = fixture.pause();
@@ -328,5 +332,309 @@ test('conversation list remains usable at the review sizes in both themes', asyn
             await page.waitForTimeout(250);
             await page.screenshot({ path: `artifacts/design-review/conversas-etapa2-${width}-${theme}.png` });
         }
+    }
+});
+
+for (const emptyCache of [false, true]) {
+    test(`mobile Conversations opens the list with a saved selection and ${emptyCache ? 'empty' : 'warm'} cache`, async ({
+        page,
+    }) => {
+        const fixture = await setup(page);
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page
+            .locator('.thread')
+            .filter({ hasText: 'Lead selecionado' })
+            .click();
+        await page.getByPlaceholder('Mensagem…').fill('Rascunho mobile');
+        await page
+            .getByRole('button', { name: 'Voltar para conversas', exact: true })
+            .click();
+        await page.getByLabel('Buscar por nome ou telefone').fill('Lead');
+        const navigation = page.getByRole('navigation', {
+            name: 'Navegação inferior',
+        });
+        await navigation
+            .getByRole('link', { name: 'Leads', exact: true })
+            .click();
+
+        if (emptyCache) {
+            await clearChatCache(page);
+        }
+
+        const historyStart = fixture.histories.length;
+        const requestStart = fixture.requestedIds.length;
+        await navigation
+            .getByRole('link', { name: 'Conversas', exact: true })
+            .click();
+        await expect(page.locator('.thread')).toHaveCount(2);
+        await expect(page.locator('.list-pane')).toBeVisible();
+        await expect(page.locator('.chat-heading')).toHaveCount(0);
+        await expect(navigation).toBeVisible();
+        await expect(
+            page.getByLabel('Buscar por nome ou telefone'),
+        ).toHaveValue('Lead');
+        await expect
+            .poll(() => fixture.requestedIds.length)
+            .toBeGreaterThan(requestStart);
+        expect(fixture.requestedIds.slice(requestStart)).toEqual([null]);
+        expect(fixture.histories.slice(historyStart)).toEqual([]);
+
+        await page
+            .locator('.thread')
+            .filter({ hasText: 'Lead selecionado' })
+            .click();
+        await expect(page.getByPlaceholder('Mensagem…')).toHaveValue(
+            'Rascunho mobile',
+        );
+        await page.reload();
+        await expect(page.locator('.thread')).toHaveCount(2);
+        await expect(page.locator('.list-pane')).toBeVisible();
+        await expect(page.locator('.chat-heading')).toHaveCount(0);
+        await page
+            .locator('.thread')
+            .filter({ hasText: 'Lead selecionado' })
+            .click();
+        await expect(page.getByPlaceholder('Mensagem…')).toHaveValue(
+            'Rascunho mobile',
+        );
+        await page
+            .getByRole('button', { name: 'Voltar para conversas', exact: true })
+            .click();
+
+        await page
+            .getByRole('button', { name: 'Alternar menu principal' })
+            .click();
+        await page
+            .getByRole('dialog')
+            .getByRole('link', { name: 'Conversas', exact: true })
+            .click();
+        await expect(page.getByRole('dialog')).toBeHidden();
+        await expect(page.locator('.list-pane')).toBeVisible();
+        await expect(page.locator('.chat-heading')).toHaveCount(0);
+    });
+}
+
+test('mobile loading indicators cover access, list, history and retry without blocking navigation', async ({
+    page,
+}, testInfo) => {
+    await setup(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+    let releaseAccess!: () => void;
+    let releaseList!: () => void;
+    let releaseHistory!: () => void;
+    const access = new Promise<void>((resolve) => {
+        releaseAccess = resolve;
+    });
+    const list = new Promise<void>((resolve) => {
+        releaseList = resolve;
+    });
+    const history = new Promise<void>((resolve) => {
+        releaseHistory = resolve;
+    });
+    await page.route('**/workspaces/*/chat-access*', async (route) => {
+        await access;
+        await route.fulfill({ json: { allowed: true, status: 'connected' } });
+    });
+    const loadingRoute = async (route: Route) => {
+        if (
+            new URL(route.request().url()).pathname.endsWith('/conversations')
+        ) {
+            await list;
+            return route.fulfill({
+                status: 500,
+                json: { message: 'Falha temporária' },
+            });
+        }
+        if (new URL(route.request().url()).pathname.endsWith('/messages')) {
+            await history;
+        }
+        await route.fallback();
+    };
+    await page.route('**/workspaces/*/conversations**', loadingRoute);
+    await clearChatCache(page);
+    try {
+        await page.reload();
+        await expect(
+            page
+                .getByRole('status')
+                .filter({ hasText: 'Carregando conversas…' }),
+        ).toBeVisible();
+        await expect(
+            page.getByRole('navigation', { name: 'Navegação inferior' }),
+        ).toBeVisible();
+        await expect(page.locator('.app-loading-icon')).toHaveCSS(
+            'animation-name',
+            'none',
+        );
+        releaseAccess();
+        await expect(page.locator('.thread-list .app-loading')).toHaveText(
+            'Carregando conversas…',
+        );
+        await expect(page.locator('.thread')).toHaveCount(0);
+        await page.screenshot({
+            path: testInfo.outputPath('loading-conversations-mobile.png'),
+        });
+        releaseList();
+        await expect(
+            page.getByText('Não foi possível carregar as conversas.'),
+        ).toBeVisible();
+        await expect(
+            page
+                .getByRole('status')
+                .filter({ hasText: 'Carregando conversas…' }),
+        ).toHaveCount(0);
+        await page.unroute('**/workspaces/*/conversations**', loadingRoute);
+        await page
+            .getByRole('button', { name: 'Tentar novamente', exact: true })
+            .click();
+        await expect(
+            page.getByText('Não foi possível carregar as conversas.'),
+        ).toHaveCount(0);
+        await page.route(
+            '**/workspaces/*/conversations/*/messages',
+            async (route) => {
+                await history;
+                await route.fallback();
+            },
+        );
+        // A thread without cached history must show the inline message indicator.
+        await page
+            .locator('.thread')
+            .filter({ hasText: 'Lead selecionado' })
+            .click();
+        await expect(
+            page
+                .getByRole('status')
+                .filter({ hasText: 'Carregando mensagens…' }),
+        ).toBeVisible();
+        await page
+            .getByRole('button', { name: 'Voltar para conversas', exact: true })
+            .click();
+        await expect(page.locator('.list-pane')).toBeVisible();
+        releaseHistory();
+        await page
+            .locator('.thread')
+            .filter({ hasText: 'Lead selecionado' })
+            .click();
+        await expect(
+            page.getByText('Histórico 1', { exact: true }),
+        ).toBeVisible();
+        await expect(
+            page
+                .getByRole('status')
+                .filter({ hasText: 'Carregando mensagens…' }),
+        ).toHaveCount(0);
+    } finally {
+        releaseAccess();
+        releaseList();
+        releaseHistory();
+    }
+});
+
+test('view loading ends after success, cancellation and network failure on mobile', async ({
+    page,
+}, testInfo) => {
+    await setup(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    const navigation = page.getByRole('navigation', {
+        name: 'Navegação inferior',
+    });
+    for (const outcome of ['success', 'cancel', 'error']) {
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        await page.route('**/settings/profile', async (route) => {
+            await gate;
+            if (outcome === 'error') return route.abort('failed');
+            await route.continue();
+        });
+        try {
+            await navigation
+                .getByRole('link', { name: 'Ajustes', exact: true })
+                .click();
+            await expect(page.locator('.navigation-loading')).toHaveText(
+                'Carregando…',
+            );
+            await expect(navigation).toBeVisible();
+            await expect(page.locator('#nprogress')).toHaveCount(0);
+            if (outcome === 'success') {
+                await page.screenshot({
+                    path: testInfo.outputPath('loading-navigation-mobile.png'),
+                });
+            }
+            if (outcome === 'cancel') {
+                await navigation
+                    .getByRole('link', { name: 'Conversas', exact: true })
+                    .click();
+            }
+            release();
+            await expect(page.locator('.navigation-loading')).toHaveCount(0);
+            if (outcome === 'success') {
+                await expect(page).toHaveURL(/settings\/profile$/);
+                await navigation
+                    .getByRole('link', { name: 'Conversas', exact: true })
+                    .click();
+                await expect(page.locator('.list-pane')).toBeVisible();
+            }
+        } finally {
+            release();
+            await page.unroute('**/settings/profile');
+        }
+    }
+});
+
+test('startup logo stays visible before JavaScript loads and offers retry after ten seconds', async ({
+    page,
+}, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+    await page.clock.install();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    await page.route('**/build/assets/*.js', async (route) => {
+        await gate;
+        await route.continue();
+    });
+    try {
+        await page.goto('/login', { waitUntil: 'commit' });
+        await expect(page.locator('#app-startup')).toBeVisible();
+        await expect(
+            page.locator('.startup-brand > img').first(),
+        ).toBeVisible();
+        await expect(page.locator('#app-startup')).toHaveCSS(
+            'background-color',
+            'rgb(11, 18, 32)',
+        );
+        await expect(page.locator('.startup-spinner')).toHaveCSS(
+            'animation-name',
+            'none',
+        );
+        await expect(
+            page.getByRole('button', { name: 'Recarregar', exact: true }),
+        ).toBeHidden();
+        await page.screenshot({
+            path: testInfo.outputPath('startup-mobile-dark.png'),
+        });
+        await page.evaluate(() =>
+            document.documentElement.classList.remove('dark'),
+        );
+        await page.screenshot({
+            path: testInfo.outputPath('startup-mobile-light.png'),
+        });
+        await page.clock.fastForward(10000);
+        await expect(
+            page.getByRole('button', { name: 'Recarregar', exact: true }),
+        ).toBeVisible();
+        release();
+        await expect(page.locator('#app-startup')).toHaveCount(0);
+        await expect(
+            page.getByRole('button', { name: 'Entrar', exact: true }),
+        ).toBeVisible();
+    } finally {
+        release();
     }
 });

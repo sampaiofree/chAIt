@@ -1,7 +1,9 @@
 <?php
 
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 use Laravel\Fortify\Features;
 
 test('home renders the login screen with the same options and status as login', function () {
@@ -17,17 +19,41 @@ test('home renders the login screen with the same options and status as login', 
     }
 });
 
-test('authenticated users visiting home are redirected to the dashboard', function () {
+test('authenticated users visiting an entry page are redirected to the dashboard', function (string $route) {
     $this->actingAs(User::factory()->create())
-        ->get(route('home'))
+        ->get(route($route))
         ->assertRedirect(route('dashboard'));
-});
+})->with(['home', 'login']);
 
 test('login screen can be rendered', function () {
     $response = $this->get(route('login'));
 
     $response->assertOk();
 });
+
+test('persisted sessions resume authentication only while unexpired', function (bool $expired) {
+    config(['session.driver' => 'database']);
+    $user = User::factory()->create();
+    $sessionId = Str::random(40);
+    $payload = [auth()->guard()->getName() => $user->id];
+
+    DB::table('sessions')->insert([
+        'id' => $sessionId,
+        'user_id' => $user->id,
+        'payload' => base64_encode(config('session.serialization') === 'json' ? json_encode($payload) : serialize($payload)),
+        'last_activity' => $expired ? now()->subMinutes(config('session.lifetime') + 1)->timestamp : now()->timestamp,
+    ]);
+
+    $response = $this->withCookie(config('session.cookie'), $sessionId)->get(route('login'));
+
+    if ($expired) {
+        $response->assertOk()->assertInertia(fn ($page) => $page->component('auth/login'));
+        $this->assertGuest();
+    } else {
+        $response->assertRedirect(route('dashboard'));
+        $this->assertAuthenticatedAs($user);
+    }
+})->with(['valid' => false, 'expired' => true]);
 
 test('users can authenticate using the login screen', function () {
     $user = User::factory()->create();

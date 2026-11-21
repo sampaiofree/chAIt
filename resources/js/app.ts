@@ -91,5 +91,5 @@ createInertiaApp({
             .mount(el);
         document.getElementById('app-startup')?.remove();
     },
-    progress: { color: '#4f46e5' },
+    progress: false,
 });

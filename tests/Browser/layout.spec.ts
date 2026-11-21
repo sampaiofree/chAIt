@@ -171,7 +171,9 @@ test('unassigned chat offers immediate reply while occupied chat requires explic
     await expect(page.locator('.composer-hint')).toContainText(
         'Ao enviar, você assume',
     );
-    await page.getByRole('button', { name: 'Abrir perfil do contato' }).click();
+    if (!(await page.locator('.profile-pane').isVisible())) {
+        await page.getByRole('button', { name: 'Abrir perfil do contato' }).click();
+    }
     await expect(
         page.getByRole('button', { name: 'Abrir atendimento' }),
     ).toBeVisible();
@@ -856,7 +858,9 @@ test('contact panel overlays when space is limited and mobile displays one pane 
     await login(page);
     await page.setViewportSize({ width: 1024, height: 900 });
     await page.getByRole('button', { name: 'Alternar menu principal' }).click();
-    await page.getByRole('button', { name: 'Abrir perfil do contato' }).click();
+    if (!(await page.locator('.profile-pane').isVisible())) {
+        await page.getByRole('button', { name: 'Abrir perfil do contato' }).click();
+    }
     await expect(page.locator('.profile-pane')).toBeVisible();
     await expect(page.locator('.chat-heading')).toContainText('Em atendimento');
     await expect(page.locator('.chat-heading')).toContainText('Admin de teste');
@@ -924,7 +928,8 @@ test('mobile chat keeps the profile button beside long contact details', async (
             .boundingBox();
         const title = await page.locator('.chat-heading .title').boundingBox();
         const button = await page
-            .getByRole('button', { name: 'Abrir perfil do contato' })
+            .locator('.chat-heading')
+            .getByRole('button', { name: /perfil do contato/ })
             .boundingBox();
 
         expect(heading && avatar && title && button).toBeTruthy();
@@ -944,7 +949,10 @@ test('mobile chat keeps the profile button beside long contact details', async (
         await noOverflow(page);
     }
 
-    await page.getByRole('button', { name: 'Abrir perfil do contato' }).click();
+    await page
+        .locator('.chat-heading')
+        .getByRole('button', { name: /perfil do contato/ })
+        .click();
     await expect(page.locator('.profile-pane')).toBeVisible();
 });
 
@@ -1194,12 +1202,11 @@ for (const failure of ['unavailable', 'network', 'checking']) {
         );
         await page.reload();
         await expect(
-            page.getByRole('heading', {
-                name:
-                    failure === 'checking'
-                        ? 'Preparando suas conversas…'
-                        : 'Estamos verificando sua conexão',
-            }),
+            failure === 'checking'
+                ? page.getByRole('status').filter({ hasText: 'Carregando conversas…' })
+                : page.getByRole('heading', {
+                      name: 'Estamos verificando sua conexão',
+                  }),
         ).toBeVisible();
         await expect(
             page.getByRole('link', { name: 'Conectar WhatsApp', exact: true }),
@@ -1238,7 +1245,7 @@ test('initial connection check stays neutral while pending', async ({
     });
     await page.reload();
     await expect(
-        page.getByRole('heading', { name: 'Preparando suas conversas…' }),
+        page.getByRole('status').filter({ hasText: 'Carregando conversas…' }),
     ).toBeVisible();
     await expect(
         page.getByRole('link', { name: 'Conectar WhatsApp', exact: true }),

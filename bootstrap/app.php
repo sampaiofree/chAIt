@@ -30,7 +30,8 @@ return Application::configure(basePath: dirname(__DIR__))
             EnsureAccountActive::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,
-            AddLinkHeadersForPreloadedAssets::class,
+            // Bound response headers on full page loads; HTML keeps all preloads.
+            AddLinkHeadersForPreloadedAssets::using(10),
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

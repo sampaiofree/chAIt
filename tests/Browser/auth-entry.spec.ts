@@ -54,6 +54,85 @@ test('home redirects an authenticated user to the dashboard', async ({
     await expect(page).toHaveURL(/dashboard/);
 });
 
+for (const remember of [false, true]) {
+    test(`reopening login restores ${remember ? 'a remember cookie' : 'an existing session'} with bounded dashboard headers`, async ({
+        page,
+        context,
+        browser,
+    }) => {
+        await page.goto('/login');
+        await page
+            .getByLabel('E-mail', { exact: true })
+            .fill('admin@example.test');
+        await page.getByLabel('Senha', { exact: true }).fill('password');
+        await page.getByLabel('Manter conectado').setChecked(remember);
+        await page.getByRole('button', { name: 'Entrar', exact: true }).click();
+        await expect(page).toHaveURL(/\/dashboard$/);
+
+        const storageState = await context.storageState();
+
+        if (remember) {
+            // Restore authentication from the recaller, without a session cookie.
+            expect(
+                storageState.cookies.some(({ name }) =>
+                    name.startsWith('remember_'),
+                ),
+            ).toBe(true);
+            storageState.cookies = storageState.cookies.filter(
+                ({ name }) => name !== 'chait_browser_test',
+            );
+        }
+
+        const reopened = await browser.newContext({
+            baseURL: new URL(page.url()).origin,
+            storageState,
+        });
+
+        try {
+            const reopenedPage = await reopened.newPage();
+            const response = await reopenedPage.goto('/login');
+            expect(response?.status()).toBe(200);
+            await expect(reopenedPage).toHaveURL(/\/dashboard$/);
+            expect(response?.request().redirectedFrom()?.url()).toMatch(
+                /\/login$/,
+            );
+
+            const headers = await response!.allHeaders();
+            const preloads = headers.link.match(/>; /g) ?? [];
+            expect(preloads.length).toBeGreaterThan(0);
+            expect(preloads.length).toBeLessThanOrEqual(10);
+            expect(Buffer.byteLength(headers.link)).toBeLessThan(2048);
+            expect(Buffer.byteLength(JSON.stringify(headers))).toBeLessThan(
+                4096,
+            );
+            expect(
+                await reopenedPage
+                    .locator('link[rel="preload"], link[rel="modulepreload"]')
+                    .count(),
+            ).toBeGreaterThan(10);
+            expect((await reopenedPage.reload())?.status()).toBe(200);
+            await expect(reopenedPage).toHaveURL(/\/dashboard$/);
+
+            // Stop dashboard polling before removing cookies, so an in-flight
+            // response cannot recreate the session during this guest check.
+            await reopenedPage.close();
+            await reopened.clearCookies();
+            const signedOutPage = await reopened.newPage();
+            expect((await signedOutPage.goto('/dashboard'))?.status()).toBe(
+                200,
+            );
+            await expect(signedOutPage).toHaveURL(/\/login$/);
+            await expect(
+                signedOutPage.getByRole('heading', {
+                    name: 'Bem-vindo de volta',
+                }),
+            ).toBeVisible();
+        } finally {
+            await reopened.close();
+        }
+    });
+}
+
 test('password recovery displays the sent confirmation', async ({ page }) => {
     await page.goto('/forgot-password');
     await page.getByLabel('E-mail', { exact: true }).fill('admin@example.test');
